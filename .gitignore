@@ -1,0 +1,8 @@
+.idea
+.vscode
+.cache
+build
+obj
+bin
+*.DotSettings.user
+compile_commands.json

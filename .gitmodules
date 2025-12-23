@@ -1,0 +1,9 @@
+[submodule "lib/Flanterm"]
+	path = lib/flanterm
+	url = https://codeberg.org/Mintsuki/Flanterm.git
+[submodule "lib/limine-protocol"]
+	path = lib/limine-protocol
+	url = https://codeberg.org/Limine/limine-protocol.git
+[submodule "lib/limine"]
+	path = lib/limine
+	url = https://codeberg.org/Limine/Limine.git
