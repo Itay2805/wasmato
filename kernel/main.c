@@ -132,18 +132,12 @@ static void set_extended_state_features(void) {
 
 static void set_cpu_features(void) {
     // PG/PE - required for long mode
-    // WP - protect read-only pages
     // MP - required for SSE
-    __writecr0(CR0_PG | CR0_WP| CR0_PE | CR0_MP);
+    __writecr0(CR0_PG | CR0_PE | CR0_MP);
 
     // PAE - required for long mode
     // OSFXSR/OSXMMEXCPT - required for SSE
-    uint32_t cr4 = CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT;
-    if (virt_pk_supported()) {
-        TRACE("cpu: protection keys are supported");
-        cr4 |= CR4_PKS;
-    }
-    __writecr4(cr4);
+    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT);
 
     set_extended_state_features();
 }

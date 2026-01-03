@@ -22,23 +22,6 @@ typedef enum map_flags {
     MAP_FLAG_UNCACHEABLE = BIT2,
 } map_flags_t;
 
-typedef enum protection_key {
-    /**
-     * The default key used for all pages
-     */
-    PROTECTION_KEY_DEFAULT,
-
-    /**
-     * The protection key
-     */
-    PROTECTION_KEY_PAGE_TABLE,
-} protection_key_t;
-
-/**
- * Check if protection keys are supported
- */
-bool virt_pk_supported(void);
-
 /**
  * Early init, before we have a physical memory allocator
  */

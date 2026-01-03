@@ -55,15 +55,6 @@ static irq_spinlock_t m_virt_lock = IRQ_SPINLOCK_INIT;
  */
 static uint64_t* m_pml4 = 0;
 
-bool virt_pk_supported(void) {
-    uint32_t a, b, c, d;
-    if (__get_cpuid(7, &a, &b, &c, &d)) {
-        return c & BIT31;
-    } else {
-        return false;
-    }
-}
-
 err_t init_virt_early() {
     err_t err = NO_ERROR;
 
