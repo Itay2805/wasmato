@@ -58,7 +58,7 @@ err_t pcpu_init_per_core(int cpu_id) {
     err_t err = NO_ERROR;
 
     // TODO: how to find the correct alignment dynamically?
-    char* data = mem_alloc(__stop_pcpu_data - __start_pcpu_data, 4096);
+    char* data = phys_alloc(__stop_pcpu_data - __start_pcpu_data);
     CHECK_ERROR(data != NULL, ERROR_OUT_OF_MEMORY);
 
     size_t offset =  data - __start_pcpu_data;

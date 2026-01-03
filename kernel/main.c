@@ -210,7 +210,6 @@ void _start() {
     // setup the basic memory management
     //
     RETHROW(init_virt_early());
-    init_alloc();
     RETHROW(phys_init());
 
     //

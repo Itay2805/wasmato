@@ -27,8 +27,6 @@
         mem_free(__ptr, sizeof(type) * (count), alignof(type)); \
     } while(0)
 
-void init_alloc(void);
-
 void* mem_alloc(size_t size, size_t align);
 
 void* mem_realloc(void* ptr, size_t old_size, size_t align, size_t new_size);
