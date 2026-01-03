@@ -258,6 +258,11 @@ void _start() {
                 response->cpus[i]->extra_argument = i;
                 response->cpus[i]->goto_address = smp_entry;
             }
+
+            // wait for the core to finish
+            while (m_smp_count != (i + 1)) {
+                cpu_relax();
+            }
         }
     } else {
         // no SMP startup available from bootloader,
@@ -278,8 +283,8 @@ void _start() {
     phys_free_bootloader_reserved();
 
     // we are about done, create the init thread and queue it
-    m_init_thread = thread_create(init_thread_entry, NULL, "init thread");
-    scheduler_wakeup_thread(m_init_thread);
+    // m_init_thread = thread_create(init_thread_entry, NULL, "init thread");
+    // scheduler_wakeup_thread(m_init_thread);
 
     // and we are ready to start the scheduler
     scheduler_start_per_core();

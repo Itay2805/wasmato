@@ -74,7 +74,7 @@ typedef struct phys_buddy {
      * - 0 .. 14: the level of the freed page
      * - 15: the page is currently allocated
      */
-    size_t bitmap[];
+    uint8_t bitmap[];
 } phys_buddy_t;
 
 /**
@@ -150,9 +150,7 @@ static void phys_buddy_create(phys_map_entry_t* entry) {
 
     // calculate the metadata overhead
     size_t page_count = ((entry->end + 1) - entry->start) / PAGE_SIZE;
-    size_t bitmap_length = DIV_ROUND_UP(page_count, 2);
-    size_t bitmap_words = DIV_ROUND_UP(bitmap_length, sizeof(size_t) * CHAR_BIT);
-    size_t bitmap_size = bitmap_words * sizeof(size_t);
+    size_t bitmap_size = DIV_ROUND_UP(page_count, 2);
     size_t metadata_size = ALIGN_UP(sizeof(phys_buddy_t) + bitmap_size, PAGE_SIZE);
 
     // setup the buddy itself

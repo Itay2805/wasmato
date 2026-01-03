@@ -1,7 +1,8 @@
 #pragma once
 
+#include "lib/except.h"
+
 /**
- * Allocates a small 32kb large stack, should be
- * used for tasks and scheduling
+ * Allocate a stack that has a gurad page
  */
-void* small_stack_alloc(void);
+err_t stack_alloc(void** stack);

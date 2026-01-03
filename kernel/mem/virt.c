@@ -76,7 +76,7 @@ bool virt_is_mapped(uintptr_t virt) {
     size_t index2 = (virt >> 21) & PAGING_INDEX_MASK;
     size_t index1 = (virt >> 12) & PAGING_INDEX_MASK;
 
-    uint64_t* pml4 = (uint64_t*)(__readcr3() & PAGING_4K_ADDRESS_MASK);
+    uint64_t* pml4 = PHYS_TO_DIRECT(__readcr3() & PAGING_4K_ADDRESS_MASK);
 
     uint64_t pml4e = pml4[index4];
     if ((pml4e & IA32_PG_P) == 0) return false;
@@ -198,6 +198,7 @@ err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, m
         // if we are remapping an existing entry then issue a shootdown
         if ((entry & IA32_PG_P) && pml1[index1] != entry) {
             need_tlb_shootdown = true;
+            __invlpg(virt);
         }
 
         // and set it
@@ -265,6 +266,7 @@ err_t virt_unmap(void* virt, size_t num_pages, unmap_ops_t* ops) {
 
         // just remove the entire page entry
         pml1[index1] = 0;
+        __invlpg(virt);
     }
 
     // TODO: queue TLB invalidation on all other cores
@@ -374,7 +376,7 @@ err_t virt_alloc(void* ptr, size_t num_pages) {
         CHECK_ERROR(page != NULL, ERROR_OUT_OF_MEMORY);
 
         // unmap from the direct map
-        RETHROW(virt_unmap(ptr, 1, VIRT_UNMAP_STRICT));
+        RETHROW(virt_unmap(page, 1, VIRT_UNMAP_STRICT));
 
         // map into the wanted virtual address
         RETHROW(virt_map(ptr, DIRECT_TO_PHYS(page), 1, MAP_FLAG_WRITEABLE, VIRT_MAP_STRICT));
