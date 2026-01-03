@@ -49,7 +49,7 @@ static err_t acpi_map_tables(void* ctx, phys_map_type_t type, uintptr_t start, s
         void* map_start = PHYS_TO_DIRECT(start);
         void* map_end = PHYS_TO_DIRECT(ALIGN_UP(start + length, PAGE_SIZE));
         size_t num_pages = (map_end - map_start) / PAGE_SIZE;
-        RETHROW(virt_map((uintptr_t)map_start, start, num_pages, 0));
+        RETHROW(virt_map(map_start, start, num_pages, MAP_FLAG_WRITEABLE, VIRT_MAP_STRICT));
     }
 
 cleanup:
@@ -63,7 +63,7 @@ static err_t acpi_unmap_tables(void* ctx, phys_map_type_t type, uintptr_t start,
         void* map_start = PHYS_TO_DIRECT(ALIGN_DOWN(start, PAGE_SIZE));
         void* map_end = PHYS_TO_DIRECT(ALIGN_UP(start + length, PAGE_SIZE));
         size_t num_pages = (map_end - map_start) / PAGE_SIZE;
-        RETHROW(virt_unmap((uintptr_t)map_start, num_pages));
+        RETHROW(virt_unmap(map_start, num_pages, VIRT_UNMAP_STRICT));
     }
 
 cleanup:
@@ -137,7 +137,7 @@ err_t init_acpi_tables() {
     m_acpi_timer_port = facp->pm_tmr_blk;
 
 cleanup:
-    RETHROW(phys_map_iterate(acpi_unmap_tables, NULL));
+    ASSERT(!IS_ERROR(phys_map_iterate(acpi_unmap_tables, NULL)));
 
     return err;
 }

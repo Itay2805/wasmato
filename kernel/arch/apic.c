@@ -166,7 +166,11 @@ err_t init_lapic(void) {
 
         // make sure the apic is mapped properly, according to the spec the
         // range should be marked as "Strong Uncacheable"
-        RETHROW(virt_map((uintptr_t)m_xapic_base, addr, 1, MAP_FLAG_WRITEABLE | MAP_FLAG_UNCACHEABLE));
+        RETHROW(virt_map(
+            m_xapic_base, addr, 1,
+            MAP_FLAG_WRITEABLE | MAP_FLAG_UNCACHEABLE,
+            VIRT_MAP_STRICT
+        ));
     }
 
     // if we don't have TSC deadline calibrate the lapic frequency

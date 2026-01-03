@@ -1,9 +1,22 @@
 #pragma once
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// The kernel memory map
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// 0xFFFF8000_00000000 - 0xFFFFFF7F_FFFFFFFF: Direct map
+// 0xFFFFFF80_00000000 - 0xFFFFFF80_3FFFFFFF: Thread stacks
+// 0xFFFFFFFF_80000000 - 0xFFFFFFFF_FFFFFFFF: Kernel (2GB)
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///
 /**
  * Direct map offset, static in memory, no KASLR please
  */
 #define DIRECT_MAP_OFFSET       0xFFFF800000000000ULL
+
+#define STACKS_ADDR_START       0xFFFFFF8000000000ULL
+#define STACKS_ADDR_LENGTH      SIZE_1GB
+#define STACKS_ADDR_END         (STACKS_ADDR_START + STACKS_ADDR_LENGTH)
 
 /**
  * Convert direct map pointers as required
