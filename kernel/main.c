@@ -23,6 +23,8 @@
 #include <thread/scheduler.h>
 #include <time/tsc.h>
 
+#include "mem/early.h"
+#include "mem/phys_map.h"
 #include "mem/phys.h"
 #include "time/timer.h"
 
@@ -154,12 +156,12 @@ static void smp_entry(struct limine_mp_info* info) {
     //
     // Start by setting up the per-cpu context
     //
+    switch_page_table();
     pcpu_init_per_core(info->extra_argument);
     init_gdt();
     init_tss();
     init_idt();
     set_cpu_features();
-    switch_page_table();
 
     TRACE("smp: \tCPU#%lu - LAPIC#%d", info->extra_argument, info->lapic_id);
 
@@ -195,30 +197,27 @@ void _start() {
     TRACE("------------------------------------------------------------------------------------------------------------");
     limine_check_revision();
 
-    // check the available string features
-    string_verify_features();
-
     //
-    // early cpu init, this will take care of having interrupts
-    // and a valid GDT already
+    // early cpu init, this will take care of
+    // having interrupts and a valid GDT already
     //
     init_gdt();
     init_tss();
     init_idt();
 
     //
+    // Setup the cpu features
+    //
+    string_verify_features();
+    set_cpu_features();
+
+    //
     // setup the basic memory management
     //
     RETHROW(init_virt_early());
-    RETHROW(phys_init());
-
-    //
-    // Continue with the rest of the initialization
-    // now that we have a working pcpu data
-    //
+    RETHROW(init_phys());
     RETHROW(init_virt());
-    set_cpu_features();
-    switch_page_table();
+    RETHROW(init_phys_map());
 
     // we need acpi for some early sleep primitives
     RETHROW(init_acpi_tables());
@@ -277,10 +276,6 @@ void _start() {
         cpu_relax();
     }
     TRACE("smp: Finished SMP startup");
-
-    // we don't need anything from the bootloader anymore, so before we start
-    // up the rest of the kernel, remove its memory
-    phys_free_bootloader_reserved();
 
     // we are about done, create the init thread and queue it
     // m_init_thread = thread_create(init_thread_entry, NULL, "init thread");

@@ -1,54 +1,30 @@
 #pragma once
 
 #include "lib/except.h"
-#include <stdbool.h>
 
-typedef enum phys_map_type {
-    PHYS_MAP_UNUSED,
+/**
+ * How many levels of buddy we are holding
+ */
+#define PHYS_BUDDY_MAX_LEVEL     10
 
-    PHYS_MAP_BAD_RAM,
-    PHYS_MAP_RAM,
+/**
+ * The minimum size that the physical allocator can allocate, this is
+ * a page size, for smaller than page allocation use the normal memory
+ * allocator
+ */
+#define PHYS_BUDDY_MIN_ORDER     PAGE_SHIFT
+#define PHYS_BUDDY_MIN_SIZE      (1UL << PHYS_BUDDY_MIN_ORDER)
 
-    PHYS_MAP_MMIO,
-    PHYS_MAP_MMIO_LAPIC,
-    PHYS_MAP_MMIO_FRAMEBUFFER,
-
-    PHYS_MAP_FIRMWARE_RESERVED,
-
-    PHYS_MAP_ACPI_RECLAIMABLE,
-    PHYS_MAP_ACPI_RESERVED,
-    PHYS_MAP_ACPI_NVS,
-
-    PHYS_MAP_BOOTLOADER_RECLAIMABLE,
-    PHYS_MAP_KERNEL_RESERVED,
-} phys_map_type_t;
-
-extern const char* g_phys_map_type_str[];
+/**
+ * The maximum size the buddy can allocate, this is also the max alignment
+ * we can have because every page is aligned to its own size
+ */
+#define PHYS_BUDDY_MAX_SIZE      (1ULL << ((PHYS_BUDDY_MAX_LEVEL + PHYS_BUDDY_MIN_ORDER) - 1))
 
 /**
  * Initialize the physical memory allocator
  */
-err_t phys_init(void);
-
-/**
- * Free memory reserved by the bootloader
- */
-void phys_free_bootloader_reserved(void);
-
-/**
- * Convert the given range into another type
- */
-void phys_map_convert(phys_map_type_t type, uint64_t start, size_t length);
-
-/**
- * Get the type of a given range, if it overlaps the function will error
- */
-err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type);
-
-/**
- * Get the amount of physical address bit the cpu has
- */
-uint8_t get_physical_address_bits(void);
+err_t init_phys(void);
 
 /**
  * Allocate physical memory
@@ -59,9 +35,3 @@ void* phys_alloc(size_t size);
  * Free physical memory
  */
 void phys_free(void* ptr, size_t size);
-
-typedef err_t (*phys_map_cb_t)(void* ctx, phys_map_type_t type, uint64_t start, size_t length);
-
-err_t phys_map_iterate(phys_map_cb_t cb, void* ctx);
-
-void dump_phys_map(void);

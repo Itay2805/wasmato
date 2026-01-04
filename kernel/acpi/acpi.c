@@ -10,6 +10,7 @@
 #include "arch/intrin.h"
 #include "lib/string.h"
 #include "mem/phys.h"
+#include "mem/phys_map.h"
 #include "mem/virt.h"
 
 /**

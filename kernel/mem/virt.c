@@ -5,45 +5,13 @@
 #include <limine_requests.h>
 #include <arch/regs.h>
 
+#include "early.h"
 #include "arch/intrin.h"
 #include "limine.h"
 #include "memory.h"
 #include "phys.h"
 #include "sync/spinlock.h"
 #include "lib/string.h"
-
-#define IA32_PG_P           BIT0
-#define IA32_PG_RW          BIT1
-#define IA32_PG_U           BIT2
-#define IA32_PG_WT          BIT3
-#define IA32_PG_CD          BIT4
-#define IA32_PG_A           BIT5
-#define IA32_PG_D           BIT6
-#define IA32_PG_PS          BIT7
-#define IA32_PG_PAT_2M      BIT12
-#define IA32_PG_PAT_4K      IA32_PG_PS
-#define IA32_PG_PMNT        BIT62
-#define IA32_PG_NX          BIT63
-
-// These depend on the PAT that is configured by limine
-#define IA32_PG_CACHE_WB      (0)
-#define IA32_PG_CACHE_WT      (IA32_PG_WT)
-#define IA32_PG_CACHE_UCM     (IA32_PG_CD)
-#define IA32_PG_CACHE_UC      (IA32_PG_CD | IA32_PG_WT)
-#define IA32_PG_CACHE_WP_4K   (IA32_PG_PAT_4K)
-#define IA32_PG_CACHE_WC_4K   (IA32_PG_PAT_4K | IA32_PG_WT)
-#define IA32_PG_CACHE_WP_2M   (IA32_PG_PAT_2M)
-#define IA32_PG_CACHE_WC_2M   (IA32_PG_PAT_2M | IA32_PG_WT)
-
-#define PAGING_4K_ADDRESS_MASK  0x000FFFFFFFFFF000ull
-#define PAGING_2M_ADDRESS_MASK  0x000FFFFFFFE00000ull
-#define PAGING_1G_ADDRESS_MASK  0x000FFFFFC0000000ull
-
-#define PAGING_4K_MASK  0xFFF
-#define PAGING_2M_MASK  0x1FFFFF
-#define PAGING_1G_MASK  0x3FFFFFFF
-
-#define PAGING_INDEX_MASK  0x1FF
 
 /**
  * Spinlock for mapping virtual pages
@@ -54,21 +22,6 @@ static irq_spinlock_t m_virt_lock = IRQ_SPINLOCK_INIT;
  * The kernel top level cr3
  */
 static uint64_t* m_pml4 = 0;
-
-err_t init_virt_early() {
-    err_t err = NO_ERROR;
-
-    // get the base and address
-    CHECK(g_limine_executable_address_request.response != NULL);
-    CHECK(g_limine_executable_address_request.response->virtual_base == 0xffffffff80000000);
-
-    // make sure the HHDM is at the correct address
-    CHECK(g_limine_hhdm_request.response != NULL);
-    CHECK(g_limine_hhdm_request.response->offset == DIRECT_MAP_OFFSET);
-
-cleanup:
-    return err;
-}
 
 bool virt_is_mapped(uintptr_t virt) {
     size_t index4 = (virt >> 39) & PAGING_INDEX_MASK;
@@ -281,81 +234,15 @@ cleanup:
 // Initialization
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static err_t virt_map_kernel(void) {
-    err_t err = NO_ERROR;
+err_t init_virt(void) {
+    // just save the pml4 from the early virt init so we can
+    // switch on other cores nicely
+    m_pml4 = PHYS_TO_DIRECT(__readcr3() & PAGING_4K_ADDRESS_MASK);
 
-    CHECK(g_limine_executable_file_request.response != NULL);
-    void* elf_base = g_limine_executable_file_request.response->executable_file->address;
-    Elf64_Ehdr* ehdr = elf_base;
-    Elf64_Phdr* phdrs = elf_base + ehdr->e_phoff;
-
-    CHECK(g_limine_executable_address_request.response != NULL);
-    uintptr_t physical_base = g_limine_executable_address_request.response->physical_base;
-    uintptr_t virtual_base = g_limine_executable_address_request.response->virtual_base;
-
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        if (phdrs[i].p_type != PT_LOAD) {
-            continue;
-        }
-
-        void* vaddr = (void*)phdrs[i].p_vaddr;
-        void* vend = (void*)phdrs[i].p_vaddr + phdrs[i].p_memsz;
-
-        uintptr_t paddr = ((uintptr_t)vaddr - virtual_base) + physical_base;
-        uintptr_t pend = ((uintptr_t)vend - virtual_base) + physical_base;
-
-        // get the correct flags
-        map_flags_t flags = 0;
-        if ((phdrs[i].p_flags & PF_W) != 0) flags |= MAP_FLAG_WRITEABLE;
-        if ((phdrs[i].p_flags & PF_X) != 0) flags |= MAP_FLAG_EXECUTABLE;
-
-        // map it all
-        size_t page_num = DIV_ROUND_UP(pend - paddr, PAGE_SIZE);
-        RETHROW(virt_map(vaddr, paddr, page_num, flags, VIRT_MAP_STRICT));
-    }
-
-cleanup:
-    return err;
+    return NO_ERROR;
 }
 
-static err_t virt_map_range(void* ctx, phys_map_type_t type, uint64_t start, size_t length) {
-    err_t err = NO_ERROR;
-
-    if (
-        type == PHYS_MAP_BOOTLOADER_RECLAIMABLE ||
-        type == PHYS_MAP_RAM ||
-        type == PHYS_MAP_MMIO_FRAMEBUFFER
-    ) {
-        RETHROW(virt_map(
-            PHYS_TO_DIRECT(start),
-            start,
-            length / PAGE_SIZE,
-            MAP_FLAG_WRITEABLE,
-            VIRT_MAP_STRICT)
-        );
-    }
-
-cleanup:
-    return err;
-}
-
-err_t init_virt() {
-    err_t err = NO_ERROR;
-
-    // setup the top level pml4
-    m_pml4 = phys_alloc(PAGE_SIZE);
-    CHECK(m_pml4 != NULL);
-    memset(m_pml4, 0, PAGE_SIZE);
-
-    // map everything we need
-    RETHROW(virt_map_kernel());
-    RETHROW(phys_map_iterate(virt_map_range, NULL));
-
-cleanup:
-    return err;
-}
-
-void switch_page_table() {
+void switch_page_table(void) {
     // switch to the page table
     __writecr3(DIRECT_TO_PHYS(m_pml4));
 

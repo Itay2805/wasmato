@@ -8,6 +8,7 @@
 #include "acpi/acpi.h"
 #include "mem/memory.h"
 #include "mem/phys.h"
+#include "mem/phys_map.h"
 #include "mem/virt.h"
 #include "sync/spinlock.h"
 #include "time/tsc.h"

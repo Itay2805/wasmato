@@ -23,14 +23,14 @@ typedef enum map_flags {
 } map_flags_t;
 
 /**
- * Early init, before we have a physical memory allocator
- */
-err_t init_virt_early();
-
-/**
  * Normal init, setting up the page tables before we can switch to them
  */
-err_t init_virt();
+err_t init_virt(void);
+
+/**
+ * Switch to the kernel's page table
+ */
+void switch_page_table(void);
 
 /**
  * Check if an address is mapped currently, using the actual
@@ -88,11 +88,6 @@ err_t virt_alloc(void* ptr, size_t num_pages);
  * Free the given range
  */
 void virt_free(void* ptr, size_t num_pages);
-
-/**
- * Switch to the kernel's page table
- */
-void switch_page_table();
 
 /**
  * Attempt to handle a page fault for lazy-memory allocation
