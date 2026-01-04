@@ -106,6 +106,30 @@ static uint64_t* virt_get_next_level(uint64_t* entry, bool allocate) {
     return PHYS_TO_DIRECT(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
+static uint64_t* virt_get_pte(void* virt, bool allocate) {
+    size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
+    size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
+    size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
+    size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
+
+    uint64_t* pml3 = virt_get_next_level(&m_pml4[index4], allocate);
+    if (pml3 == NULL) {
+        return NULL;
+    }
+
+    uint64_t* pml2 = virt_get_next_level(&pml3[index3], allocate);
+    if (pml2 == NULL) {
+        return NULL;
+    }
+
+    uint64_t* pml1 = virt_get_next_level(&pml2[index2], allocate);
+    if (pml1 == NULL) {
+        return NULL;
+    }
+
+    return &pml1[index1];
+}
+
 err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, map_ops_t* ops) {
     err_t err = NO_ERROR;
 
@@ -114,19 +138,8 @@ err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, m
     bool need_tlb_shootdown = false;
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE, phys += PAGE_SIZE) {
-        size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
-        size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
-        size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
-        size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
-
-        uint64_t* pml3 = virt_get_next_level(&m_pml4[index4], true);
-        CHECK_ERROR(pml3 != NULL, ERROR_OUT_OF_MEMORY);
-
-        uint64_t* pml2 = virt_get_next_level(&pml3[index3], true);
-        CHECK_ERROR(pml2 != NULL, ERROR_OUT_OF_MEMORY);
-
-        uint64_t* pml1 = virt_get_next_level(&pml2[index2], true);
-        CHECK_ERROR(pml1 != NULL, ERROR_OUT_OF_MEMORY);
+        uint64_t* pte = virt_get_pte(virt, true);
+        CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
         uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A;
@@ -135,27 +148,27 @@ err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, m
         if ((flags & MAP_FLAG_UNCACHEABLE) != 0) entry |= IA32_PG_CACHE_UC;
 
         if (ops != NULL) {
-            if (pml1[index1] == entry) {
+            if (*pte == entry) {
                 // we mapped the same entry again
                 if (ops->mapped_same_entry != NULL) {
-                    RETHROW(ops->mapped_same_entry(ops, virt, pml1[index1] & PAGING_4K_ADDRESS_MASK));
+                    RETHROW(ops->mapped_same_entry(ops, virt, *pte & PAGING_4K_ADDRESS_MASK));
                 }
-            } else if (pml1[index1] & IA32_PG_P) {
+            } else if (*pte & IA32_PG_P) {
                 // we are mapping with a different entry
                 if (ops->mapped_page != NULL) {
-                    RETHROW(ops->mapped_page(ops, virt, pml1[index1] & PAGING_4K_ADDRESS_MASK));
+                    RETHROW(ops->mapped_page(ops, virt, *pte & PAGING_4K_ADDRESS_MASK));
                 }
             }
         }
 
         // if we are remapping an existing entry then issue a shootdown
-        if ((entry & IA32_PG_P) && pml1[index1] != entry) {
+        if ((entry & IA32_PG_P) && *pte != entry) {
             need_tlb_shootdown = true;
             __invlpg(virt);
         }
 
         // and set it
-        pml1[index1] = entry;
+        *pte = entry;
     }
 
     if (need_tlb_shootdown) {
@@ -173,42 +186,20 @@ err_t virt_unmap(void* virt, size_t num_pages, unmap_ops_t* ops) {
 
     bool irq_state = irq_spinlock_acquire(&m_virt_lock);
 
-    // TODO: garbage collect table entries
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE) {
-        size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
-        size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
-        size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
-        size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
-
-        // TODO: something more efficient or idk
-
-        uint64_t* pml3 = virt_get_next_level(&m_pml4[index4], false);
-        if (pml3 == NULL) {
+        uint64_t* pte = virt_get_pte(virt, true);
+        if (pte == NULL) {
             if (ops && ops->unmapped_page) {
                 RETHROW(ops->unmapped_page(ops, virt));
             }
             continue;
         }
 
-        uint64_t* pml2 = virt_get_next_level(&pml3[index3], false);
-        if (pml2 == NULL) {
-            if (ops && ops->unmapped_page) {
-                RETHROW(ops->unmapped_page(ops, virt));
-            }
-        }
-
-        uint64_t* pml1 = virt_get_next_level(&pml2[index2], false);
-        if (pml1 == NULL) {
-            if (ops && ops->unmapped_page) {
-                RETHROW(ops->unmapped_page(ops, virt));
-            }
-        }
-
         // must already be mapped
         if (ops != NULL) {
-            if (pml1[index1] & IA32_PG_P) {
+            if (*pte & IA32_PG_P) {
                 if (ops->mapped_page) {
-                    RETHROW(ops->mapped_page(ops, virt, pml1[index1] & PAGING_4K_ADDRESS_MASK));
+                    RETHROW(ops->mapped_page(ops, virt, *pte & PAGING_4K_ADDRESS_MASK));
                 }
             } else {
                 if (ops->unmapped_page) {
@@ -218,7 +209,7 @@ err_t virt_unmap(void* virt, size_t num_pages, unmap_ops_t* ops) {
         }
 
         // just remove the entire page entry
-        pml1[index1] = 0;
+        *pte = 0;
         __invlpg(virt);
     }
 
