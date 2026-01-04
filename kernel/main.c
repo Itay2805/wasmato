@@ -257,11 +257,6 @@ void _start() {
                 response->cpus[i]->extra_argument = i;
                 response->cpus[i]->goto_address = smp_entry;
             }
-
-            // wait for the core to finish
-            while (m_smp_count != (i + 1)) {
-                cpu_relax();
-            }
         }
     } else {
         // no SMP startup available from bootloader,
