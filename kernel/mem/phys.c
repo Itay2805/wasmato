@@ -10,6 +10,7 @@
 
 #include "alloc.h"
 #include "early.h"
+#include "phys_map.h"
 #include "arch/cpuid.h"
 #include "lib/list.h"
 #include "lib/string.h"
@@ -282,5 +283,41 @@ err_t init_phys(void) {
     }
 
 cleanup:
+    return err;
+}
+
+err_t reclaim_bootloader_memory(void) {
+    err_t err = NO_ERROR;
+
+    bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
+
+    TRACE("memory: Reclaiming bootloader memory");
+    while (true) {
+        // search for the next entry to reclaim
+        phys_map_entry_t* entry;
+        phys_map_entry_t* to_reclaim = NULL;
+        list_for_each_entry(entry, &g_phys_map, link) {
+            if (entry->type == PHYS_MAP_BOOTLOADER_RECLAIMABLE) {
+                to_reclaim = entry;
+                break;
+            }
+        }
+        if (to_reclaim == NULL) {
+            break;
+        }
+
+        // mark as ram
+        phys_map_convert_locked(PHYS_MAP_RAM, to_reclaim->start, to_reclaim->end - to_reclaim->start + 1);
+
+        // actually free it
+        void* start = PHYS_TO_DIRECT(entry->start);
+        void* end = PHYS_TO_DIRECT(entry->end + 1);
+        TRACE("memory: \t%016lx-%016lx", DIRECT_TO_PHYS(start), DIRECT_TO_PHYS(end) - 1);
+        RETHROW(phys_add_memory(start, end));
+    }
+
+cleanup:
+    irq_spinlock_release(&g_phys_map_lock, irq_state);
+
     return err;
 }

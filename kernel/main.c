@@ -34,7 +34,21 @@
 static thread_t* m_init_thread;
 
 static void init_thread_entry(void* arg) {
-     TRACE("Init thread started");
+    err_t err = NO_ERROR;
+
+    TRACE("Init thread started");
+
+    // no longer need any of the bootloader memory
+    // at this point
+    RETHROW(reclaim_bootloader_memory());
+
+    // TODO: reclaim init code
+
+    // for fun and profit
+    phys_map_dump();
+
+cleanup:
+    ASSERT(!IS_ERROR(err));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -127,6 +141,7 @@ static void set_extended_state_features(void) {
     if (first) {
         __cpuid_count(0xD, 0, a, b, c, d);
         TRACE("cpu: extended state size is %d bytes", b);
+        g_extended_state_size = b;
     }
 
     first = false;
@@ -273,8 +288,8 @@ void _start() {
     TRACE("smp: Finished SMP startup");
 
     // we are about done, create the init thread and queue it
-    // m_init_thread = thread_create(init_thread_entry, NULL, "init thread");
-    // scheduler_wakeup_thread(m_init_thread);
+    m_init_thread = thread_create(init_thread_entry, NULL, "init thread");
+    scheduler_wakeup_thread(m_init_thread);
 
     // and we are ready to start the scheduler
     scheduler_start_per_core();

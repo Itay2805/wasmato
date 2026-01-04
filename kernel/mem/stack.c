@@ -13,7 +13,7 @@
 static void* m_stack_watermark = (void*)STACKS_ADDR_START;
 static irq_spinlock_t m_stack_lock = IRQ_SPINLOCK_INIT;
 
-err_t stack_alloc(void** stack) {
+err_t stack_alloc(void** out_stack_start, void** out_stack_end) {
     err_t err = NO_ERROR;
     void* ptr = NULL;
     size_t stack_num_pages = 0;
@@ -43,7 +43,8 @@ err_t stack_alloc(void** stack) {
     memset(stack_end, 0, stack_start - stack_end);
 
     // we are done
-    *stack = stack_start;
+    if (out_stack_start != NULL) *out_stack_start = stack_start;
+    if (out_stack_end != NULL) *out_stack_end = stack_end;
     m_stack_watermark = new_watermark;
 
 cleanup:

@@ -9,49 +9,30 @@
 #include <mem/alloc.h>
 
 #include "scheduler.h"
+#include "mem/stack.h"
 #include "time/tsc.h"
 
 /**
- * Freelist of threads structs not in use
+ * The size of the extended state
  */
-static list_t m_thread_freelist = LIST_INIT(&m_thread_freelist);
-
-/**
- * Protect the thread list and the thread top variables
- */
-static spinlock_t m_thread_freelist_lock = SPINLOCK_INIT;
+size_t g_extended_state_size = 0;
 
 static thread_t* thread_alloc() {
     thread_t* thread = NULL;
 
-    spinlock_acquire(&m_thread_freelist_lock);
-
-    // try to get an already free thread
-    list_entry_t* entry = list_pop(&m_thread_freelist);
-    if (entry != NULL) {
-        thread = containerof(entry, thread_t, link);
-        memset(thread, 0, sizeof(*thread));
-    }
-
-    // increase the thread pool
+    thread = mem_alloc(sizeof(thread_t) + g_extended_state_size, alignof(thread_t));
     if (thread == NULL) {
-        thread = alloc_type(thread_t);
-        if (thread == NULL) {
-            return NULL;
-        }
-
-        // switch to a dead state, just so we can wake it up properly
-        thread_switch_status(thread, THREAD_STATUS_IDLE, THREAD_STATUS_DEAD);
+        return NULL;
     }
 
-    // initialize anything that it needs, we multiply after the ++ because we want to get
-    // the top of the stack, not the bottom of it
-    
-    // TODO: allocate stack properly
-    // thread->stack_start = (void*)stack_offset + SIZE_2MB;
-    // thread->stack_end = (void*)stack_offset + SIZE_8MB;
+    // switch to a dead state, just so we can wake it up properly
+    thread_switch_status(thread, THREAD_STATUS_IDLE, THREAD_STATUS_DEAD);
 
-    spinlock_release(&m_thread_freelist_lock);
+    // allocate the stack
+    if (IS_ERROR(stack_alloc(&thread->stack_start, &thread->stack_end))) {
+        mem_free(thread, sizeof(thread_t) + g_extended_state_size, alignof(thread_t));
+        return NULL;
+    }
 
     return thread;
 }
@@ -82,7 +63,7 @@ thread_t* thread_create(thread_entry_t callback, void* arg, const char* name_fmt
     // as the first parameter, we are going to push to the stack the
     // thread_exit function to ensure it will exit the thread at the end,
     // this also ensures the stack is properly aligned at its entry
-    uintptr_t* stack = thread->stack_end;
+    uintptr_t* stack = thread->stack_start - 16;
     *--stack = (uintptr_t)thread_exit;
     thread->cpu_state = (void*)stack - sizeof(*thread->cpu_state);
     thread->cpu_state->rip = (uintptr_t)callback;
@@ -123,11 +104,7 @@ void thread_save_extended_state(thread_t* thread) {
 }
 
 void thread_free(thread_t* thread) {
-    memset(thread, 0, sizeof(*thread));
-
-    spinlock_acquire(&m_thread_freelist_lock);
-    list_add(&m_thread_freelist, &thread->link);
-    spinlock_release(&m_thread_freelist_lock);
+    mem_free(thread, sizeof(thread_t) + g_extended_state_size, alignof(thread_t));
 }
 
 void thread_exit() {

@@ -146,6 +146,18 @@ err_t init_lapic(void) {
     // check the apic state
     MSR_IA32_APIC_BASE_REGISTER apic_base = { .packed = __rdmsr(MSR_IA32_APIC_BASE) };
     CHECK(apic_base.en);
+
+    // get the address
+    uintptr_t addr = apic_base.apic_base << 12;
+    CHECK(addr == 0xFEE00000, "Invalid APIC base 0x%lx", addr);
+    m_xapic_base = PHYS_TO_DIRECT(addr);
+
+    // mark it as mmio, ensuring it is not used by anything else already
+    phys_map_type_t type;
+    RETHROW(phys_map_get_type(addr, SIZE_4KB, &type));
+    CHECK(type == PHYS_MAP_FIRMWARE_RESERVED || type == PHYS_MAP_UNUSED, "%d", type);
+    phys_map_convert(PHYS_MAP_MMIO_LAPIC, addr, SIZE_4KB);
+
     if (apic_base.extd) {
         m_x2apic_mode = true;
         TRACE("apic: using x2apic");
@@ -153,17 +165,6 @@ err_t init_lapic(void) {
     } else {
         m_x2apic_mode = false;
         TRACE("apic: using xapic");
-
-        // get the address
-        uintptr_t addr = apic_base.apic_base << 12;
-        CHECK(addr == 0xFEE00000, "Invalid APIC base 0x%lx", addr);
-        m_xapic_base = PHYS_TO_DIRECT(addr);
-
-        // mark it as mmio, ensuring it is not used by anything else already
-        phys_map_type_t type;
-        RETHROW(phys_map_get_type(addr, SIZE_4KB, &type));
-        CHECK(type == PHYS_MAP_FIRMWARE_RESERVED || type == PHYS_MAP_UNUSED, "%d", type);
-        phys_map_convert(PHYS_MAP_MMIO_LAPIC, addr, SIZE_4KB);
 
         // make sure the apic is mapped properly, according to the spec the
         // range should be marked as "Strong Uncacheable"

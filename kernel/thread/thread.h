@@ -81,7 +81,9 @@ typedef struct thread {
     // either a freelist link or the scheduler link
     list_t link;
 
-    // The actual stack of the thread
+    // The actual stack of the thread, it goes from start
+    // to end, meaning that start is a higher address than
+    // end
     void* stack_start;
     void* stack_end;
 
@@ -97,11 +99,10 @@ typedef struct thread {
     uint8_t extended_state[];
 } thread_t;
 
-
 /**
- * The hard-threads are allocated from this place
+ * The size of the extended state
  */
-#define THREADS ((thread_t*)THREADS_ADDR)
+extern size_t g_extended_state_size;
 
 /**
  * Switch the thread status, ensuring we first arrive at the status

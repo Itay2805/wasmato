@@ -27,6 +27,12 @@
 err_t init_phys(void);
 
 /**
+ * Free the bootloader reserved memory, returning it to
+ * the physical memory allocator
+ */
+err_t reclaim_bootloader_memory(void);
+
+/**
  * Allocate physical memory
  */
 void* phys_alloc(size_t size);

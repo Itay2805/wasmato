@@ -18,9 +18,15 @@ typedef enum err {
     ERROR_OUT_OF_MEMORY,
 
     /**
-     * Unknown tdn error
+     * The requested entry was not found
      */
     ERROR_NOT_FOUND,
+
+    /**
+     * Request to end the iteration of the current
+     * callback iterator
+     */
+    END_ITERATION,
 } err_t;
 
 /**

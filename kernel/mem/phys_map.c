@@ -11,31 +11,8 @@
 #include "lib/string.h"
 #include "sync/spinlock.h"
 
-typedef struct phys_map_entry {
-    // link list of entire memory map
-    list_entry_t link;
-
-    // the actual range
-    uint64_t start;
-    uint64_t end;
-    phys_map_type_t type;
-} phys_map_entry_t;
-
-
-/**
- * The linked list of memory map ranges
- */
-static list_t m_phys_map = LIST_INIT(&m_phys_map);
-
-/**
- * Lock to protect the physical memory map
- */
-static irq_spinlock_t m_phys_map_lock = IRQ_SPINLOCK_INIT;
-
-/**
- * Freelist of allocated entries
- */
-static list_t m_entry_free_list = LIST_INIT(&m_entry_free_list);
+list_t g_phys_map = LIST_INIT(&g_phys_map);
+irq_spinlock_t g_phys_map_lock = IRQ_SPINLOCK_INIT;
 
 /**
  * Allocate phys map entry
@@ -70,11 +47,11 @@ static void phys_map_remove_old_entry(phys_map_entry_t* entry) {
     free_type(phys_map_entry_t, entry);
 }
 
-static void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length) {
+void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length) {
     uint64_t end = start + length - 1;
 
-    list_entry_t* link = m_phys_map.next;
-    while (link != &m_phys_map) {
+    list_entry_t* link = g_phys_map.next;
+    while (link != &g_phys_map) {
         phys_map_entry_t* entry = containerof(link, phys_map_entry_t, link);
         link = link->next;
 
@@ -139,7 +116,7 @@ static void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t
                 // Check adjacent
                 //
                 list_entry_t* next_link = entry->link.next;
-                if (next_link != &m_phys_map) {
+                if (next_link != &g_phys_map) {
                     phys_map_entry_t* next_entry = containerof(next_link, phys_map_entry_t, link);
                     //
                     // ---------------------------------------------------
@@ -154,7 +131,7 @@ static void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t
                 }
 
                 list_entry_t* prev_link = entry->link.prev;
-                if (prev_link != &m_phys_map) {
+                if (prev_link != &g_phys_map) {
                     phys_map_entry_t* prev_entry = containerof(prev_link, phys_map_entry_t, link);
                     //
                     // ---------------------------------------------------
@@ -183,8 +160,8 @@ static void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t
     //                                               |EntryX|
     //                                               +------+
     //
-    link = m_phys_map.prev;
-    if (link != &m_phys_map) {
+    link = g_phys_map.prev;
+    if (link != &g_phys_map) {
         phys_map_entry_t* entry = containerof(link, phys_map_entry_t, link);
         if ((entry->end + 1 == start) && (entry->type == type)) {
             entry->end = end;
@@ -192,25 +169,25 @@ static void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t
         }
     }
 
-    phys_map_insert_new_entry(&m_phys_map, start, end, type, false);
+    phys_map_insert_new_entry(&g_phys_map, start, end, type, false);
 }
 
 void phys_map_convert(phys_map_type_t type, uint64_t start, size_t length) {
-    bool irq_lock = irq_spinlock_acquire(&m_phys_map_lock);
+    bool irq_lock = irq_spinlock_acquire(&g_phys_map_lock);
     phys_map_convert_locked(type, start, length);
-    irq_spinlock_release(&m_phys_map_lock, irq_lock);
+    irq_spinlock_release(&g_phys_map_lock, irq_lock);
 }
 
 err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
     err_t err = NO_ERROR;
 
-    bool irq_state = irq_spinlock_acquire(&m_phys_map_lock);
+    bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
 
     uint64_t top_address = 0;
     CHECK(!ckd_add(&top_address, start, length));
 
     phys_map_entry_t* entry;
-    list_for_each_entry(entry, &m_phys_map, link) {
+    list_for_each_entry(entry, &g_phys_map, link) {
         if (entry->start <= start && top_address < entry->end) {
             *type = entry->type;
             goto cleanup;
@@ -220,7 +197,7 @@ err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
     CHECK_FAIL_ERROR(ERROR_NOT_FOUND);
 
 cleanup:
-    irq_spinlock_release(&m_phys_map_lock, irq_state);
+    irq_spinlock_release(&g_phys_map_lock, irq_state);
 
     return err;
 }
@@ -267,15 +244,19 @@ cleanup:
 err_t phys_map_iterate(phys_map_cb_t cb, void* ctx) {
     err_t err = NO_ERROR;
 
-    bool irq_state = irq_spinlock_acquire(&m_phys_map_lock);
+    bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
 
     phys_map_entry_t* entry;
-    list_for_each_entry(entry, &m_phys_map, link) {
-        RETHROW(cb(ctx, entry->type, entry->start, (entry->end - entry->start) + 1));
+    list_for_each_entry(entry, &g_phys_map, link) {
+        err = cb(ctx, entry->type, entry->start, (entry->end - entry->start) + 1);
+        if (err == END_ITERATION) {
+            break;
+        }
+        RETHROW(err);
     }
 
 cleanup:
-    irq_spinlock_release(&m_phys_map_lock, irq_state);
+    irq_spinlock_release(&g_phys_map_lock, irq_state);
 
     return err;
 }

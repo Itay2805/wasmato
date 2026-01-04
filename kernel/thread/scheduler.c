@@ -94,7 +94,7 @@ err_t scheduler_init_per_core(void) {
 
     // setup the stack for the scheduler
     void* stack;
-    RETHROW(stack_alloc(&stack));
+    RETHROW(stack_alloc(&stack, NULL));
     m_core.scheduler_stack = stack - 16;
 
     // start with a preempt count of 1, because we go to the scheduler right away
