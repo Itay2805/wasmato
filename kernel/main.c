@@ -150,11 +150,22 @@ static void set_extended_state_features(void) {
 static void set_cpu_features(void) {
     // PG/PE - required for long mode
     // MP - required for SSE
-    __writecr0(CR0_PG | CR0_PE | CR0_MP);
+    // WP - write protections
+    __writecr0(CR0_PG | CR0_PE | CR0_MP | CR0_WP);
+
+    // ensure we have support for smap
+    uint32_t a, b, c, d;
+    ASSERT(__get_cpuid_count(7, 0, &a, &b, &c, &d));
+    ASSERT(b & BIT20, "Missing support for SMAP");
+
+    // ensure we have xsave (for the basic support sutff)
+    __cpuid(1, a, b, c, d);
+    ASSERT(c & bit_XSAVE, "Missing support for xsave");
 
     // PAE - required for long mode
     // OSFXSR/OSXMMEXCPT - required for SSE
-    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT);
+    // SMAP - poor mans protection keys
+    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP);
 
     set_extended_state_features();
 }
@@ -171,12 +182,12 @@ static void smp_entry(struct limine_mp_info* info) {
     //
     // Start by setting up the per-cpu context
     //
+    set_cpu_features();
     switch_page_table();
     pcpu_init_per_core(info->extra_argument);
     init_gdt();
     init_tss();
     init_idt();
-    set_cpu_features();
 
     TRACE("smp: \tCPU#%lu - LAPIC#%d", info->extra_argument, info->lapic_id);
 

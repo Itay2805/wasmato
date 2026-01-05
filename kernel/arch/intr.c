@@ -245,7 +245,15 @@ static void default_exception_handler(exception_frame_t* ctx) {
     ERROR("RSI=%016lx RDI=%016lx RBP=%016lx RSP=%016lx", ctx->rsi, ctx->rdi, ctx->rbp, ctx->rsp);
     ERROR("R8 =%016lx R9 =%016lx R10=%016lx R11=%016lx", ctx->r8 , ctx->r9 , ctx->r10, ctx->r11);
     ERROR("R12=%016lx R13=%016lx R14=%016lx R15=%016lx", ctx->r12, ctx->r13, ctx->r14, ctx->r15);
-    ERROR("RIP=%016lx RFL=%lb", ctx->rip, ctx->rflags.packed);
+    ERROR("RIP=%016lx RFL=%08lx [%c%c%c%c%c%c%c]", ctx->rip, ctx->rflags.packed,
+            ctx->rflags.DF ? 'D' : '-',
+            ctx->rflags.OF ? 'O' : '-',
+            ctx->rflags.SF ? 'S' : '-',
+            ctx->rflags.ZF ? 'Z' : '-',
+            ctx->rflags.AC ? 'A' : '-',
+            ctx->rflags.PF ? 'P' : '-',
+            ctx->rflags.CF ? 'C' : '-'
+    );
     ERROR("FS =%016lx GS =%016x", __rdmsr(MSR_IA32_FS_BASE), 0); // TODO: GS BASE
     ERROR("CR0=%08lx CR2=%016lx CR3=%016lx CR4=%08lx", __readcr0(), __readcr2(), __readcr3(), __readcr4());
 

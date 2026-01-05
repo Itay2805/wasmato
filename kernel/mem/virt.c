@@ -234,11 +234,12 @@ err_t init_virt(void) {
 }
 
 void switch_page_table(void) {
+    // the stack is still in the direct map
+    // don't lock it
+    unlock_direct_map();
+
     // switch to the page table
     __writecr3(DIRECT_TO_PHYS(m_pml4));
-
-    // enable write protection
-    __writecr0(__readcr0() | CR0_WP);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
