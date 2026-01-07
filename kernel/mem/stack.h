@@ -8,4 +8,4 @@
  * The stack goes from the start to the end, meaning that
  * start is higher than end address wise
  */
-err_t stack_alloc(void** stack_start, void** stack_end);
+err_t stack_alloc(size_t stack_size, void** stack_start, void** stack_end);

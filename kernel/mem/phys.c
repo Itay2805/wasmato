@@ -306,13 +306,16 @@ err_t reclaim_bootloader_memory(void) {
             break;
         }
 
-        // mark as ram
-        phys_map_convert_locked(PHYS_MAP_RAM, to_reclaim->start, to_reclaim->end - to_reclaim->start + 1);
-
-        // actually free it
-        void* start = PHYS_TO_DIRECT(entry->start);
-        void* end = PHYS_TO_DIRECT(entry->end + 1);
+        // remember the values, the struct might change once we
+        // convert the physical memory region
+        void* start = PHYS_TO_DIRECT(to_reclaim->start);
+        void* end = PHYS_TO_DIRECT(to_reclaim->end + 1);
         TRACE("memory: \t%016lx-%016lx", DIRECT_TO_PHYS(start), DIRECT_TO_PHYS(end) - 1);
+
+        // mark as ram
+        phys_map_convert_locked(PHYS_MAP_RAM, to_reclaim->start, (to_reclaim->end + 1) - to_reclaim->start);
+
+        // and now add the memory into the buddy
         RETHROW(phys_add_memory(start, end));
     }
 

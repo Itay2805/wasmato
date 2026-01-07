@@ -71,6 +71,14 @@ cleanup:
     return err;
 }
 
+typedef struct address64 {
+    uint64_t value;
+} PACKED address64_t;
+
+typedef struct address32 {
+    uint32_t value;
+} PACKED address32_t;
+
 err_t init_acpi_tables() {
     err_t err = NO_ERROR;
 
@@ -113,9 +121,11 @@ err_t init_acpi_tables() {
     for (size_t i = 0; i < entry_count; i++) {
         acpi_description_header_t* table;
         if (xsdt != NULL) {
-            table = PHYS_TO_DIRECT(((acpi_description_header_t**)(xsdt + 1))[i]);
+            address64_t* addrs = (address64_t*)(xsdt + 1);
+            table = PHYS_TO_DIRECT(addrs[i].value);
         } else if (rsdt != NULL) {
-            table = PHYS_TO_DIRECT(((uint32_t*)(rsdt + 1))[i]);
+            address32_t* addrs = (address32_t*)(rsdt + 1);
+            table = PHYS_TO_DIRECT(addrs[i].value);
         } else {
             CHECK_FAIL();
         }

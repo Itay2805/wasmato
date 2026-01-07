@@ -182,7 +182,7 @@ run: $(IMAGE_NAME).hdd
 		-cpu host,+invtsc,+tsc-deadline \
 		-machine q35 \
 		-m 256M \
-		-smp 4 \
+		-smp 1 \
 		-s \
 		-hda $(IMAGE_NAME).hdd \
 		-debugcon stdio \

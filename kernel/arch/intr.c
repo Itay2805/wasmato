@@ -410,7 +410,7 @@ void init_idt(void) {
     set_idt_entry(0x1D, exception_handler_0x1D, 1, true);
     set_idt_entry(0x1E, exception_handler_0x1E, 1, true);
     set_idt_entry(0x1F, exception_handler_0x1F, 1, true);
-    set_idt_entry(0x20, timer_interrupt_handler, 1, true);
+    set_idt_entry(0x20, timer_interrupt_handler, 0, true);
 
     idt_t idt = {
         .limit = sizeof(m_idt_entries) - 1,

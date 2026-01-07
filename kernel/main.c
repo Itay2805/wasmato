@@ -299,7 +299,7 @@ void _start() {
     TRACE("smp: Finished SMP startup");
 
     // we are about done, create the init thread and queue it
-    m_init_thread = thread_create(init_thread_entry, NULL, "init thread");
+    RETHROW(thread_create(&m_init_thread, init_thread_entry, NULL, "init thread"));
     scheduler_wakeup_thread(m_init_thread);
 
     // and we are ready to start the scheduler

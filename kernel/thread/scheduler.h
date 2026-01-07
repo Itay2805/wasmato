@@ -38,13 +38,10 @@ void scheduler_wakeup_thread(thread_t* thread);
 thread_t* scheduler_get_current_thread(void);
 
 /**
- * Yield to the next task right now 
- */
-void scheduler_yield(void);
-
-/**
  * A callback to run after we set the thread to sleep properly
- * but before anyone can actually wake it up
+ * but before anyone can actually wake it up, if this returns true
+ * or the callback is null then the thread will be put to sleep, if
+ * it returns false then we are going to wakeup the thread right away
  */
 typedef bool (*scheduler_park_callback_t)(void* arg);
 
