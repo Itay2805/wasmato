@@ -17,11 +17,25 @@ thread_do_switch:
     pushq %r15
 
     /*
+     * push the flags and clear interrupts as we are about
+     * to switch the stacks to ensure that nothing happens
+     * before we restore the original flags (in-case of
+     * interrupts being off at that time
+     */
+    pushfq
+    cli
+
+    /*
      * save the current stack into the from thread and
      * restore the stack of the incoming thread
      */
     movq %rsp, (%rdi)
     movq (%rsi), %rsp
+
+    /*
+     * restore the flags
+     */
+    popfq
 
     /*
      * restore the register state
@@ -42,9 +56,22 @@ thread_do_switch:
 .global thread_do_jump
 thread_do_jump:
     /*
+     * clear interrupts as we are about to switch the stacks
+     to ensure that nothing happens before we restore the
+     * original flags (in-case of interrupts being off at
+     * that time)
+     */
+    cli
+
+    /*
      * restore the stack
      */
     movq (%rdi), %rsp
+
+    /*
+     * restore the flags
+     */
+    popfq
 
     /*
      * restore the register state
@@ -55,9 +82,6 @@ thread_do_jump:
     popq %r12
     popq %rbx
     popq %rbp
-
-    /* we assume threads always have their interrupts enabled */
-    sti
 
     /* finally restore the ip */
     ret

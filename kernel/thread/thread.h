@@ -18,6 +18,7 @@ typedef void (*thread_entry_t)(void *arg);
  * The saved state when switching between threads
  */
 typedef struct thread_frame {
+    rflags_t rflags;
     uint64_t r15;
     uint64_t r14;
     uint64_t r13;
@@ -25,7 +26,7 @@ typedef struct thread_frame {
     uint64_t rbx;
     uint64_t rbp;
     uint64_t rip;
-} thread_frame_t;
+} PACKED thread_frame_t;
 
 typedef struct thread {
     // The CPU state of the thread, must be first since its

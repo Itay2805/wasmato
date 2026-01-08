@@ -52,10 +52,7 @@ err_t thread_create(thread_t** out_thread, thread_entry_t callback, void* arg, c
     // as the first parameter, we are going to push to the stack the
     // thread_exit function to ensure it will exit the thread at the end,
     // this also ensures the stack is properly aligned at its entry
-    uintptr_t* stack = thread->stack_start - 16;
-    *--stack = (uintptr_t)thread_exit;
-    thread->cpu_state = (void*)stack - sizeof(*thread->cpu_state);
-    thread->cpu_state->rip = (uintptr_t)thread_entry;
+    thread_reset(thread);
 
     // setup the extended state
     xsave_legacy_region_t* extended_state = (xsave_legacy_region_t*)thread->extended_state;
@@ -77,6 +74,11 @@ void thread_reset(thread_t* thread) {
     uintptr_t* stack = thread->stack_start - 16;
     *--stack = (uintptr_t)thread_exit;
     thread->cpu_state = (void*)stack - sizeof(*thread->cpu_state);
+    thread->cpu_state->rflags = (rflags_t){
+        .always_one = 1,
+        .IF = 1, // we want interrupts
+        .AC = 0 // we want the direct map to be off
+    };
     thread->cpu_state->rbp = 0;
     thread->cpu_state->rip = (uintptr_t)thread_entry;
 }

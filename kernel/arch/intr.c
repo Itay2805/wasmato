@@ -190,6 +190,9 @@ static spinlock_t m_exception_lock = SPINLOCK_INIT;
  * The default exception handler, simply panics...
  */
 static void default_exception_handler(exception_frame_t* ctx) {
+    // give us full access to the direct map
+    unlock_direct_map();
+
     spinlock_acquire(&m_exception_lock);
 
     // reset the spinlock so we can print
@@ -228,10 +231,9 @@ static void default_exception_handler(exception_frame_t* ctx) {
     }
 
     // check if we have threading_old already
-    if (__rdmsr(MSR_IA32_FS_BASE) != 0) {
-        thread_t* thread = scheduler_get_current_thread();
+    thread_t* thread = scheduler_get_current_thread();
+    if (thread != NULL) {
         if (thread != NULL) {
-            ERROR("%p", thread);
             ERROR("Thread: `%.*s`", (int)sizeof(thread->name), thread->name);
         } else {
             ERROR("Thread: <none>");
