@@ -1,17 +1,10 @@
-#include "lib/elf64.h"
 #include "virt.h"
 
-#include <cpuid.h>
-#include <limine_requests.h>
-#include <arch/regs.h>
-
-#include "early.h"
-#include "arch/intrin.h"
-#include "limine.h"
 #include "memory.h"
 #include "phys.h"
-#include "sync/spinlock.h"
+#include "arch/paging.h"
 #include "lib/string.h"
+#include "sync/spinlock.h"
 
 /**
  * Spinlock for mapping virtual pages

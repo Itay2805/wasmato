@@ -11,8 +11,8 @@
 #include <limine_requests.h>
 #include <lib/printf.h>
 
-#include "mem/alloc.h"
-#include "mem/phys.h"
+#include "../mem/kernel/alloc.h"
+#include "../mem/internal/phys.h"
 
 
 static irq_spinlock_t m_debug_lock = IRQ_SPINLOCK_INIT;

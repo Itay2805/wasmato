@@ -1,14 +1,9 @@
 #include "stack.h"
 
-#include <lib/defs.h>
-#include <lib/list.h>
-#include <sync/spinlock.h>
-
-#include "memory.h"
-#include "phys.h"
-#include "virt.h"
-#include "lib/except.h"
 #include "lib/string.h"
+#include "mem/internal/memory.h"
+#include "mem/internal/virt.h"
+#include "sync/spinlock.h"
 
 static void* m_stack_watermark = (void*)STACKS_ADDR_START;
 static irq_spinlock_t m_stack_lock = IRQ_SPINLOCK_INIT;

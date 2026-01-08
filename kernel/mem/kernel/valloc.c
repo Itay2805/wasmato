@@ -1,12 +1,10 @@
 #include "valloc.h"
 
-#include "alloc.h"
-#include "memory.h"
-#include "phys.h"
-#include "virt.h"
-#include "lib/defs.h"
-#include "lib/string.h"
+#include "lib/list.h"
 #include "lib/rbtree/rbtree.h"
+#include "mem/internal/memory.h"
+#include "mem/internal/phys.h"
+#include "mem/internal/virt.h"
 #include "sync/spinlock.h"
 
 typedef union valloc_area {

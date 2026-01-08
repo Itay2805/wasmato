@@ -1,20 +1,10 @@
 #include "early.h"
 
-#include <cpuid.h>
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "limine.h"
 #include "limine_requests.h"
-#include "phys_map.h"
 #include "memory.h"
-#include "phys.h"
-#include "virt.h"
-#include "arch/cpuid.h"
+#include "phys_map.h"
 #include "arch/intrin.h"
-#include "arch/regs.h"
 #include "lib/elf64.h"
-#include "lib/except.h"
 #include "lib/string.h"
 
 //----------------------------------------------------------------------------------------------------------------------

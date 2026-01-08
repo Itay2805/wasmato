@@ -2,16 +2,12 @@
 
 #include <cpuid.h>
 
-#include "lib/string.h"
-
 #include "intrin.h"
-#include "acpi/acpi.h"
-#include "mem/memory.h"
-#include "mem/phys.h"
-#include "mem/phys_map.h"
-#include "mem/virt.h"
-#include "sync/spinlock.h"
+#include "mem/internal/memory.h"
+#include "mem/internal/phys_map.h"
+#include "mem/internal/virt.h"
 #include "time/tsc.h"
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // LAPIC driver

@@ -11,7 +11,7 @@
 #include "arch/intrin.h"
 #include "lib/defs.h"
 #include "lib/list.h"
-#include "mem/alloc.h"
+#include "../mem/kernel/alloc.h"
 #include "sync/spinlock.h"
 
 typedef struct tsc_refine_ctx {

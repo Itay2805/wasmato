@@ -1,13 +1,10 @@
 #include "alloc_internal.h"
 #include "alloc.h"
 
-#include <stdint.h>
-
 #include "valloc.h"
+#include "arch/paging.h"
+#include "lib/assert.h"
 #include "lib/string.h"
-#include "mem/memory.h"
-#include "mem/phys.h"
-#include "sync/spinlock.h"
 
 static atomic_uint_fast64_t m_alloc_binmap;
 static alloc_bin_t m_alloc_bins[64];

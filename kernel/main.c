@@ -1,34 +1,23 @@
-#include <cpuid.h>
-#include <limine_requests.h>
 
-#include "limine.h"
-#include "debug/log.h"
+#include <cpuid.h>
+
+#include "limine_requests.h"
+#include "acpi/acpi.h"
+#include "arch/apic.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
-#include "lib/except.h"
-#include "acpi/acpi.h"
-#include "arch/intrin.h"
 #include "arch/smp.h"
-#include "sync/spinlock.h"
-#include "mem/phys.h"
-#include "mem/virt.h"
-#include "arch/regs.h"
-#include "mem/alloc.h"
-
-#include <stddef.h>
-#include <stdatomic.h>
-#include <arch/apic.h>
-#include <lib/string.h>
-#include <thread/pcpu.h>
-#include <thread/scheduler.h>
-#include <time/tsc.h>
-
-#include "mem/early.h"
-#include "mem/phys_map.h"
-#include "mem/phys.h"
-#include "mem/valloc.h"
+#include "lib/string.h"
+#include "mem/internal/early.h"
+#include "mem/internal/memory.h"
+#include "mem/internal/phys.h"
+#include "mem/internal/phys_map.h"
+#include "mem/internal/virt.h"
+#include "thread/pcpu.h"
+#include "thread/scheduler.h"
+#include "thread/thread.h"
 #include "time/timer.h"
-
+#include "time/tsc.h"
 /**
  * The init thread
  */

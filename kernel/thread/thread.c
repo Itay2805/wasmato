@@ -1,16 +1,12 @@
 #include "thread.h"
 
-#include <arch/gdt.h>
-#include <arch/intrin.h>
-#include <lib/list.h>
-#include <lib/printf.h>
-#include <lib/string.h>
-#include <sync/spinlock.h>
-#include <mem/alloc.h>
-
 #include "scheduler.h"
-#include "mem/stack.h"
-#include "time/tsc.h"
+#include "arch/gdt.h"
+#include "arch/paging.h"
+#include "lib/printf.h"
+#include "lib/string.h"
+#include "mem/kernel/alloc.h"
+#include "mem/kernel/stack.h"
 
 /**
  * The size of the extended state

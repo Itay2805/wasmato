@@ -7,16 +7,6 @@
 #include "thread/pcpu.h"
 #include "thread/scheduler.h"
 
-typedef struct timer_backend {
-    void (*set_deadline)(uint64_t tsc_deadline);
-    void (*clear)(void);
-} timer_backend_t;
-
-/**
- * The timer we are using
- */
-static timer_backend_t m_timer_backend = {};
-
 struct per_core_timers {
     // the tree of timers, we use cached to have a quick
     // access to the min node
@@ -30,15 +20,32 @@ static CPU_LOCAL per_core_timers_t m_timers = {
     .tree = RB_ROOT_CACHED
 };
 
+static bool m_tsc_supported = false;
+
+static void timer_set_deadline(uint64_t tsc_deadline) {
+    // TODO: use static branch instead
+    if (m_tsc_supported) {
+        tsc_timer_set_deadline(tsc_deadline);
+    } else {
+        lapic_timer_set_deadline(tsc_deadline);
+    }
+}
+
+static void timer_clear(void) {
+    if (m_tsc_supported) {
+        tsc_timer_clear();
+    } else {
+        lapic_timer_clear();
+    }
+}
+
 void init_timers(void) {
     if (tsc_deadline_is_supported()) {
         TRACE("timer: using TSC deadline");
-        m_timer_backend.set_deadline = tsc_timer_set_deadline;
-        m_timer_backend.clear = tsc_timer_clear;
+        m_tsc_supported = true;
     } else {
         TRACE("timer: using APIC timer");
-        m_timer_backend.set_deadline = lapic_timer_set_deadline;
-        m_timer_backend.clear = lapic_timer_clear;
+        m_tsc_supported = true;
     }
 }
 
@@ -60,7 +67,7 @@ void timer_set(timer_t* timer, timer_callback_t callback, uint64_t tsc_deadline)
     if (rb_add_cached(&timer->node, pcpu_get_pointer(&m_timers.tree), timer_less) != NULL) {
         // if we are the new leftmost node then we are the next timer to arrive,
         // so set the deadline to us
-        m_timer_backend.set_deadline(tsc_deadline);
+        timer_set_deadline(tsc_deadline);
     }
 
     irq_restore(irq_state);
@@ -83,10 +90,10 @@ void timer_cancel(timer_t* timer) {
         // and that the next timer should arrive later, update the timeout
         if (new_leftmost != NULL) {
             uint64_t new_deadline = containerof(new_leftmost, timer_t, node)->deadline;
-            m_timer_backend.set_deadline(new_deadline);
+            timer_set_deadline(new_deadline);
         } else {
             // no more timers on the core, we can clear the timer
-            m_timer_backend.clear();
+            timer_clear();
         }
     }
 
@@ -131,9 +138,9 @@ void timer_dispatch(void) {
     // if we still have a timer object in here it means that this is the next
     // time we should run it, setup the timer
     if (timer != NULL) {
-        m_timer_backend.set_deadline(timer->deadline);
+        timer_set_deadline(timer->deadline);
     } else {
-        m_timer_backend.clear();
+        timer_clear();
     }
 
     // we are done, its safe to do stuff again

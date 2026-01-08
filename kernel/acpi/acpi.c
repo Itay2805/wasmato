@@ -1,17 +1,11 @@
 #include "acpi.h"
-
-#include <limine_requests.h>
-
-#include "limine.h"
-#include "lib/defs.h"
-
 #include "acpi_tables.h"
-#include "mem/memory.h"
-#include "arch/intrin.h"
-#include "lib/string.h"
-#include "mem/phys.h"
-#include "mem/phys_map.h"
-#include "mem/virt.h"
+
+#include "limine_requests.h"
+#include "arch/paging.h"
+#include "mem/internal/memory.h"
+#include "mem/internal/phys_map.h"
+#include "mem/internal/virt.h"
 
 /**
  * The frequency of the acpi timer

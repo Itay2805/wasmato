@@ -1,16 +1,8 @@
 #pragma once
 
-#include <arch/intr.h>
-#include <mem/memory.h>
-
-#include "lib/defs.h"
-
-#include <stdatomic.h>
-#include <lib/list.h>
-#include <sync/spinlock.h>
-#include <stdnoreturn.h>
-
+#include "arch/regs.h"
 #include "lib/except.h"
+#include "lib/list.h"
 
 typedef void (*thread_entry_t)(void *arg);
 

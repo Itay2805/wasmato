@@ -1,19 +1,14 @@
 #include "intr.h"
 
-#include <mem/phys.h>
-#include <mem/virt.h>
-#include <sync/spinlock.h>
-#include <thread/pcpu.h>
-#include <thread/scheduler.h>
-#include <time/tsc.h>
-
 #include "apic.h"
 #include "gdt.h"
-#include "lib/defs.h"
 #include "debug/log.h"
-#include "intrin.h"
-#include "regs.h"
+#include "mem/internal/virt.h"
+#include "sync/spinlock.h"
+#include "thread/pcpu.h"
+#include "thread/scheduler.h"
 #include "time/timer.h"
+
 
 #define IDT_TYPE_TASK           0x5
 #define IDT_TYPE_INTERRUPT_16   0x6

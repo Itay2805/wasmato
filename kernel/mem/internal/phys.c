@@ -1,20 +1,11 @@
 #include "phys.h"
 
-#include <cpuid.h>
-#include <stdckdint.h>
-#include <limits.h>
-
+#include "early.h"
 #include "limine_requests.h"
 #include "memory.h"
-#include "phys.h"
-
-#include "alloc.h"
-#include "early.h"
 #include "phys_map.h"
-#include "arch/cpuid.h"
+#include "arch/paging.h"
 #include "lib/list.h"
-#include "lib/string.h"
-#include "lib/rbtree/rbtree.h"
 #include "sync/spinlock.h"
 
 typedef struct buddy_free_page {

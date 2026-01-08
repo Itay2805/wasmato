@@ -1,11 +1,8 @@
 #include "gdt.h"
 
-#include <lib/except.h>
-#include <mem/phys.h>
-
-#include "mem/alloc.h"
 #include "sync/spinlock.h"
 #include "thread/pcpu.h"
+
 
 typedef struct tss64 {
     uint32_t reserved_1;

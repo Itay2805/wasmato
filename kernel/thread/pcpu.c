@@ -1,16 +1,9 @@
 #include "pcpu.h"
 
-#include <lib/elf64.h>
-#include <limine.h>
-#include <lib/string.h>
-#include <mem/phys.h>
-
-#include "limine_requests.h"
-#include "arch/apic.h"
 #include "arch/intrin.h"
-#include "mem/alloc.h"
-#include "mem/valloc.h"
-#include "time/tsc.h"
+#include "lib/string.h"
+#include "mem/kernel/alloc.h"
+#include "mem/kernel/valloc.h"
 
 extern char __start_pcpu_data[];
 extern char __stop_pcpu_data[];

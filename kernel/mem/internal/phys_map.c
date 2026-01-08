@@ -1,15 +1,12 @@
 #include "phys_map.h"
 
 #include <cpuid.h>
-#include <stdckdint.h>
 
-#include "alloc.h"
 #include "limine.h"
 #include "limine_requests.h"
+#include "mem/kernel/alloc.h"
 #include "arch/cpuid.h"
-#include "lib/list.h"
-#include "lib/string.h"
-#include "sync/spinlock.h"
+
 
 list_t g_phys_map = LIST_INIT(&g_phys_map);
 irq_spinlock_t g_phys_map_lock = IRQ_SPINLOCK_INIT;
@@ -184,7 +181,7 @@ err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
     bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
 
     uint64_t top_address = 0;
-    CHECK(!ckd_add(&top_address, start, length));
+    CHECK(!__builtin_add_overflow(start, length, &top_address));
 
     phys_map_entry_t* entry;
     list_for_each_entry(entry, &g_phys_map, link) {

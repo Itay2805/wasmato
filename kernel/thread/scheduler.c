@@ -1,18 +1,9 @@
 #include "scheduler.h"
 
-#include <cpuid.h>
-#include <arch/intrin.h>
-#include <arch/smp.h>
-#include <mem/alloc.h>
-#include <mem/stack.h>
-#include <time/tsc.h>
-
 #include "pcpu.h"
-#include "thread.h"
-#include <stdnoreturn.h>
-
-#include "mem/phys.h"
+#include "sync/spinlock.h"
 #include "time/timer.h"
+#include "time/tsc.h"
 
 typedef struct core_scheduler_context {
     // the current thread
