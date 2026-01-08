@@ -165,10 +165,19 @@ static void set_cpu_features(void) {
 
     // PAE - required for long mode
     // OSFXSR/OSXMMEXCPT - required for SSE
-    // SMAP - poor mans protection keys
-    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP);
+    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT);
 
     set_extended_state_features();
+}
+
+static void enable_direct_map_locking() {
+    // we are going to unlock before we are enabling
+    // the locking to ensure that we won't fault on a
+    // stack that is still in the direct map
+    unlock_direct_map();
+
+    // finally enable smap
+    __writecr4(__readcr4() | CR4_SMAP);
 }
 
 static void halt() {
@@ -200,6 +209,7 @@ static void smp_entry(struct limine_mp_info* info) {
     m_smp_count++;
 
     // we can trigger the scheduler,
+    enable_direct_map_locking();
     scheduler_start_per_core();
 
 cleanup:
@@ -308,6 +318,7 @@ void _start() {
     scheduler_wakeup_thread(m_init_thread);
 
     // and we are ready to start the scheduler
+    enable_direct_map_locking();
     scheduler_start_per_core();
 
 cleanup:

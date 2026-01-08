@@ -186,8 +186,10 @@ void* valloc_alloc(size_t size) {
     bool irq_state = irq_spinlock_acquire(&m_valloc_lock);
 
     // allocate a descriptor
+    unlock_direct_map();
     valloc_area_t* new = valloc_allocate_descriptor();
     if (new == NULL) {
+        lock_direct_map();
         irq_spinlock_release(&m_valloc_lock, irq_state);
         return NULL;
     }
@@ -207,9 +209,14 @@ void* valloc_alloc(size_t size) {
         return NULL;
     }
 
+    // we need to re-unlock it after
+    // the virt_alloc finishes
+    unlock_direct_map();
+
     // add node to the tree
     rb_add_cached(&new->node, &m_valloc_root, valloc_area_less);
 
+    lock_direct_map();
     irq_spinlock_release(&m_valloc_lock, irq_state);
 
     return new->start;
@@ -218,6 +225,7 @@ void* valloc_alloc(size_t size) {
 void valloc_free(void* ptr, size_t size) {
     size = ALIGN_UP(size, PAGE_SIZE);
     bool irq_state = irq_spinlock_acquire(&m_valloc_lock);
+    unlock_direct_map();
 
     // find the node of this region
     struct rb_node* node = rb_find(ptr, &m_valloc_root.rb_root, valloc_area_cmp);
@@ -227,12 +235,17 @@ void valloc_free(void* ptr, size_t size) {
     // free the actual memory backing the region
     virt_free(area->start, (area->end - area->start) / PAGE_SIZE);
 
+    // as before, we need to unlock it
+    // again since virt will lock it
+    unlock_direct_map();
+
     // remove it from the tree
     rb_erase_cached(&area->node, &m_valloc_root);
 
     // add back to the freelist
     list_add(&m_valloc_area_freelist, &area->freelist_entry);
 
+    lock_direct_map();
     irq_spinlock_release(&m_valloc_lock, irq_state);
 }
 

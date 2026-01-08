@@ -72,9 +72,9 @@ static void* early_alloc_page(void) {
 // Early mapping utilities
 //----------------------------------------------------------------------------------------------------------------------
 
-#define DIRECT_MAP_ATTRIBUTES   (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX)
+#define DIRECT_MAP_ATTRIBUTES   (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_U)
 
-static uint64_t* early_virt_get_next_level(uint64_t* entry, bool allocate) {
+static uint64_t* early_virt_get_next_level(uint64_t* entry, bool allocate, bool direct) {
     // ensure we don't have a large page in the way
     ASSERT((*entry & IA32_PG_PS) == 0);
 
@@ -89,29 +89,29 @@ static uint64_t* early_virt_get_next_level(uint64_t* entry, bool allocate) {
         }
         memset(phys, 0, PAGE_SIZE);
 
-        *entry = DIRECT_TO_PHYS(phys) | IA32_PG_P | IA32_PG_RW;
+        *entry = DIRECT_TO_PHYS(phys) | IA32_PG_P | IA32_PG_RW | (direct ? IA32_PG_U : 0);
     }
 
     return PHYS_TO_DIRECT(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
-static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool allocate) {
+static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool allocate, bool direct) {
     size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
     size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
     size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
     size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
 
-    uint64_t* pml3 = early_virt_get_next_level(&pml4[index4], allocate);
+    uint64_t* pml3 = early_virt_get_next_level(&pml4[index4], allocate, direct);
     if (pml3 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml2 = early_virt_get_next_level(&pml3[index3], allocate);
+    uint64_t* pml2 = early_virt_get_next_level(&pml3[index3], allocate, direct);
     if (pml2 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml1 = early_virt_get_next_level(&pml2[index2], allocate);
+    uint64_t* pml1 = early_virt_get_next_level(&pml2[index2], allocate, direct);
     if (pml1 == NULL) {
         return NULL;
     }
@@ -122,18 +122,19 @@ static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool allocate) {
 static err_t early_virt_map(
     uint64_t* pml4,
     void* virt, uint64_t phys, size_t num_pages,
-    bool write, bool exec
+    bool write, bool exec, bool direct
 ) {
     err_t err = NO_ERROR;
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE, phys += PAGE_SIZE) {
-        uint64_t* pte = early_virt_get_pte(pml4, virt, true);
+        uint64_t* pte = early_virt_get_pte(pml4, virt, true, direct);
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
         uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A;
         if (!exec) entry |= IA32_PG_NX;
         if (write) entry |= IA32_PG_RW;
+        if (direct) entry |= IA32_PG_U;
 
         // and set it
         CHECK(*pte == 0);
@@ -147,7 +148,7 @@ cleanup:
 static err_t early_virt_unmap_direct(uint64_t* pml4, void* virt) {
     err_t err = NO_ERROR;
 
-    uint64_t* pte = early_virt_get_pte(pml4, virt, false);
+    uint64_t* pte = early_virt_get_pte(pml4, virt, false, true);
     CHECK(pte != NULL);
     CHECK(*pte == (DIRECT_TO_PHYS(virt) | DIRECT_MAP_ATTRIBUTES));
     *pte = 0;
@@ -190,7 +191,7 @@ static err_t early_virt_map_kernel(uint64_t* pml4) {
 
         // map it all
         size_t page_num = DIV_ROUND_UP(pend - paddr, PAGE_SIZE);
-        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, write, exec));
+        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, write, exec, false));
     }
 
 cleanup:
@@ -241,7 +242,7 @@ static err_t early_virt_map_direct(uint64_t* pml4) {
                 pml4,
                 PHYS_TO_DIRECT(entry->base),
                 entry->base, entry->length / PAGE_SIZE,
-                true, false
+                true, false, true
             ));
         }
     }
@@ -271,7 +272,7 @@ static err_t early_virt_map_buddy_bitmap(uint64_t* pml4) {
         void* bitmap_ptr = PHYS_BUDDY_BITMAP_START + bitmap_start;
         void* bitmap_end = PHYS_BUDDY_BITMAP_START + bitmap_start + bitmap_size;
         for (; bitmap_ptr < bitmap_end; bitmap_ptr += PAGE_SIZE) {
-            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, true);
+            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, true, true);
             CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
             // if not allocated already allocate it now

@@ -96,6 +96,7 @@ void* phys_alloc(size_t size) {
     }
 
     bool irq_state = irq_spinlock_acquire(&m_phys_buddy_lock);
+    unlock_direct_map();
 
     // search for a free page in the freelists that has the closest level to what we want
     int block_at_level = 0;
@@ -130,6 +131,7 @@ void* phys_alloc(size_t size) {
         buddy_set_block_allocated(block);
     }
 
+    lock_direct_map();
     irq_spinlock_release(&m_phys_buddy_lock, irq_state);
 
     return block;
@@ -140,6 +142,7 @@ static void phys_free_internal(void* ptr, int level, bool check_allocated) {
     ASSERT(((uintptr_t)ptr % (1UL << level)) == 0);
 
     bool irq_state = irq_spinlock_acquire(&m_phys_buddy_lock);
+    unlock_direct_map();
 
     // mark the block as free right away
     if (check_allocated) {
@@ -184,6 +187,7 @@ static void phys_free_internal(void* ptr, int level, bool check_allocated) {
     list_add(&m_phys_buddy_levels[level].freelist, &block->entry);
     buddy_set_block_free(block);
 
+    lock_direct_map();
     irq_spinlock_release(&m_phys_buddy_lock, irq_state);
 }
 

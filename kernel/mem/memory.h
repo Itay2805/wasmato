@@ -55,3 +55,13 @@
  */
 #define PHYS_TO_DIRECT(x) (void*)((uintptr_t)(x) + DIRECT_MAP_START)
 #define DIRECT_TO_PHYS(x) (uintptr_t)((uintptr_t)(x) - (uintptr_t)DIRECT_MAP_START)
+
+__attribute__((always_inline))
+static inline void unlock_direct_map(void) {
+    asm volatile ("stac" ::: "memory");
+}
+
+__attribute__((always_inline))
+static inline void lock_direct_map(void) {
+    asm volatile ("clac" ::: "memory");
+}

@@ -130,15 +130,13 @@ static uint64_t* virt_get_pte(void* virt, bool allocate) {
     return &pml1[index1];
 }
 
-err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, map_ops_t* ops) {
+static err_t virt_map_locked(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, map_ops_t* ops) {
     err_t err = NO_ERROR;
-
-    bool irq_state = irq_spinlock_acquire(&m_virt_lock);
 
     bool need_tlb_shootdown = false;
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE, phys += PAGE_SIZE) {
-        uint64_t* pte = virt_get_pte(virt, true);
+        uint64_t *pte = virt_get_pte(virt, true);
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
@@ -176,6 +174,19 @@ err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, m
     }
 
 cleanup:
+    return err;
+}
+
+err_t virt_map(void* virt, uint64_t phys, size_t num_pages, map_flags_t flags, map_ops_t* ops) {
+    err_t err = NO_ERROR;
+
+    bool irq_state = irq_spinlock_acquire(&m_virt_lock);
+    unlock_direct_map();
+
+    RETHROW(virt_map_locked(virt, phys, num_pages, flags, ops));
+
+cleanup:
+    lock_direct_map();
     irq_spinlock_release(&m_virt_lock, irq_state);
 
     return err;
@@ -185,6 +196,7 @@ err_t virt_unmap(void* virt, size_t num_pages, unmap_ops_t* ops) {
     err_t err = NO_ERROR;
 
     bool irq_state = irq_spinlock_acquire(&m_virt_lock);
+    unlock_direct_map();
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE) {
         uint64_t* pte = virt_get_pte(virt, false);
@@ -216,6 +228,7 @@ err_t virt_unmap(void* virt, size_t num_pages, unmap_ops_t* ops) {
     // TODO: queue TLB invalidation on all other cores
 
 cleanup:
+    lock_direct_map();
     irq_spinlock_release(&m_virt_lock, irq_state);
 
     return err;
@@ -268,10 +281,14 @@ cleanup:
 static err_t virt_free_page(unmap_ops_t* ops, void* virt, uintptr_t phys) {
     // remap the page into the direct map
     // this should never fail because we have already mapped it once
-    ASSERT(!IS_ERROR(virt_map(PHYS_TO_DIRECT(phys), phys, 1, MAP_FLAG_WRITEABLE, VIRT_MAP_STRICT)));
+    ASSERT(!IS_ERROR(virt_map_locked(PHYS_TO_DIRECT(phys), phys, 1, MAP_FLAG_WRITEABLE, VIRT_MAP_STRICT)));
 
     // return it to the physical allocator
     phys_free(PHYS_TO_DIRECT(phys), PAGE_SIZE);
+
+    // we need to unlock the direct map again since the phys_free
+    // will lock it (and we don't have nesting support)
+    unlock_direct_map();
 
     return NO_ERROR;
 }
