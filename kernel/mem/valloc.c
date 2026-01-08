@@ -35,7 +35,7 @@ static int valloc_area_cmp(const void* ptr, const struct rb_node* node) {
     return 0;
 }
 
-static bool vallod_area_less(struct rb_node* a, const struct rb_node* b) {
+static bool valloc_area_less(struct rb_node* a, const struct rb_node* b) {
     valloc_area_t* aa = containerof(a, valloc_area_t, node);
     valloc_area_t* bb = containerof(b, valloc_area_t, node);
     return aa->start < bb->start;
@@ -73,7 +73,7 @@ static valloc_area_t* valloc_allocate_descriptor(void) {
         }
 
         // add them to the free list
-        size_t count = DIV_ROUND_UP(PAGE_SIZE, sizeof(valloc_area_t));
+        size_t count = PAGE_SIZE / sizeof(valloc_area_t);
         for (size_t i = 0; i < count; i++) {
             list_add(&m_valloc_area_freelist, &areas[i].freelist_entry);
         }
@@ -167,7 +167,8 @@ static bool valloc_first_fit(valloc_area_t* area, size_t size) {
     }
 
     // we could not find any region, take from the bottom of the heap
-    void* would_be_area = first->start - size;
+    void* base = first == NULL ? HEAP_ADDR_END : first->start;
+    void* would_be_area = base - size;
     if (would_be_area < m_valloc_bottom) {
         // if the new area would be under the bottom of the
         // sbrk region then we are out of space
@@ -207,7 +208,7 @@ void* valloc_alloc(size_t size) {
     }
 
     // add node to the tree
-    rb_add_cached(&new->node, &m_valloc_root, vallod_area_less);
+    rb_add_cached(&new->node, &m_valloc_root, valloc_area_less);
 
     irq_spinlock_release(&m_valloc_lock, irq_state);
 

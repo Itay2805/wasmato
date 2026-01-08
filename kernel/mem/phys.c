@@ -101,8 +101,12 @@ void* phys_alloc(size_t size) {
     int block_at_level = 0;
     void* block = NULL;
     for (block_at_level = level; block_at_level < PHYS_BUDDY_MAX_LEVEL; block_at_level++) {
-        block = list_pop(&m_phys_buddy_levels[block_at_level].freelist);
-        if (block != NULL) {
+        list_t* freelist = &m_phys_buddy_levels[block_at_level].freelist;
+        if (!list_is_empty(freelist)) {
+            buddy_free_page_t* page = list_first_entry(freelist, buddy_free_page_t, entry);
+            ASSERT(page->level == block_at_level);
+            list_del(&page->entry);
+            block = page;
             break;
         }
     }
@@ -160,8 +164,6 @@ static void phys_free_internal(void* ptr, int level, bool check_allocated) {
         if (neighbor->level != level) {
             break;
         }
-
-        TRACE("MERGED");
 
         // remove it from the freelist
         list_del(&neighbor->entry);

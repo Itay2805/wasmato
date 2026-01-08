@@ -45,6 +45,11 @@ typedef struct thread {
     void* stack_start;
     void* stack_end;
 
+    // Stacks used for running interrupts, to ensure that
+    // we can properly reschedule from interrupts
+    void* irq_stack_start;
+    void* irq_stack_end;
+
     // the entry and argument to pass to the entry
     thread_entry_t entry;
     void* arg;

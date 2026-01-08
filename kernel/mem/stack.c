@@ -20,8 +20,12 @@ err_t stack_alloc(size_t stack_size, void** out_stack_start, void** out_stack_en
 
     bool irq_state = irq_spinlock_acquire(&m_stack_lock);
 
-    size_t num_pages = SIZE_TO_PAGES(stack_size);
+    // add an extra page for the guard itself
     CHECK((stack_size % PAGE_SIZE) == 0);
+    stack_size += PAGE_SIZE;
+
+    // convert into a page count
+    size_t num_pages = SIZE_TO_PAGES(stack_size);
 
     // TODO: free list of stacks that are not used right now
 

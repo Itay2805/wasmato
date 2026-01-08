@@ -36,6 +36,17 @@ typedef struct gdt_entries {
     tss64_entry_t tss;
 } PACKED gdt_entries_t;
 
+typedef enum tss_ist {
+    TSS_IST_IRQ,
+    TSS_IST_EXCEPTION,
+    TSS_IST_NMI,
+    TSS_IST_DB,
+    TSS_IST_MAX,
+} tss_ist_t;
+STATIC_ASSERT(TSS_IST_MAX <= 7);
+
 void init_gdt(void);
 
 void init_tss(void);
+
+void tss_set_irq_stack(void* rsp);

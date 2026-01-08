@@ -26,6 +26,7 @@
 #include "mem/early.h"
 #include "mem/phys_map.h"
 #include "mem/phys.h"
+#include "mem/valloc.h"
 #include "time/timer.h"
 
 /**
@@ -182,10 +183,10 @@ static void smp_entry(struct limine_mp_info* info) {
     //
     // Start by setting up the per-cpu context
     //
+    init_gdt();
     set_cpu_features();
     switch_page_table();
     pcpu_init_per_core(info->extra_argument);
-    init_gdt();
     init_tss();
     init_idt();
 
@@ -282,6 +283,10 @@ void _start() {
                 // start it up
                 response->cpus[i]->extra_argument = i;
                 response->cpus[i]->goto_address = smp_entry;
+            }
+
+            while (m_smp_count != i + 1) {
+                cpu_relax();
             }
         }
     } else {

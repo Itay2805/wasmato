@@ -15,7 +15,7 @@ KERNEL			:= tomatos
 #-----------------------------------------------------------------------------------------------------------------------
 
 # Are we compiling as debug or not
-DEBUG 			?= 0
+DEBUG 			?= 1
 
 ifeq ($(DEBUG),1)
 OPTIMIZE		?= 0
@@ -178,7 +178,7 @@ run: $(IMAGE_NAME).hdd
 		-cpu host,+invtsc,+tsc-deadline \
 		-machine q35 \
 		-m 256M \
-		-smp 1 \
+		-smp 4 \
 		-s \
 		-hda $(IMAGE_NAME).hdd \
 		-debugcon stdio \

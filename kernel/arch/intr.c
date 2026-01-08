@@ -8,6 +8,7 @@
 #include <time/tsc.h>
 
 #include "apic.h"
+#include "gdt.h"
 #include "lib/defs.h"
 #include "debug/log.h"
 #include "intrin.h"
@@ -350,66 +351,57 @@ static void timer_interrupt_handler(interrupt_frame_t* frame) {
 
 /**
  * All interrupt handler entries
+ * TODO: make readonly after boot
  */
 static idt_entry_t m_idt_entries[256];
 
 /**
  * Set a single idt entry
  */
-static void set_idt_entry(int vector, void* func, int ist, bool cli) {
+static void set_idt_entry(int vector, void* func, tss_ist_t ist, bool cli) {
     m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)func & 0xFFFF);
     m_idt_entries[vector].handler_high = (uint64_t) ((uintptr_t)func >> 16);
     m_idt_entries[vector].gate_type = cli ? IDT_TYPE_INTERRUPT_32 : IDT_TYPE_TRAP_32;
-    m_idt_entries[vector].selector = 8;
+    m_idt_entries[vector].selector = offsetof(gdt_entries_t, code);
     m_idt_entries[vector].present = 1;
     m_idt_entries[vector].ring = 0;
-    m_idt_entries[vector].ist = ist;
+    m_idt_entries[vector].ist = ist + 1;
 }
 
 void init_idt(void) {
-    //
-    // IST usage:
-    //  - 0: <never used>
-    //  - 1: normal interrupts
-    //  - 2: page fault
-    //  - 3: nmi
-    //  - 4: double fault
-    //  - 5:
-    //  - 6:
-    //
-    set_idt_entry(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, 1, true);
-    set_idt_entry(EXCEPT_IA32_DEBUG, exception_handler_0x01, 1, true);
-    set_idt_entry(EXCEPT_IA32_NMI, exception_handler_0x02, 3, true);
-    set_idt_entry(EXCEPT_IA32_BREAKPOINT, exception_handler_0x03, 1, true);
-    set_idt_entry(EXCEPT_IA32_OVERFLOW, exception_handler_0x04, 1, true);
-    set_idt_entry(EXCEPT_IA32_BOUND, exception_handler_0x05, 1, true);
-    set_idt_entry(EXCEPT_IA32_INVALID_OPCODE, exception_handler_0x06, 1, true);
-    set_idt_entry(0x07, exception_handler_0x07, 1, true);
-    set_idt_entry(EXCEPT_IA32_DOUBLE_FAULT, exception_handler_0x08, 4, true);
-    set_idt_entry(0x09, exception_handler_0x09, 1, true);
-    set_idt_entry(EXCEPT_IA32_INVALID_TSS, exception_handler_0x0A, 1, true);
-    set_idt_entry(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, 1, true);
-    set_idt_entry(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, 1, true);
-    set_idt_entry(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, 1, true);
-    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, 2, true);
-    set_idt_entry(0x0F, exception_handler_0x0F, 1, true);
-    set_idt_entry(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, 1, true);
-    set_idt_entry(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, 1, true);
-    set_idt_entry(EXCEPT_IA32_MACHINE_CHECK, exception_handler_0x12, 1, true);
-    set_idt_entry(EXCEPT_IA32_SIMD, exception_handler_0x13, 1, true);
-    set_idt_entry(0x14, exception_handler_0x14, 1, true);
-    set_idt_entry(0x15, exception_handler_0x15, 1, true);
-    set_idt_entry(0x16, exception_handler_0x16, 1, true);
-    set_idt_entry(0x17, exception_handler_0x17, 1, true);
-    set_idt_entry(0x18, exception_handler_0x18, 1, true);
-    set_idt_entry(0x19, exception_handler_0x19, 1, true);
-    set_idt_entry(0x1A, exception_handler_0x1A, 1, true);
-    set_idt_entry(0x1B, exception_handler_0x1B, 1, true);
-    set_idt_entry(0x1C, exception_handler_0x1C, 1, true);
-    set_idt_entry(0x1D, exception_handler_0x1D, 1, true);
-    set_idt_entry(0x1E, exception_handler_0x1E, 1, true);
-    set_idt_entry(0x1F, exception_handler_0x1F, 1, true);
-    set_idt_entry(0x20, timer_interrupt_handler, 0, true);
+    set_idt_entry(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI, true);
+    set_idt_entry(EXCEPT_IA32_BREAKPOINT, exception_handler_0x03, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_OVERFLOW, exception_handler_0x04, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_BOUND, exception_handler_0x05, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_INVALID_OPCODE, exception_handler_0x06, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x07, exception_handler_0x07, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_DOUBLE_FAULT, exception_handler_0x08, TSS_IST_DB, true);
+    set_idt_entry(0x09, exception_handler_0x09, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_INVALID_TSS, exception_handler_0x0A, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x0F, exception_handler_0x0F, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_MACHINE_CHECK, exception_handler_0x12, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_SIMD, exception_handler_0x13, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x14, exception_handler_0x14, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x15, exception_handler_0x15, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x16, exception_handler_0x16, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x17, exception_handler_0x17, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x18, exception_handler_0x18, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x19, exception_handler_0x19, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x1A, exception_handler_0x1A, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x1B, exception_handler_0x1B, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x1C, exception_handler_0x1C, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x1D, exception_handler_0x1D, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x1E, exception_handler_0x1E, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x1F, exception_handler_0x1F, TSS_IST_EXCEPTION, true);
+    set_idt_entry(0x20, timer_interrupt_handler, TSS_IST_IRQ, true);
 
     idt_t idt = {
         .limit = sizeof(m_idt_entries) - 1,

@@ -35,13 +35,15 @@ err_t thread_create(thread_t** out_thread, thread_entry_t callback, void* arg, c
     CHECK_ERROR(thread != NULL, ERROR_OUT_OF_MEMORY);
     memset(thread, 0, thread_total_size);
 
-    // allocate the stack
+    // allocate the stacks
     RETHROW(stack_alloc(SIZE_32KB, &thread->stack_start, &thread->stack_end));
+    RETHROW(stack_alloc(PAGE_SIZE, &thread->irq_stack_start, &thread->irq_stack_end));
+    TRACE("%p-%p | %p-%p", thread->stack_start, thread->stack_end, thread->irq_stack_start, thread->irq_stack_end);
 
     // set the name
     va_list va;
     va_start(va, name_fmt);
-    snprintf_(thread->name, sizeof(thread->name) - 1, name_fmt, va);
+    vsnprintf_(thread->name, sizeof(thread->name) - 1, name_fmt, va);
     va_end(va);
 
     // remember the entry
@@ -100,6 +102,9 @@ void thread_switch(thread_t* from, thread_t* to) {
     // TODO: support for xrstors when available
     __builtin_ia32_xrstor64(to->extended_state, ~0ull);
 
+    // set the kernel stack
+    tss_set_irq_stack(to->irq_stack_start - 16);
+
     // and now we can jump to the thread
     thread_do_switch(from, to);
 }
@@ -108,6 +113,9 @@ void thread_jump(thread_t* to) {
     // Restore the extended state
     // TODO: support for xrstors when available
     __builtin_ia32_xrstor64(to->extended_state, ~0ull);
+
+    // set the kernel stack
+    tss_set_irq_stack(to->irq_stack_start - 16);
 
     // and now we can jump to the thread
     thread_do_jump(to);

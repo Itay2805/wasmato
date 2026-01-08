@@ -9,6 +9,7 @@
 #include "arch/apic.h"
 #include "arch/intrin.h"
 #include "mem/alloc.h"
+#include "mem/valloc.h"
 #include "time/tsc.h"
 
 extern char __start_pcpu_data[];
@@ -58,10 +59,10 @@ err_t pcpu_init_per_core(int cpu_id) {
     err_t err = NO_ERROR;
 
     // TODO: how to find the correct alignment dynamically?
-    char* data = phys_alloc(__stop_pcpu_data - __start_pcpu_data);
+    char* data = valloc_alloc(__stop_pcpu_data - __start_pcpu_data);
     CHECK_ERROR(data != NULL, ERROR_OUT_OF_MEMORY);
 
-    size_t offset =  data - __start_pcpu_data;
+    size_t offset = data - __start_pcpu_data;
     __wrmsr(MSR_IA32_FS_BASE, offset);
 
     m_all_fs_bases[cpu_id] = offset;
@@ -74,10 +75,6 @@ cleanup:
 
 int get_cpu_id() {
     return m_cpu_id;
-}
-
-bool pcpu_check_timer(void) {
-    return true;
 }
 
 void* pcpu_get_pointer(__seg_fs void* ptr) {
