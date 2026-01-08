@@ -77,7 +77,6 @@ void thread_reset(thread_t* thread) {
     thread->cpu_state->rflags = (rflags_t){
         .always_one = 1,
         .IF = 1, // we want interrupts
-        .AC = 0 // we want the direct map to be off
     };
     thread->cpu_state->rbp = 0;
     thread->cpu_state->rip = (uintptr_t)thread_entry;

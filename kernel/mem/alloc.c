@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "valloc.h"
 #include "lib/string.h"
 #include "mem/memory.h"
 #include "mem/phys.h"
@@ -43,8 +44,7 @@ static int alloc_bin_index(size_t x) {
 	return m_alloc_bin_tab[x/128-4] + 16;
 }
 
-static int alloc_bin_index_up(size_t x)
-{
+static int alloc_bin_index_up(size_t x) {
 	x = x / SIZE_ALIGN - 1;
 	if (x <= 32) return x;
 	x--;
@@ -52,34 +52,39 @@ static int alloc_bin_index_up(size_t x)
 	return m_alloc_bin_tab[x/128-4] + 17;
 }
 
-/* Expand the heap in-place if brk can be used, or otherwise via mmap,
- * using an exponential lower bound on growth by mmap to make
- * fragmentation asymptotically irrelevant. The size argument is both
- * an input and an output, since the caller needs to know the size
- * allocated, which will be larger than requested due to page alignment
- * and mmap minimum size rules. The caller is responsible for locking
- * to prevent concurrent calls. */
+static void* alloc_expand_heap(size_t* pn) {
+    static void* brk;
+    static unsigned mmap_step;
+    size_t n = *pn;
 
-static void* alloc_expand_heap(size_t *pn) {
-	static unsigned mmap_step;
-	size_t n = *pn;
+    if (n > SIZE_MAX / 2 - PAGE_SIZE) {
+        return NULL;
+    }
+    n += -n & PAGE_SIZE-1;
 
-	if (n > SIZE_MAX / 2 - PAGE_SIZE) {
-		return NULL;
-	}
-	n += -n & PAGE_SIZE-1;
+    if (!brk) {
+        brk = valloc_expand(0);
+    }
 
-	size_t min = (size_t)PAGE_SIZE << mmap_step / 2;
-	if (n < min) n = min;
+    if (n < (void*)SIZE_MAX - brk) {
+        void* newbrk = valloc_expand(n);
+        void* oldbrk = brk;
+        *pn = newbrk - oldbrk;
+        brk = newbrk;
+        return oldbrk;
+    }
 
-	void* area = phys_alloc(n);
-	if (area == NULL) {
-		return NULL;
-	}
+    size_t min = (size_t)PAGE_SIZE << mmap_step / 2;
+    if (n < min) n = min;
+    void* area = valloc_alloc(n);
+    if (area == NULL) {
+        return NULL;
+    }
 
-	*pn = n;
-	mmap_step++;
-	return area;
+    *pn = n;
+    mmap_step++;
+    return area;
+
 }
 
 static alloc_chunk_t* alloc_chunk(size_t n) {
@@ -181,7 +186,7 @@ static void* alloc_internal(size_t n) {
 
 	if (n > MMAP_THRESHOLD) {
 		size_t len = n + OVERHEAD + PAGE_SIZE - 1 & -PAGE_SIZE;
-		char* base = phys_alloc(len);
+		char* base = valloc_alloc(len);
 		if (base == NULL) {
 			return NULL;
 		}
@@ -286,7 +291,7 @@ static void alloc_unmap_chunk(alloc_chunk_t* self) {
 	char *base = (char *)self - extra;
 	size_t len = CHUNK_SIZE(self) + extra;
 	ASSERT((extra & 1) == 0);
-	phys_free(base, len);
+	valloc_free(base, len);
 }
 
 void* mem_alloc(size_t size, size_t align) {

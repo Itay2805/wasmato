@@ -15,7 +15,7 @@ KERNEL			:= tomatos
 #-----------------------------------------------------------------------------------------------------------------------
 
 # Are we compiling as debug or not
-DEBUG 			?= 1
+DEBUG 			?= 0
 
 ifeq ($(DEBUG),1)
 OPTIMIZE		?= 0
@@ -56,8 +56,8 @@ CFLAGS			+= -flto -g
 CFLAGS			+= -fno-omit-frame-pointer -fvisibility=hidden
 CFLAGS			+= -isystem $(shell $(CC) --print-resource-dir)/include
 CFLAGS			+= -Ikernel
-CFLAGS			+= -Ilib/flanterm/src
 CFLAGS			+= -Ilib/limine-protocol/include
+CFLAGS			+= -Wno-unused-label
 
 #
 # Linker flags
@@ -99,10 +99,6 @@ CFLAGS 			+= -DSTB_SPRINTF_NOFLOAT
 # Get list of source files
 SRCS 		:= $(shell find kernel -name '*.c')
 SRCS 		+= $(shell find kernel -name '*.S')
-
-# Add the flanterm code for early console
-SRCS 		+= lib/flanterm/src/flanterm.c
-SRCS 		+= lib/flanterm/src/flanterm_backends/fb.c
 
 # The objects/deps
 OBJS 		:= $(SRCS:%=$(OBJS_DIR)/%.o)
@@ -186,5 +182,7 @@ run: $(IMAGE_NAME).hdd
 		-s \
 		-hda $(IMAGE_NAME).hdd \
 		-debugcon stdio \
+		-monitor tcp:127.0.0.1:5555,server,nowait \
 		-no-reboot \
 	 	-no-shutdown
+

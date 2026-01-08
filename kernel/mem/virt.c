@@ -187,7 +187,7 @@ err_t virt_unmap(void* virt, size_t num_pages, unmap_ops_t* ops) {
     bool irq_state = irq_spinlock_acquire(&m_virt_lock);
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE) {
-        uint64_t* pte = virt_get_pte(virt, true);
+        uint64_t* pte = virt_get_pte(virt, false);
         if (pte == NULL) {
             if (ops && ops->unmapped_page) {
                 RETHROW(ops->unmapped_page(ops, virt));
@@ -234,10 +234,6 @@ err_t init_virt(void) {
 }
 
 void switch_page_table(void) {
-    // the stack is still in the direct map
-    // don't lock it
-    unlock_direct_map();
-
     // switch to the page table
     __writecr3(DIRECT_TO_PHYS(m_pml4));
 }

@@ -190,9 +190,6 @@ static spinlock_t m_exception_lock = SPINLOCK_INIT;
  * The default exception handler, simply panics...
  */
 static void default_exception_handler(exception_frame_t* ctx) {
-    // give us full access to the direct map
-    unlock_direct_map();
-
     spinlock_acquire(&m_exception_lock);
 
     // reset the spinlock so we can print
