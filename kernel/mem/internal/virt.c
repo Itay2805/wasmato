@@ -158,7 +158,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         CHECK(vmar->region.start <= ptr && ptr < vmar->bump_alloc_top);
 
         // ensure its because of an unpresent page
-        CHECK(code == IA32_PF_EC_P);
+        CHECK((code & IA32_PF_EC_P) == 0);
 
         // allocate a page for it
         void* page = phys_alloc(PAGE_SIZE);

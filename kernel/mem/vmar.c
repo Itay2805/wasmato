@@ -75,8 +75,6 @@ static int vmar_cmp_overlap(const void* key, const struct rb_node* node) {
     const vmar_region_t* region = containerof(node, vmar_region_t, node);
 
     // if overlaps then
-    TRACE("%p", ctx);
-    TRACE("%p", region);
     if (ctx->end >= region->start && region->end >= ctx->start) {
         return 0;
     }
@@ -233,7 +231,7 @@ vmar_region_t* vmar_find_object(vmar_t* vmar, void* ptr) {
             .start = ptr,
             .end = ptr + 1
         };
-        struct rb_node* node = rb_find(ptr, &vmar->root, vmar_cmp_overlap);
+        struct rb_node* node = rb_find(&key, &vmar->root, vmar_cmp_overlap);
         if (node == NULL) {
             return NULL;
         }

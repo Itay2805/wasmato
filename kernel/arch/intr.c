@@ -383,7 +383,7 @@ void init_idt(void) {
     set_idt_entry(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, TSS_IST_EXCEPTION, true);
     set_idt_entry(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, TSS_IST_EXCEPTION, true);
     set_idt_entry(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, TSS_IST_EXCEPTION, true);
+    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, -1, true);
     set_idt_entry(0x0F, exception_handler_0x0F, TSS_IST_EXCEPTION, true);
     set_idt_entry(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, TSS_IST_EXCEPTION, true);
     set_idt_entry(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, TSS_IST_EXCEPTION, true);
