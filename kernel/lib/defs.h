@@ -36,6 +36,7 @@
 #define DIV_ROUND_UP(a, b) (((a) + ((b) - 1)) / (b))
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 #define SIGN_EXTEND(x, size) \
     ({ \

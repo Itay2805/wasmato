@@ -1,8 +1,8 @@
 #include "phys.h"
 
+#include "direct.h"
 #include "early.h"
 #include "limine_requests.h"
-#include "memory.h"
 #include "phys_map.h"
 #include "arch/paging.h"
 #include "lib/list.h"
@@ -59,24 +59,27 @@ static int get_level_by_size(size_t size) {
 }
 
 static bool buddy_is_block_free(void* ptr) {
-    uintptr_t addr = DIRECT_TO_PHYS(ptr);
+    uintptr_t addr = direct_to_phys(ptr);
     size_t index = (addr / PAGE_SIZE) / 8;
     size_t shift = (addr / PAGE_SIZE) % 8;
-    return (PHYS_BUDDY_BITMAP_START[index] >> shift) & 1;
+    uint8_t* buddy_bitmap = g_buddy_bitmap_vmar.region.start;
+    return (buddy_bitmap[index] >> shift) & 1;
 }
 
 static void buddy_set_block_allocated(void* ptr) {
-    uintptr_t addr = DIRECT_TO_PHYS(ptr);
+    uintptr_t addr = direct_to_phys(ptr);
     size_t index = (addr / PAGE_SIZE) / 8;
     size_t shift = (addr / PAGE_SIZE) % 8;
-    PHYS_BUDDY_BITMAP_START[index] &= ~(1U << shift);
+    uint8_t* buddy_bitmap = g_buddy_bitmap_vmar.region.start;
+    buddy_bitmap[index] &= ~(1U << shift);
 }
 
 static void buddy_set_block_free(void* ptr) {
-    uintptr_t addr = DIRECT_TO_PHYS(ptr);
+    uintptr_t addr = direct_to_phys(ptr);
     size_t index = (addr / PAGE_SIZE) / 8;
     size_t shift = (addr / PAGE_SIZE) % 8;
-    PHYS_BUDDY_BITMAP_START[index] |= 1U << shift;
+    uint8_t* buddy_bitmap = g_buddy_bitmap_vmar.region.start;
+    buddy_bitmap[index] |= 1U << shift;
 }
 
 void* phys_alloc(size_t size) {
@@ -256,25 +259,25 @@ err_t init_phys(void) {
     for (int i = 0; i < response->entry_count; i++) {
         struct limine_memmap_entry* entry = response->entries[i];
         if (entry->type == LIMINE_MEMMAP_USABLE) {
-            void* start = PHYS_TO_DIRECT(entry->base);
-            void* end = PHYS_TO_DIRECT(entry->base + entry->length);
+            void* start = phys_to_direct(entry->base);
+            void* end = phys_to_direct(entry->base + entry->length);
 
             // if this is below the early allocator
             // then its already in use
             if (early_alloc_top >= end) {
-                TRACE("memory: \t%016lx-%016lx: used by early allocator", DIRECT_TO_PHYS(start), DIRECT_TO_PHYS(end) - 1);
+                TRACE("memory: \t%016lx-%016lx: used by early allocator", direct_to_phys(start), direct_to_phys(end) - 1);
                 continue;
             }
 
             // if the start is below the bump then start freeing
             // from the bump
             if (start < early_alloc_top) {
-                TRACE("memory: \t%016lx-%016lx: used by early allocator", DIRECT_TO_PHYS(start), DIRECT_TO_PHYS(early_alloc_top) - 1);
+                TRACE("memory: \t%016lx-%016lx: used by early allocator", direct_to_phys(start), direct_to_phys(early_alloc_top) - 1);
                 start = early_alloc_top;
             }
 
             // and we can free it now
-            TRACE("memory: \t%016lx-%016lx: free", DIRECT_TO_PHYS(start), DIRECT_TO_PHYS(end) - 1);
+            TRACE("memory: \t%016lx-%016lx: free", direct_to_phys(start), direct_to_phys(end) - 1);
             RETHROW(phys_add_memory(start, end));
         }
     }
@@ -305,9 +308,9 @@ err_t reclaim_bootloader_memory(void) {
 
         // remember the values, the struct might change once we
         // convert the physical memory region
-        void* start = PHYS_TO_DIRECT(to_reclaim->start);
-        void* end = PHYS_TO_DIRECT(to_reclaim->end + 1);
-        TRACE("memory: \t%016lx-%016lx", DIRECT_TO_PHYS(start), DIRECT_TO_PHYS(end) - 1);
+        void* start = phys_to_direct(to_reclaim->start);
+        void* end = phys_to_direct(to_reclaim->end + 1);
+        TRACE("memory: \t%016lx-%016lx", direct_to_phys(start), direct_to_phys(end) - 1);
 
         // mark as ram
         phys_map_convert_locked(PHYS_MAP_RAM, to_reclaim->start, (to_reclaim->end + 1) - to_reclaim->start);

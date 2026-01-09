@@ -7,7 +7,10 @@
     (type*)mem_alloc(sizeof(type), alignof(type))
 
 #define free_type(type, ptr) \
-    mem_free(ptr, sizeof(type), alignof(type))
+    do { \
+        type* __ptr = ptr; \
+        mem_free(__ptr, sizeof(type), alignof(type)); \
+    } while (0)
 
 #define alloc_array(type, count) \
     (type*)mem_alloc(sizeof(type) * (count), alignof(type))

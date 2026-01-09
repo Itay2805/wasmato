@@ -3,7 +3,7 @@
 #include <cpuid.h>
 
 #include "intrin.h"
-#include "mem/internal/memory.h"
+#include "mem/internal/direct.h"
 #include "mem/internal/phys_map.h"
 #include "mem/internal/virt.h"
 #include "time/tsc.h"
@@ -146,7 +146,7 @@ err_t init_lapic(void) {
     // get the address
     uintptr_t addr = apic_base.apic_base << 12;
     CHECK(addr == 0xFEE00000, "Invalid APIC base 0x%lx", addr);
-    m_xapic_base = PHYS_TO_DIRECT(addr);
+    m_xapic_base = phys_to_direct(addr);
 
     // mark it as mmio, ensuring it is not used by anything else already
     phys_map_type_t type;
@@ -164,11 +164,12 @@ err_t init_lapic(void) {
 
         // make sure the apic is mapped properly, according to the spec the
         // range should be marked as "Strong Uncacheable"
-        RETHROW(virt_map(
-            m_xapic_base, addr, 1,
-            MAP_FLAG_WRITEABLE | MAP_FLAG_UNCACHEABLE,
-            VIRT_MAP_STRICT
-        ));
+        CHECK_FAIL();
+        // RETHROW(virt_map(
+        //     m_xapic_base, addr, 1,
+        //     MAP_FLAG_WRITEABLE | MAP_FLAG_UNCACHEABLE,
+        //     VIRT_MAP_STRICT
+        // ));
     }
 
     // if we don't have TSC deadline calibrate the lapic frequency
@@ -201,7 +202,7 @@ err_t init_lapic_per_core(void) {
         // ensure we are using xapic across all cores, and that
         // the apic address is the same for all of them
         CHECK(!m_x2apic_mode);
-        CHECK(m_xapic_base == PHYS_TO_DIRECT(apic_base.apic_base << 12));
+        CHECK(m_xapic_base == phys_to_direct(apic_base.apic_base << 12));
     }
 
     // set the spurious vector

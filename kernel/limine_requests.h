@@ -6,7 +6,6 @@ extern volatile struct limine_framebuffer_request g_limine_framebuffer_request;
 extern volatile struct limine_bootloader_info_request g_limine_bootloader_info_request;
 extern volatile struct limine_hhdm_request g_limine_hhdm_request;
 extern volatile struct limine_memmap_request g_limine_memmap_request;
-extern volatile struct limine_executable_file_request g_limine_executable_file_request;
 extern volatile struct limine_module_request g_limine_module_request;
 extern volatile struct limine_rsdp_request g_limine_rsdp_request;
 extern volatile struct limine_executable_address_request g_limine_executable_address_request;

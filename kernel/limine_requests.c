@@ -48,12 +48,6 @@ volatile struct limine_memmap_request g_limine_memmap_request = {
     .revision = 0, .response = NULL
 };
 
-__attribute__((section(".limine_requests")))
-volatile struct limine_executable_file_request g_limine_executable_file_request = {
-    .id = LIMINE_EXECUTABLE_FILE_REQUEST_ID,
-    .revision = 0, .response = NULL
-};
-
 static struct limine_internal_module* m_internal_modules[] = {
     
 };

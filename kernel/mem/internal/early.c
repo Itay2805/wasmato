@@ -1,11 +1,13 @@
 #include "early.h"
 
+#include "direct.h"
 #include "limine_requests.h"
-#include "memory.h"
 #include "phys_map.h"
 #include "arch/intrin.h"
+#include "arch/paging.h"
 #include "lib/elf64.h"
 #include "lib/string.h"
+#include "mem/vmars.h"
 
 //----------------------------------------------------------------------------------------------------------------------
 // Early page allocator
@@ -34,7 +36,7 @@ static void early_alloc_next_region(void) {
     }
 
     // find the current top
-    m_early_alloc_top = PHYS_TO_DIRECT(response->entries[m_early_alloc_current_index]->base);
+    m_early_alloc_top = phys_to_direct(response->entries[m_early_alloc_current_index]->base);
 }
 
 static void* early_alloc_page(void) {
@@ -50,7 +52,7 @@ static void* early_alloc_page(void) {
     // check if we have finished the range, if so advance to the next range
     // for more pages to allocate from
     struct limine_memmap_response* response = g_limine_memmap_request.response;
-    void* region_top = PHYS_TO_DIRECT(response->entries[m_early_alloc_current_index]->base) + response->entries[m_early_alloc_current_index]->length;
+    void* region_top = phys_to_direct(response->entries[m_early_alloc_current_index]->base) + response->entries[m_early_alloc_current_index]->length;
     if (m_early_alloc_top >= region_top) {
         early_alloc_next_region();
     }
@@ -79,10 +81,10 @@ static uint64_t* early_virt_get_next_level(uint64_t* entry, bool allocate, bool 
         }
         memset(phys, 0, PAGE_SIZE);
 
-        *entry = DIRECT_TO_PHYS(phys) | IA32_PG_P | IA32_PG_RW | (direct ? IA32_PG_U : 0);
+        *entry = direct_to_phys(phys) | IA32_PG_P | IA32_PG_RW | (direct ? IA32_PG_U : 0);
     }
 
-    return PHYS_TO_DIRECT(*entry & PAGING_4K_ADDRESS_MASK);
+    return phys_to_direct(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
 static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool allocate, bool direct) {
@@ -140,7 +142,7 @@ static err_t early_virt_unmap_direct(uint64_t* pml4, void* virt) {
 
     uint64_t* pte = early_virt_get_pte(pml4, virt, false, true);
     CHECK(pte != NULL);
-    CHECK(*pte == (DIRECT_TO_PHYS(virt) | DIRECT_MAP_ATTRIBUTES));
+    CHECK(*pte == (direct_to_phys(virt) | DIRECT_MAP_ATTRIBUTES));
     *pte = 0;
     __invlpg(virt);
 
@@ -152,36 +154,80 @@ cleanup:
 // Initialization of all the mappings
 //----------------------------------------------------------------------------------------------------------------------
 
-static err_t early_virt_map_kernel(uint64_t* pml4) {
+extern char __kernel_start[];
+extern char __kernel_limine_requests_start[];
+extern char __kernel_text_start[];
+extern char __kernel_rodata_start[];
+extern char __kernel_data_start[];
+extern char __kernel_end[];
+
+static err_t early_map_kernel(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
-    CHECK(g_limine_executable_file_request.response != NULL);
-    void* elf_base = g_limine_executable_file_request.response->executable_file->address;
-    Elf64_Ehdr* ehdr = elf_base;
-    Elf64_Phdr* phdrs = elf_base + ehdr->e_phoff;
+    // The code region is always at -2gb of the upper half
+    void* code_region = g_upper_half_vmar.region.end - SIZE_2GB + 1;
+    CHECK(code_region >= g_upper_half_vmar.region.start);
+    RETHROW(vmar_allocate_static(
+        &g_upper_half_vmar,
+        &g_code_vmar,
+        VMAR_SPECIFIC, code_region - g_upper_half_vmar.region.start,
+        SIZE_2GB,
+        0
+    ));
 
+    // reserve the space for the kernel itself
+    CHECK((void*)__kernel_start >= code_region);
+    RETHROW(vmar_allocate_static(
+        &g_code_vmar,
+        &g_kernel_vmar,
+        VMAR_SPECIFIC, (void*)__kernel_start - code_region,
+        __kernel_end - __kernel_start,
+        0
+    ));
+
+    // get the physical and virtual base, and ensure that they are the same
+    // as what we expect from the kernel start symbol
     CHECK(g_limine_executable_address_request.response != NULL);
     uintptr_t physical_base = g_limine_executable_address_request.response->physical_base;
     uintptr_t virtual_base = g_limine_executable_address_request.response->virtual_base;
+    CHECK(virtual_base == (uintptr_t)__kernel_start);
 
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        if (phdrs[i].p_type != PT_LOAD) {
-            continue;
-        }
+    // and now go over the sections (we just hard code them) and map
+    // them properly
+    // TODO: something better than this? but I also don't want to look at
+    //       the exec file from limine
+    struct {
+        vmar_t* vmar;
+        void* start;
+        void* end;
+        uint8_t write : 1;
+        uint8_t exec: 1;
+    } sections[] = {
+        { &g_kernel_limine_requests_vmar, __kernel_limine_requests_start, __kernel_text_start, false, false },
+        { &g_kernel_text_vmar, __kernel_text_start, __kernel_rodata_start, false, true },
+        { &g_kernel_rodata_vmar, __kernel_rodata_start, __kernel_data_start, false, false },
+        { &g_kernel_data_vmar, __kernel_data_start, __kernel_end, true, false },
+    };
+    for (int i = 0; i < ARRAY_LENGTH(sections); i++) {
+        void* vaddr = (void*)sections[i].start;
+        void* vend = (void*)sections[i].end;
 
-        void* vaddr = (void*)phdrs[i].p_vaddr;
-        void* vend = (void*)phdrs[i].p_vaddr + phdrs[i].p_memsz;
+        // reserve in the vmar
+        RETHROW(vmar_allocate_static(
+            &g_kernel_vmar,
+            sections[i].vmar,
+            VMAR_SPECIFIC,
+            vaddr - (void*)__kernel_start,
+            vend - vaddr,
+            0
+        ));
 
         uintptr_t paddr = ((uintptr_t)vaddr - virtual_base) + physical_base;
         uintptr_t pend = ((uintptr_t)vend - virtual_base) + physical_base;
 
-        // get the correct flags
-        bool write = (phdrs[i].p_flags & PF_W) != 0;
-        bool exec = (phdrs[i].p_flags & PF_X) != 0;
-
         // map it all
         size_t page_num = DIV_ROUND_UP(pend - paddr, PAGE_SIZE);
-        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, write, exec, false));
+        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, sections[i].write, sections[i].exec, false));
     }
 
 cleanup:
@@ -200,16 +246,39 @@ static const char* m_limine_type_str[] = {
     [LIMINE_MEMMAP_ACPI_TABLES] = "ACPI Tables",
 };
 
-static err_t early_virt_map_direct(uint64_t* pml4) {
+static err_t early_init_direct_map(void) {
+    err_t err = NO_ERROR;
+
+    // get the direct map base if the request was fulfilled
+    CHECK(g_limine_hhdm_request.response != NULL);
+    void* direct_map_base = (void*)g_limine_hhdm_request.response->offset;
+
+    // the top physical address
+    uint64_t top_phys = 1ul << get_physical_address_bits();
+
+    // Setup the vmar of the direct map, this will take into account the KASLR
+    // provided by the bootloader
+    CHECK(direct_map_base >= g_upper_half_vmar.region.start);
+    RETHROW(vmar_allocate_static(
+        &g_upper_half_vmar,
+        &g_direct_map_vmar,
+        VMAR_SPECIFIC, direct_map_base - g_upper_half_vmar.region.start,
+        top_phys, 0
+    ));
+
+cleanup:
+    return err;
+}
+
+static err_t early_map_direct_map(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     struct limine_memmap_response* response = g_limine_memmap_request.response;
     CHECK(response != NULL);
 
-    // ensure the direct map can hold that amount of physical memory
-    uintptr_t phys_addr_bits = get_physical_address_bits();
-    size_t top_address = 1ULL << phys_addr_bits;
-    CHECK(top_address <= DIRECT_MAP_SIZE);
+    // we already reserve everything required by the physical address bits, so
+    // no need to check it again
+    size_t top_address = 1ULL << get_physical_address_bits();
 
     // map all the physical memory we need to access
     TRACE("memory: Bootloader provided memory map:");
@@ -230,7 +299,7 @@ static err_t early_virt_map_direct(uint64_t* pml4) {
         ) {
             RETHROW(early_virt_map(
                 pml4,
-                PHYS_TO_DIRECT(entry->base),
+                phys_to_direct(entry->base),
                 entry->base, entry->length / PAGE_SIZE,
                 true, false, true
             ));
@@ -241,11 +310,23 @@ cleanup:
     return err;
 }
 
-static err_t early_virt_map_buddy_bitmap(uint64_t* pml4) {
+static err_t early_map_buddy_bitmap(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     struct limine_memmap_response* response = g_limine_memmap_request.response;
     CHECK(response != NULL);
+
+    // reserve space for the bitmap itself, we need to ensure we
+    // can fit the entire physical address space in it
+    uint64_t top_address = 1ULL << get_physical_address_bits();
+    size_t total_bitmap_size = ALIGN_UP(DIV_ROUND_UP(DIV_ROUND_UP(top_address, PAGE_SIZE), 8), PAGE_SIZE);
+    RETHROW(vmar_allocate_static(
+        &g_upper_half_vmar,
+        &g_buddy_bitmap_vmar,
+        0, 0,
+        total_bitmap_size,
+        0
+    ));
 
     // map all the ranges now
     for (int i = 0; i < response->entry_count; i++) {
@@ -259,8 +340,8 @@ static err_t early_virt_map_buddy_bitmap(uint64_t* pml4) {
         size_t bitmap_size = ALIGN_UP(DIV_ROUND_UP(entry->length / PAGE_SIZE, 8), PAGE_SIZE);
 
         // map the entire bitmap right now
-        void* bitmap_ptr = PHYS_BUDDY_BITMAP_START + bitmap_start;
-        void* bitmap_end = PHYS_BUDDY_BITMAP_START + bitmap_start + bitmap_size;
+        void* bitmap_ptr = g_buddy_bitmap_vmar.region.start + bitmap_start;
+        void* bitmap_end = g_buddy_bitmap_vmar.region.start + bitmap_start + bitmap_size;
         for (; bitmap_ptr < bitmap_end; bitmap_ptr += PAGE_SIZE) {
             uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, true, true);
             CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
@@ -279,7 +360,7 @@ static err_t early_virt_map_buddy_bitmap(uint64_t* pml4) {
                 // map the bitmap in the pte
                 // we are going to mark this as locked as
                 // part of the direct map
-                *pte = DIRECT_TO_PHYS(page) | DIRECT_MAP_ATTRIBUTES;
+                *pte = direct_to_phys(page) | DIRECT_MAP_ATTRIBUTES;
             }
         }
     }
@@ -288,8 +369,11 @@ cleanup:
     return err;
 }
 
-err_t init_virt_early(void) {
+err_t init_early_mem(void) {
     err_t err = NO_ERROR;
+
+    // start by setting up the direct map
+    RETHROW(early_init_direct_map());
 
     // find the first region for the allocator
     early_alloc_next_region();
@@ -299,12 +383,24 @@ err_t init_virt_early(void) {
     CHECK_ERROR(pml4 != NULL, ERROR_OUT_OF_MEMORY);
 
     // map the kernel itself
-    RETHROW(early_virt_map_kernel(pml4));
-    RETHROW(early_virt_map_direct(pml4));
-    RETHROW(early_virt_map_buddy_bitmap(pml4));
+    RETHROW(early_map_kernel(pml4));
+    RETHROW(early_map_direct_map(pml4));
+    RETHROW(early_map_buddy_bitmap(pml4));
+
+    // setup the heap region, this is required to continue
+    // with setting up other stuff
+    RETHROW(vmar_allocate_static(
+        &g_upper_half_vmar,
+        &g_heap_vmar,
+        VMAR_CAN_BUMP,
+        0, SIZE_16GB, 0
+    ));
 
     // switch to the page table
-    __writecr3(DIRECT_TO_PHYS(pml4));
+    __writecr3(direct_to_phys(pml4));
+
+    vmar_print(&g_upper_half_vmar);
+    vmar_print(&g_lower_half_vmar);
 
 cleanup:
     return err;

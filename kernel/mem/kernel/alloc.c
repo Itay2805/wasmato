@@ -1,10 +1,10 @@
 #include "alloc_internal.h"
 #include "alloc.h"
 
-#include "valloc.h"
 #include "arch/paging.h"
 #include "lib/assert.h"
 #include "lib/string.h"
+#include "mem/vmars.h"
 
 static atomic_uint_fast64_t m_alloc_binmap;
 static alloc_bin_t m_alloc_bins[64];
@@ -50,7 +50,6 @@ static int alloc_bin_index_up(size_t x) {
 }
 
 static void* alloc_expand_heap(size_t* pn) {
-    static void* brk;
     static unsigned mmap_step;
     size_t n = *pn;
 
@@ -59,21 +58,17 @@ static void* alloc_expand_heap(size_t* pn) {
     }
     n += -n & PAGE_SIZE-1;
 
-    if (!brk) {
-        brk = valloc_expand(0);
-    }
-
-    if (n < (void*)SIZE_MAX - brk) {
-        void* newbrk = valloc_expand(n);
-        void* oldbrk = brk;
-        *pn = newbrk - oldbrk;
-        brk = newbrk;
-        return oldbrk;
+    void* ptr = vmar_allocate_bump(&g_heap_vmar, n);
+    if (ptr != NULL) {
+		*pn = n;
+        return ptr;
     }
 
     size_t min = (size_t)PAGE_SIZE << mmap_step / 2;
     if (n < min) n = min;
-    void* area = valloc_alloc(n);
+    // void* area = valloc_alloc(n);
+    ASSERT(!"TODO");
+    void* area = NULL;
     if (area == NULL) {
         return NULL;
     }
@@ -183,7 +178,9 @@ static void* alloc_internal(size_t n) {
 
 	if (n > MMAP_THRESHOLD) {
 		size_t len = n + OVERHEAD + PAGE_SIZE - 1 & -PAGE_SIZE;
-		char* base = valloc_alloc(len);
+		// char* base = valloc_alloc(len);
+        ASSERT(!"TODO");
+	    char* base = NULL;
 		if (base == NULL) {
 			return NULL;
 		}
@@ -288,7 +285,8 @@ static void alloc_unmap_chunk(alloc_chunk_t* self) {
 	char *base = (char *)self - extra;
 	size_t len = CHUNK_SIZE(self) + extra;
 	ASSERT((extra & 1) == 0);
-	valloc_free(base, len);
+    ASSERT(!"TODO");
+	// valloc_free(base, len);
 }
 
 void* mem_alloc(size_t size, size_t align) {

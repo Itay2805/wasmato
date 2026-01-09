@@ -3,7 +3,7 @@
 
 #include "limine_requests.h"
 #include "arch/paging.h"
-#include "mem/internal/memory.h"
+#include "mem/internal/direct.h"
 #include "mem/internal/phys_map.h"
 #include "mem/internal/virt.h"
 
@@ -39,13 +39,15 @@ cleanup:
 static err_t acpi_map_tables(void* ctx, phys_map_type_t type, uintptr_t start, size_t length) {
     err_t err = NO_ERROR;
 
-    if (type == PHYS_MAP_ACPI_RESERVED || type == PHYS_MAP_ACPI_RECLAIMABLE) {
-        start = ALIGN_DOWN(start, PAGE_SIZE);
-        void* map_start = PHYS_TO_DIRECT(start);
-        void* map_end = PHYS_TO_DIRECT(ALIGN_UP(start + length, PAGE_SIZE));
-        size_t num_pages = (map_end - map_start) / PAGE_SIZE;
-        RETHROW(virt_map(map_start, start, num_pages, MAP_FLAG_WRITEABLE, VIRT_MAP_STRICT));
-    }
+    CHECK_FAIL();
+
+    // if (type == PHYS_MAP_ACPI_RESERVED || type == PHYS_MAP_ACPI_RECLAIMABLE) {
+    //     start = ALIGN_DOWN(start, PAGE_SIZE);
+    //     void* map_start = PHYS_TO_DIRECT(start);
+    //     void* map_end = PHYS_TO_DIRECT(ALIGN_UP(start + length, PAGE_SIZE));
+    //     size_t num_pages = (map_end - map_start) / PAGE_SIZE;
+    //     RETHROW(virt_map(map_start, start, num_pages, MAP_FLAG_WRITEABLE, VIRT_MAP_STRICT));
+    // }
 
 cleanup:
     return err;
@@ -54,12 +56,14 @@ cleanup:
 static err_t acpi_unmap_tables(void* ctx, phys_map_type_t type, uintptr_t start, size_t length) {
     err_t err = NO_ERROR;
 
-    if (type == PHYS_MAP_ACPI_RESERVED || type == PHYS_MAP_ACPI_RECLAIMABLE) {
-        void* map_start = PHYS_TO_DIRECT(ALIGN_DOWN(start, PAGE_SIZE));
-        void* map_end = PHYS_TO_DIRECT(ALIGN_UP(start + length, PAGE_SIZE));
-        size_t num_pages = (map_end - map_start) / PAGE_SIZE;
-        RETHROW(virt_unmap(map_start, num_pages, VIRT_UNMAP_STRICT));
-    }
+    CHECK_FAIL();
+
+    // if (type == PHYS_MAP_ACPI_RESERVED || type == PHYS_MAP_ACPI_RECLAIMABLE) {
+    //     void* map_start = PHYS_TO_DIRECT(ALIGN_DOWN(start, PAGE_SIZE));
+    //     void* map_end = PHYS_TO_DIRECT(ALIGN_UP(start + length, PAGE_SIZE));
+    //     size_t num_pages = (map_end - map_start) / PAGE_SIZE;
+    //     RETHROW(virt_unmap(map_start, num_pages, VIRT_UNMAP_STRICT));
+    // }
 
 cleanup:
     return err;
@@ -95,10 +99,10 @@ err_t init_acpi_tables() {
     acpi_description_header_t* xsdt = NULL;
     acpi_description_header_t* rsdt = NULL;
     if (rsdp->revision >= 2) {
-        xsdt = PHYS_TO_DIRECT(rsdp->xsdt_address);
+        xsdt = phys_to_direct(rsdp->xsdt_address);
         RETHROW(validate_acpi_table(xsdt));
     } else {
-        rsdt = PHYS_TO_DIRECT(rsdp->rsdt_address);
+        rsdt = phys_to_direct(rsdp->rsdt_address);
         RETHROW(validate_acpi_table(rsdt));
     }
 
@@ -116,10 +120,10 @@ err_t init_acpi_tables() {
         acpi_description_header_t* table;
         if (xsdt != NULL) {
             address64_t* addrs = (address64_t*)(xsdt + 1);
-            table = PHYS_TO_DIRECT(addrs[i].value);
+            table = phys_to_direct(addrs[i].value);
         } else if (rsdt != NULL) {
             address32_t* addrs = (address32_t*)(rsdt + 1);
-            table = PHYS_TO_DIRECT(addrs[i].value);
+            table = phys_to_direct(addrs[i].value);
         } else {
             CHECK_FAIL();
         }

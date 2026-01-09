@@ -8,8 +8,8 @@
 #include "arch/intr.h"
 #include "arch/smp.h"
 #include "lib/string.h"
+#include "mem/internal/direct.h"
 #include "mem/internal/early.h"
-#include "mem/internal/memory.h"
 #include "mem/internal/phys.h"
 #include "mem/internal/phys_map.h"
 #include "mem/internal/virt.h"
@@ -240,7 +240,7 @@ void _start() {
     //
     // setup the basic memory management
     //
-    RETHROW(init_virt_early());
+    RETHROW(init_early_mem());
     RETHROW(init_phys());
     RETHROW(init_virt());
     RETHROW(init_phys_map());

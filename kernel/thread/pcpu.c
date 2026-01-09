@@ -3,7 +3,6 @@
 #include "arch/intrin.h"
 #include "lib/string.h"
 #include "mem/kernel/alloc.h"
-#include "mem/kernel/valloc.h"
 
 extern char __start_pcpu_data[];
 extern char __stop_pcpu_data[];
@@ -52,15 +51,16 @@ err_t pcpu_init_per_core(int cpu_id) {
     err_t err = NO_ERROR;
 
     // TODO: how to find the correct alignment dynamically?
-    char* data = valloc_alloc(__stop_pcpu_data - __start_pcpu_data);
-    CHECK_ERROR(data != NULL, ERROR_OUT_OF_MEMORY);
+    CHECK_FAIL();
+    // char* data = valloc_alloc(__stop_pcpu_data - __start_pcpu_data);
+    // CHECK_ERROR(data != NULL, ERROR_OUT_OF_MEMORY);
 
-    size_t offset = data - __start_pcpu_data;
-    __wrmsr(MSR_IA32_FS_BASE, offset);
+    // size_t offset = data - __start_pcpu_data;
+    // __wrmsr(MSR_IA32_FS_BASE, offset);
 
-    m_all_fs_bases[cpu_id] = offset;
-    m_cpu_id = cpu_id;
-    m_cpu_fs_base = offset;
+    // m_all_fs_bases[cpu_id] = offset;
+    // m_cpu_id = cpu_id;
+    // m_cpu_fs_base = offset;
 
 cleanup:
     return err;

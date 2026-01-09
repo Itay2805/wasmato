@@ -313,15 +313,20 @@ static void default_exception_handler(exception_frame_t* ctx) {
 }
 
 void common_exception_handler(exception_frame_t* ctx) {
+    err_t err = NO_ERROR;
+
     // special case for page
     if (ctx->int_num == EXCEPT_IA32_PAGE_FAULT) {
-        if (virt_handle_page_fault(__readcr2())) {
-            return;
-        }
+        RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code));
     }
 
-    // no one handled it, panic
-    default_exception_handler(ctx);
+cleanup:
+    if (IS_ERROR(err)) {
+        // no one handled it, panic
+        default_exception_handler(ctx);
+    }
+
+    (void)err;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

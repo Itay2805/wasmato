@@ -29,4 +29,13 @@ typedef struct interrupt_frame {
 #define EXCEPT_IA32_MACHINE_CHECK    18
 #define EXCEPT_IA32_SIMD             19
 
+#define IA32_PF_EC_P     BIT0
+#define IA32_PF_EC_WR    BIT1
+#define IA32_PF_EC_US    BIT2
+#define IA32_PF_EC_RSVD  BIT3
+#define IA32_PF_EC_ID    BIT4
+#define IA32_PF_EC_PK    BIT5
+#define IA32_PF_EC_SS    BIT6
+#define IA32_PF_EC_SGX   BIT15
+
 void init_idt(void);
