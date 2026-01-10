@@ -38,7 +38,6 @@ err_t init_pcpu(int cpu_count) {
     //       lapic timer or whatever else we want
     m_all_fs_bases = alloc_array(uintptr_t, cpu_count);
     CHECK_ERROR(m_all_fs_bases != NULL, ERROR_OUT_OF_MEMORY);
-    memset(m_all_fs_bases, 0, sizeof(*m_all_fs_bases) * cpu_count);
 
     // the BSP is always at offset zero
     m_all_fs_bases[0] = 0;

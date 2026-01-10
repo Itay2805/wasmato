@@ -10,7 +10,7 @@ vmar_t g_upper_half_vmar = {
     .region = {
         // for the upper half just have the entire region
         .start = (void*)0xFFFF800000000000,
-        .end = (void*)0xFFFFFFFFFFFFFFFF,
+        .page_count = SIZE_128TB / PAGE_SIZE,
         .object = &g_upper_half_vmar.object,
     },
     .bump_alloc_max = (void*)0xFFFF800000000000,
@@ -27,7 +27,7 @@ vmar_t g_lower_half_vmar = {
         // for the lower half leave the lowest 4gb unmapped at all times
         // and go right up to the top of it
         .start = (void*)SIZE_4GB,
-        .end = (void*)0x00007FFFFFFFFFFF,
+        .page_count = (SIZE_128TB - SIZE_4GB) / PAGE_SIZE,
         .object = &g_lower_half_vmar.object,
     },
     .bump_alloc_max = (void*)SIZE_4GB,

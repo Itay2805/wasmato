@@ -165,7 +165,7 @@ static err_t early_map_kernel(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     // The code region is always at -2gb of the upper half
-    void* code_region = g_upper_half_vmar.region.end - SIZE_2GB + 1;
+    void* code_region = (void*)0xffffffff80000000;
     CHECK(code_region >= g_upper_half_vmar.region.start);
     RETHROW(vmar_allocate_static(
         &g_upper_half_vmar,

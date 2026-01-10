@@ -7,7 +7,7 @@
 
 #include "lib/defs.h"
 
-typedef enum object_flag : size_t {
+typedef enum object_flag : uint8_t {
     /**
      * This is a static object, meaning
      * it should never be freed

@@ -3,8 +3,17 @@
 #include <stddef.h>
 #include <stdalign.h>
 
+#include "lib/string.h"
+
 #define alloc_type(type) \
-    (type*)mem_alloc(sizeof(type), alignof(type))
+    ({ \
+        type* __ptr = mem_alloc(sizeof(type), alignof(type)); \
+        if (__ptr != NULL) { \
+            memset(__ptr, 0, sizeof(type)); \
+        } \
+        __ptr; \
+    })
+
 
 #define free_type(type, ptr) \
     do { \
@@ -13,7 +22,14 @@
     } while (0)
 
 #define alloc_array(type, count) \
-    (type*)mem_alloc(sizeof(type) * (count), alignof(type))
+    ({ \
+        size_t __total_size = sizeof(type) * (count); \
+        type* __ptr = mem_alloc(__total_size, alignof(type)); \
+        if (__ptr != NULL) { \
+            memset(__ptr, 0, __total_size); \
+        } \
+        __ptr; \
+    })
 
 #define realloc_array(type, ptr, old_count, new_count) \
     ({ \
@@ -25,9 +41,9 @@
 
 #define free_array(type, ptr, count) \
     do { \
-        void* __ptr = ptr; \
+        type* __ptr = ptr; \
         size_t __count = count; \
-        mem_free(__ptr, sizeof(type) * (count), alignof(type)); \
+        mem_free(__ptr, sizeof(type) * __count, alignof(type)); \
     } while(0)
 
 void* mem_alloc(size_t size, size_t align);

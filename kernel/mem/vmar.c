@@ -12,57 +12,46 @@ static bool vmar_region_less(struct rb_node* a, const struct rb_node* b) {
     return va->start < vb->start;
 }
 
-static void* vmar_can_place_in_gap(void* gap_start, void* gap_end, size_t size, size_t align) {
-    if ((gap_end - gap_start) + 1 < size) {
-        return NULL;
-    }
+static void* vmar_find_empty_region(vmar_t* vmar, size_t page_count, size_t alignment) {
+    size_t prev_region_start_page = vmar->region.page_count;
 
-    void* start = (void*)ALIGN_DOWN((gap_end - size) + 1, align);
-    if (start <= gap_start) {
-        return NULL;
-    }
+    for (struct rb_node* node = rb_last(&vmar->root); node != NULL; node = rb_prev(node)) {
+        vmar_region_t* region = containerof(node, vmar_region_t, node);
+        size_t region_start_page = (region->start - vmar->region.start) / PAGE_SIZE;
+        size_t region_end_page = region_start_page + region->page_offset;
+        size_t gap_page_count = prev_region_start_page - region_end_page;
 
-    return start;
-}
-
-static void* vmar_find_empty_region(vmar_t* vmar, size_t size, size_t align) {
-    size = ALIGN_UP(size, PAGE_SIZE);
-
-    // the highest possible end
-    void* gap_end = vmar->region.end;
-
-    void* start = NULL;
-    for (struct rb_node* n = rb_last(&vmar->root); n != NULL; n = rb_prev(n)) {
-        vmar_region_t* region = rb_entry(n, vmar_region_t, node);
-
-        // if this is not at the same place then check it out
-        // this ensures the end + 1 won't overflow
-        if (region->end != gap_end) {
-            // can start from the end of this region
-            // to the start of the last region
-            void* gap_start = region->end + 1;
-
-            // attempt to place inside of this gap
-            start = vmar_can_place_in_gap(gap_start, gap_end, size, align);
-            if (start != NULL) {
-                break;
+        // does it have enough pages?
+        if (gap_page_count >= page_count) {
+            // can we align it while staying within the region?
+            void* start = ALIGN_DOWN(vmar->region.start + PAGES_TO_SIZE(prev_region_start_page - page_count), alignment);
+            void* region_end = region->start + (PAGES_TO_SIZE(region->page_count) - 1);
+            if (start > region_end) {
+                // we can! return the address
+                return start;
             }
         }
 
-        // Next end is this region's start
-        gap_end = region->start - 1;
+        // update the previous region
+        prev_region_start_page = region_start_page;
     }
 
-    // attempt to place between the start and the first entry
-    if (start == NULL) {
-        start = vmar_can_place_in_gap(vmar->bump_alloc_top, gap_end, size, align);
-        if (start == NULL) {
-            // failed to find a good region
-            return NULL;
+    // we could not find anything between the gaps, attempt to check if
+    // the gap between the bump alloc and the first region is fine
+    size_t bump_top_page = (vmar->bump_alloc_top - vmar->region.start) / PAGE_SIZE;
+
+    // does it have enough pages?
+    if (bump_top_page >= page_count) {
+        // can we align it while staying within the region?
+        void* start = ALIGN_DOWN(vmar->region.start + PAGES_TO_SIZE(prev_region_start_page - page_count), alignment);
+        if (start >= vmar->bump_alloc_top) {
+            // we can! return the address
+            return start;
         }
     }
 
-    return start;
+    // failed to find a gap
+    return NULL;
 }
 
 typedef struct vmar_search_overlap {
@@ -74,8 +63,9 @@ static int vmar_cmp_overlap(const void* key, const struct rb_node* node) {
     const vmar_search_overlap_t* ctx = key;
     const vmar_region_t* region = containerof(node, vmar_region_t, node);
 
-    // if overlaps then
-    if (ctx->end >= region->start && region->end >= ctx->start) {
+    // if overlaps then the key matches
+    void* region_end = region->start + PAGES_TO_SIZE(region->page_count) - 1;
+    if (ctx->end >= region->start && region_end >= ctx->start) {
         return 0;
     }
 
@@ -87,16 +77,65 @@ static int vmar_cmp_overlap(const void* key, const struct rb_node* node) {
     }
 }
 
-static void vmar_add_region(vmar_t* vmar, vmar_region_t* region, void* start, size_t size) {
+static void vmar_commit_region(vmar_t* vmar, vmar_region_t* region) {
     // set the region fields and add the to rbtree
-    region->start = start;
-    region->end = start + (size - 1);
     rb_add(&region->node, &vmar->root, vmar_region_less);
 
     // update the top address of the bump allocator
     if (region->start < vmar->bump_alloc_max) {
         vmar->bump_alloc_max = region->start;
     }
+}
+
+static err_t vmar_allocate_region(
+    vmar_t* vmar,
+    vmar_region_t* region,
+    bool specific,
+    size_t offset, size_t size, size_t order
+) {
+    err_t err = NO_ERROR;
+
+    // ensure the size is page aligned
+    CHECK((size % PAGE_SIZE) == 0);
+    CHECK(size > 0);
+    size_t page_count = size / PAGE_SIZE;
+
+    // the alignment that we have
+    size_t alignment = 1ul << (order + 12);
+
+    // search for an empty region where we can create the region
+    void* start = NULL;
+    if (specific) {
+        CHECK((offset % PAGE_SIZE) == 0);
+
+        // the start we want, ensure the alignment is correct
+        start = vmar->region.start + offset;
+        CHECK(((uintptr_t)start % alignment) == 0);
+
+        // we must be above the top of the bump
+        CHECK(start >= vmar->bump_alloc_top);
+
+        // ensure it doesn't overlap with anything else
+        vmar_search_overlap_t key = {
+            .start = start,
+            .end = start + (size - 1)
+        };
+        CHECK(rb_find(&key, &vmar->root, vmar_cmp_overlap) == NULL);
+
+    } else {
+        // carve space from the parent, when this returns with true we are already inside of the
+        // address space and should be worried about being unmapped
+        start = vmar_find_empty_region(vmar, page_count, alignment);
+        CHECK_ERROR(start != NULL, ERROR_OUT_OF_MEMORY);
+    }
+
+    // setup the region itself, we are going to take a ref to the object
+    // so the parent vmar will keep it alive
+    region->start = start;
+    region->page_count = page_count;
+
+cleanup:
+    return err;
 }
 
 err_t vmar_allocate_static(
@@ -110,54 +149,31 @@ err_t vmar_allocate_static(
     // TODO: replace with per vmar lock
     virt_lock();
 
-    // ensure the size is page aligned
-    CHECK((size % PAGE_SIZE) == 0);
-    CHECK(size > 0);
+    // allocate a region from the vmar
+    RETHROW(vmar_allocate_region(
+        parent_vmar,
+        &child_vmar->region,
+        options & VMAR_SPECIFIC,
+        offset, size, order
+    ));
 
-    // the alignment that we have
-    size_t alignment = 1ul << (order + 12);
+    // we can commit the region right away
+    vmar_commit_region(parent_vmar, &child_vmar->region);
 
-    // search for an empty region where we can create the region
-    void* start = NULL;
-    if (options & VMAR_SPECIFIC) {
-        CHECK((offset % PAGE_SIZE) == 0);
-
-        // the start we want, ensure the alignment is correct
-        start = parent_vmar->region.start + offset;
-        CHECK(((uintptr_t)start % alignment) == 0);
-
-        // we must be above the top of the bump
-        CHECK(start >= parent_vmar->bump_alloc_top);
-
-        // ensure it doesn't overlap with anything else
-        vmar_search_overlap_t key = {
-            .start = start,
-            .end = start + (size - 1)
-        };
-        CHECK(rb_find(&key, &parent_vmar->root, vmar_cmp_overlap) == NULL);
-
-    } else {
-        // carve space from the parent, when this returns with true we are already inside of the
-        // address space and should be worried about being unmapped
-        start = vmar_find_empty_region(parent_vmar, size, alignment);
-        CHECK_ERROR(start != NULL, ERROR_OUT_OF_MEMORY);
-    }
-
-    // setup the region itself, we are going to take a ref to the object
-    // so the parent vmar will keep it alive
-    child_vmar->region.object = object_get(&child_vmar->object);
-    vmar_add_region(parent_vmar, &child_vmar->region, start, size);
-
-    // for making the code simpler we always initialize the top
-    // of the bump allocator
+    // set the bump to the start, so it can always be used as the
+    // offset to the start of the region that is alloctable by
+    // vmars/vmos
     child_vmar->bump_alloc_top = child_vmar->region.start;
 
     // if we want to allow a bump allocator set the region end
     if (options & VMAR_CAN_BUMP) {
-        child_vmar->bump_alloc_max = child_vmar->region.end + 1;
+        child_vmar->bump_alloc_max = child_vmar->region.start + size;
     } else {
         child_vmar->bump_alloc_max = child_vmar->bump_alloc_top;
     }
+
+    // take a ref to the child vmar and place it in the region
+    child_vmar->region.object = object_get(&child_vmar->object);
 
 cleanup:
     virt_unlock();
@@ -250,11 +266,86 @@ vmar_region_t* vmar_find_object(vmar_t* vmar, void* ptr) {
     }
 }
 
+err_t vmar_map(
+    vmar_t* vmar,
+    vmar_map_options_t options,
+    size_t vmar_offset,
+    vmo_t* vmo,
+    size_t vmo_offset, size_t len, size_t order,
+    void** mapped_addr
+) {
+    err_t err = NO_ERROR;
+
+    virt_lock();
+
+    // ensure alignment
+    CHECK((vmo_offset % PAGE_SIZE) == 0);
+    CHECK((len % PAGE_SIZE) == 0);
+    if (options & VMAR_MAP_SPECIFIC) {
+        CHECK((vmar_offset % PAGE_SIZE) == 0);
+    } else {
+        CHECK(vmar_offset == 0);
+    }
+
+    // ensure the range is within the vmo
+    size_t vmo_size = vmo_get_size(vmo);
+    uint64_t vmo_top_address;
+    CHECK(__builtin_add_overflow(vmo_offset, len, &vmo_top_address));
+    CHECK(vmo_top_address < vmo_size);
+
+    // allocate the vmar object
+    vmar_region_t* region = alloc_type(vmar_region_t);
+    CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
+    region->page_offset = vmo_offset / PAGE_SIZE;
+    region->exec = (options & VMAR_MAP_EXECUTE);
+    region->write = (options & VMAR_MAP_WRITE);
+
+    // allocate a region to be used
+    RETHROW(vmar_allocate_region(vmar, region, options & VMAR_MAP_SPECIFIC, vmar_offset, len, order));
+
+    // if we want to page it in right now then do that
+    if (options & VMAR_MAP_POPULATE) {
+        RETHROW(virt_map_and_populate_vmo(region));
+    }
+
+    // finally we can commit the region
+    vmar_commit_region(vmar, region);
+
+    // output the mapped address
+    *mapped_addr = region->start;
+
+cleanup:
+    if (IS_ERROR(err)) {
+        free_type(vmar_region_t, region);
+    }
+
+    virt_unlock();
+
+    return err;
+}
+
+/**
+ * Unmaps all VMO mappings and destroys all sub-regions within the
+ * given range
+ *
+ * @param vmar  [IN] The VMAR to unmap from
+ * @param addr  [IN] The address to unmap from
+ * @param len   [IN] The length to unmap
+ */
+err_t vmar_unmap(vmar_t* vmar, void* addr, size_t len) {
+    err_t err = NO_ERROR;
+
+    CHECK_FAIL();
+
+cleanup:
+    return err;
+}
+
+
 void vmar_destroy(vmar_t* vmar) {
     // must already be unmapped at this point, given that the region holds
     // a ref on itself while being mapped
     ASSERT(vmar->region.start == NULL);
-    ASSERT(vmar->region.end == NULL);
     free_type(vmar_t, vmar);
 }
 
@@ -270,9 +361,17 @@ static void vmar_print_tree_rec(vmar_region_t* region, char* prefix, size_t plen
 
     const char* name = region->object->name;
     if (name == NULL) {
-        name = "";
+        name = "<anonymous>";
     }
-    debug_print("VMAR<%s>: %p-%p %lx\n", name, region->start, region->end, (region->end - region->start) + 1);
+
+    uintptr_t start = (uintptr_t)region->start;
+    uintptr_t end = (uintptr_t)(region->start + (PAGES_TO_SIZE(region->page_count) - 1));
+    debug_print("VMAR: 0x%08x'%08x-0x%08x'%08x: %lx pages [%s]\n",
+        (uint32_t)(start >> 32), (uint32_t)start,
+        (uint32_t)(end >> 32), (uint32_t)end,
+        region->page_count,
+        name
+    );
 
     // this is a vmar that might have children
     if (rb_first(&vmar->root) == NULL) {

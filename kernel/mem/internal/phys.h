@@ -34,10 +34,14 @@ err_t reclaim_bootloader_memory(void);
 
 /**
  * Allocate physical memory
+ *
+ * NOTE: requires the direct map to be unlocked
  */
 void* phys_alloc(size_t size);
 
 /**
  * Free physical memory
+ *
+ * NOTE: requires the direct map to be unlocked
  */
 void phys_free(void* ptr, size_t size);

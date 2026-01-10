@@ -15,11 +15,7 @@ irq_spinlock_t g_phys_map_lock = IRQ_SPINLOCK_INIT;
  * Allocate phys map entry
  */
 static phys_map_entry_t* allocate_phys_map_entry(void) {
-    phys_map_entry_t* entry = alloc_type(phys_map_entry_t);
-    if (entry != NULL) {
-        *entry = (phys_map_entry_t){};
-    }
-    return entry;
+    return alloc_type(phys_map_entry_t);
 }
 
 static void phys_map_insert_new_entry(list_entry_t* link, uint64_t start, uint64_t end, phys_map_type_t type, bool next) {

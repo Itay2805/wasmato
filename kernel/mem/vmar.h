@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vmo.h"
 #include "lib/except.h"
 #include "object/object.h"
 #include "lib/rbtree/rbtree.h"
@@ -23,7 +24,28 @@ typedef struct vmar_region {
      * The address range that the region takes
      */
     void* start;
-    void* end;
+
+    /**
+     * The page offset from the object that is mapped
+     * - for VMAR is always zero
+     * - for VMO is the page inside of it
+     */
+    size_t page_offset;
+
+    /**
+     * How many pages are mapped
+     */
+    size_t page_count;
+
+    /**
+     * Is this region writable
+     */
+    bool write;
+
+    /**
+     * Is this region executable
+     */
+    bool exec;
 } vmar_region_t;
 
 /**
@@ -58,7 +80,7 @@ typedef struct vmar {
 } vmar_t;
 
 static inline bool vmar_contains_ptr(vmar_t* vmar, void* ptr) {
-    return vmar->region.start <= ptr && ptr <= vmar->region.end;
+    return vmar->region.start <= ptr && ptr <= vmar->region.start + (PAGES_TO_SIZE(vmar->region.page_count) - 1);
 }
 
 static inline vmar_t* vmar_get(vmar_t* vmar) { object_get(&vmar->object); return vmar; }
@@ -76,6 +98,19 @@ typedef enum vmar_options {
     VMAR_CAN_BUMP = BIT1,
 } vmar_options_t;
 
+/**
+ * Allocate a new VMAR from a statically allocated VMAR struct.
+ *
+ * Used during init
+ *
+ * @param parent_vmar   [IN] The parent VMAR
+ * @param child_vmar    [IN] An already allocated VMAR to be added
+ * @param options       [IN] Options for the allocation
+ * @param offset        [IN] When VMAR_SPECIFIC is used the offset from the base of the parent VMAR to map at
+ * @param size          [IN] The size of the VMAR to reserve
+ * @param order         [IN] The alignment, as `log2(alignment) - 12`
+ * @return
+ */
 err_t vmar_allocate_static(
     vmar_t* parent_vmar,
     vmar_t* child_vmar,
@@ -83,12 +118,63 @@ err_t vmar_allocate_static(
     size_t offset, size_t size, size_t order
 );
 
+/**
+ * Allocate a new VMAR
+ *
+ * @param parent_vmar   [IN]    The parent VMAR
+ * @param options       [IN]    Options for the allocation
+ * @param offset        [IN]    When VMAR_SPECIFIC is used the offset from the base of the parent VMAR to map at
+ * @param size          [IN]    The size of the VMAR to reserve
+ * @param order         [IN]    The alignment, as `log2(alignment) - 12`
+ * @param child_vmar    [OUT]   The new VMAR object
+ */
 err_t vmar_allocate(
     vmar_t* parent_vmar,
     vmar_options_t options,
     size_t offset, size_t size, size_t order,
     vmar_t** child_vmar
 );
+
+typedef enum vmar_map_options {
+    /**
+     * Map at a specific address
+     */
+    VMAR_MAP_SPECIFIC = BIT0,
+
+    /**
+     * Map as writable memory
+     */
+    VMAR_MAP_WRITE = BIT1,
+
+    /**
+     * Map as executable memory
+     */
+    VMAR_MAP_EXECUTE = BIT2,
+
+    /**
+     *  Populate the entire range right away
+     */
+    VMAR_MAP_POPULATE = BIT3,
+} vmar_map_options_t;
+
+err_t vmar_map(
+    vmar_t* vmar,
+    vmar_map_options_t options,
+    size_t vmar_offset,
+    vmo_t* vmo,
+    size_t vmo_offset, size_t len, size_t order,
+    void** mapped_addr
+);
+
+/**
+ * Unmaps all VMO mappings and destroys all sub-regions within the
+ * given range
+ *
+ * @param vmar  [IN] The VMAR to unmap from
+ * @param addr  [IN] The address to unmap from
+ * @param len   [IN] The length to unmap
+ */
+err_t vmar_unmap(vmar_t* vmar, void* addr, size_t len);
 
 /**
  * Allocate from the bump allocator of the vmar, by the given amount of bytes.

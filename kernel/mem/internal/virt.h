@@ -34,6 +34,15 @@ void switch_page_table(void);
 bool virt_is_mapped(uintptr_t virt);
 
 /**
+ * Map the given VMO at the given address
+ *
+ * NOTE: The virt lock must already be taken
+ *
+ * @param region    [IN] The region to map into
+ */
+err_t virt_map_and_populate_vmo(vmar_region_t* region);
+
+/**
  * Attempt to handle a page fault for lazy-memory allocation
  */
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code);
