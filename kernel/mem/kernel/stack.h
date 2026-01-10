@@ -3,9 +3,7 @@
 #include "lib/except.h"
 
 /**
- * Allocate a stack that has a gurad page
- *
- * The stack goes from the start to the end, meaning that
- * start is higher than end address wise
+ * Allocates a stack of the given size, returning the pointer
+ * to the start (highest pointer) in the stack
  */
-err_t stack_alloc(size_t stack_size, void** stack_start, void** stack_end);
+err_t stack_alloc(const char* name, size_t stack_size, void** stack);

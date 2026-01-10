@@ -36,6 +36,7 @@ static void init_thread_entry(void* arg) {
 
     // for fun and profit
     phys_map_dump();
+    vmar_print(&g_upper_half_vmar);
 
 cleanup:
     ASSERT(!IS_ERROR(err));

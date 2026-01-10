@@ -9,7 +9,7 @@
 /**
  * Unlock the virtual address space
  */
-void virt_lock(void);
+void virt_lock();
 
 /**
  * Lock the virtual address space

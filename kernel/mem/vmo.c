@@ -30,6 +30,9 @@ vmo_t* vmo_create(uint64_t size) {
 }
 
 vmo_t* vmo_create_physical(uint64_t physical_address, size_t size) {
+    if ((physical_address % PAGE_SIZE) == 0) return NULL;
+    if ((size % PAGE_SIZE) == 0) return NULL;
+
     size_t vmo_size = sizeof(vmo_t) + sizeof(uint64_t);
     vmo_t* vmo = mem_alloc(vmo_size, alignof(vmo_t));
     if (vmo == NULL) {
@@ -46,7 +49,7 @@ vmo_t* vmo_create_physical(uint64_t physical_address, size_t size) {
     vmo->cache_policy = VMO_CACHE_POLICY_UNCACHED;
 
     // we have a single "page" for the entire range
-    vmo->page_count = 1;
+    vmo->page_count = SIZE_TO_PAGES(size);
     vmo->pages[0] = (physical_address >> 12) | VMO_PAGE_PRESENT;
 
     return vmo;

@@ -34,13 +34,11 @@ typedef struct thread {
     // The actual stack of the thread, it goes from start
     // to end, meaning that start is a higher address than
     // end
-    void* stack_start;
-    void* stack_end;
+    void* stack;
 
     // Stacks used for running interrupts, to ensure that
     // we can properly reschedule from interrupts
-    void* irq_stack_start;
-    void* irq_stack_end;
+    void* irq_stack;
 
     // the entry and argument to pass to the entry
     thread_entry_t entry;

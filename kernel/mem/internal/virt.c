@@ -7,24 +7,41 @@
 #include "arch/paging.h"
 #include "lib/string.h"
 #include "sync/spinlock.h"
+#include "thread/pcpu.h"
 
 /**
  * Spinlock for mapping virtual pages
  */
 static irq_spinlock_t m_virt_lock = IRQ_SPINLOCK_INIT;
+static int m_virt_lock_cpu = 0;
+static size_t m_virt_lock_depth = 0;
 static bool m_virt_lock_irq_state = false;
+
+__attribute__((used))
+static const char* m_virt_lock_file = NULL;
+__attribute__((used))
+static size_t m_virt_lock_line = 0;
 
 /**
  * The kernel top level cr3
  */
 static uint64_t* m_pml4 = 0;
 
-void virt_lock(void) {
+void virt_lock() {
+    if (m_virt_lock_cpu == get_cpu_id()) {
+        m_virt_lock_depth++;
+        return;
+    }
     m_virt_lock_irq_state = irq_spinlock_acquire(&m_virt_lock);
+    m_virt_lock_cpu = get_cpu_id();
+    m_virt_lock_depth = 1;
 }
 
 void virt_unlock(void) {
-    irq_spinlock_release(&m_virt_lock, m_virt_lock_irq_state);
+    if (--m_virt_lock_depth == 0) {
+        m_virt_lock_cpu = -1;
+        irq_spinlock_release(&m_virt_lock, m_virt_lock_irq_state);
+    }
 }
 
 bool virt_is_mapped(uintptr_t virt) {
@@ -162,7 +179,7 @@ cleanup:
     return err;
 }
 
-static err_t virt_map_vmo_page_locked(vmar_region_t* region, size_t page_index) {
+static err_t virt_map_vmo_page(vmar_region_t* region, size_t page_index) {
     err_t err = NO_ERROR;
 
     // get the vmo itself
@@ -176,7 +193,7 @@ static err_t virt_map_vmo_page_locked(vmar_region_t* region, size_t page_index) 
     uint64_t entry_template = IA32_PG_P | IA32_PG_D | IA32_PG_A;
 
     // permissions
-    if (region->write & VMAR_MAP_WRITE) entry_template |= IA32_PG_RW;
+    if (region->write) entry_template |= IA32_PG_RW;
     if (!region->exec) entry_template |= IA32_PG_NX;
 
     // choose the caching
@@ -192,6 +209,7 @@ static err_t virt_map_vmo_page_locked(vmar_region_t* region, size_t page_index) 
         case VMO_TYPE_NORMAL: {
             // allocate the page if need be
             if ((vmo->pages[vmo_page_offset] & VMO_PAGE_PRESENT) == 0) {
+                unlock_direct_map();
                 void* ptr = phys_alloc(PAGE_SIZE);
                 CHECK_ERROR(ptr != NULL, ERROR_OUT_OF_MEMORY);
                 memset(ptr, 0, PAGE_SIZE);
@@ -203,7 +221,6 @@ static err_t virt_map_vmo_page_locked(vmar_region_t* region, size_t page_index) 
 
         case VMO_TYPE_PHYSICAL: {
             // for physical this is just the base + the offset
-            CHECK(vmo->page_count == 1);
             CHECK(vmo->pages[0] & VMO_PAGE_PRESENT);
             entry_template |= ((vmo->pages[0] + vmo_page_offset) << PAGE_SHIFT);
         } break;
@@ -222,6 +239,7 @@ static err_t virt_map_vmo_page_locked(vmar_region_t* region, size_t page_index) 
 
 cleanup:
     lock_direct_map();
+
     return err;
 }
 
@@ -231,7 +249,7 @@ err_t virt_map_and_populate_vmo(vmar_region_t* region) {
     // just go over all the pages in the region that needs to be
     // mapped and map them right away
     for (size_t i = 0; i < region->page_count; i++) {
-        RETHROW(virt_map_vmo_page_locked(region, i));
+        RETHROW(virt_map_vmo_page(region, i));
     }
 
 cleanup:
@@ -244,6 +262,7 @@ cleanup:
 
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     err_t err = NO_ERROR;
+
     virt_lock();
 
     // ensure its either write protection or non-present, anything
@@ -278,7 +297,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     } else if (region->object->type == OBJECT_TYPE_VMO) {
         // get the page index within the region and map it
         size_t page_index = (ptr - region->start) / PAGE_SIZE;
-        RETHROW(virt_map_vmo_page_locked(region, page_index));
+        RETHROW(virt_map_vmo_page(region, page_index));
 
 
     } else {

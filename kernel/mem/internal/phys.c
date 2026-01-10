@@ -236,6 +236,18 @@ cleanup:
     return err;
 }
 
+static const char* m_limine_type_str[] = {
+    [LIMINE_MEMMAP_USABLE] = "Usable",
+    [LIMINE_MEMMAP_RESERVED] = "Reserved",
+    [LIMINE_MEMMAP_ACPI_RECLAIMABLE] = "ACPI Reclaimable",
+    [LIMINE_MEMMAP_ACPI_NVS] = "ACPI NVS",
+    [LIMINE_MEMMAP_BAD_MEMORY] = "Bad memory",
+    [LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE] = "Bootloader Reclaimable",
+    [LIMINE_MEMMAP_EXECUTABLE_AND_MODULES] = "Kernel and modules",
+    [LIMINE_MEMMAP_FRAMEBUFFER] = "Framebuffer",
+    [LIMINE_MEMMAP_ACPI_TABLES] = "ACPI Tables",
+};
+
 err_t init_phys(void) {
     err_t err = NO_ERROR;
 
@@ -251,7 +263,7 @@ err_t init_phys(void) {
     void* early_alloc_top = early_alloc_get_top();
 
     // add all the blocks marked as usable
-    TRACE("memory: Adding usable memory");
+    TRACE("memory: Bootloader provided memory map");
     for (int i = 0; i < response->entry_count; i++) {
         struct limine_memmap_entry* entry = response->entries[i];
         if (entry->type == LIMINE_MEMMAP_USABLE) {
@@ -261,20 +273,26 @@ err_t init_phys(void) {
             // if this is below the early allocator
             // then its already in use
             if (early_alloc_top >= end) {
-                TRACE("memory: \t%016lx-%016lx: used by early allocator", direct_to_phys(start), direct_to_phys(end) - 1);
+                TRACE("memory: \t%016lx-%016lx: Usable [early-alloc]", direct_to_phys(start), direct_to_phys(end) - 1);
                 continue;
             }
 
             // if the start is below the bump then start freeing
             // from the bump
             if (start < early_alloc_top) {
-                TRACE("memory: \t%016lx-%016lx: used by early allocator", direct_to_phys(start), direct_to_phys(early_alloc_top) - 1);
+                TRACE("memory: \t%016lx-%016lx: Usable [early-alloc]", direct_to_phys(start), direct_to_phys(early_alloc_top) - 1);
                 start = early_alloc_top;
             }
 
             // and we can free it now
-            TRACE("memory: \t%016lx-%016lx: free", direct_to_phys(start), direct_to_phys(end) - 1);
+            TRACE("memory: \t%016lx-%016lx: Usable [phys-alloc]", direct_to_phys(start), direct_to_phys(end) - 1);
             RETHROW(phys_add_memory(start, end));
+        } else {
+            if (entry->type < ARRAY_LENGTH(m_limine_type_str) && m_limine_type_str[entry->type] != NULL) {
+                TRACE("memory: \t%016lx-%016lx: %s", entry->base, entry->base + entry->length, m_limine_type_str[entry->type]);
+            } else {
+                TRACE("memory: \t%016lx-%016lx: <unknown type %lu>", entry->base, entry->base + entry->length, entry->type);
+            }
         }
     }
 
@@ -286,6 +304,7 @@ err_t reclaim_bootloader_memory(void) {
     err_t err = NO_ERROR;
 
     bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
+    unlock_direct_map();
 
     TRACE("memory: Reclaiming bootloader memory");
     while (true) {
@@ -316,6 +335,7 @@ err_t reclaim_bootloader_memory(void) {
     }
 
 cleanup:
+    lock_direct_map();
     irq_spinlock_release(&g_phys_map_lock, irq_state);
 
     return err;

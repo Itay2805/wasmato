@@ -289,9 +289,9 @@ err_t vmar_map(
 
     // ensure the range is within the vmo
     size_t vmo_size = vmo_get_size(vmo);
-    uint64_t vmo_top_address;
-    CHECK(__builtin_add_overflow(vmo_offset, len, &vmo_top_address));
-    CHECK(vmo_top_address < vmo_size);
+    uint64_t vmo_top_address = 0;
+    CHECK(!__builtin_add_overflow(vmo_offset, len, &vmo_top_address));
+    CHECK(vmo_top_address <= vmo_size);
 
     // allocate the vmar object
     vmar_region_t* region = alloc_type(vmar_region_t);
@@ -299,6 +299,7 @@ err_t vmar_map(
     region->page_offset = vmo_offset / PAGE_SIZE;
     region->exec = (options & VMAR_MAP_EXECUTE);
     region->write = (options & VMAR_MAP_WRITE);
+    region->object = &vmo->object;
 
     // allocate a region to be used
     RETHROW(vmar_allocate_region(vmar, region, options & VMAR_MAP_SPECIFIC, vmar_offset, len, order));
@@ -312,7 +313,9 @@ err_t vmar_map(
     vmar_commit_region(vmar, region);
 
     // output the mapped address
-    *mapped_addr = region->start;
+    if (mapped_addr != NULL) {
+        *mapped_addr = region->start;
+    }
 
 cleanup:
     if (IS_ERROR(err)) {
@@ -332,13 +335,8 @@ cleanup:
  * @param addr  [IN] The address to unmap from
  * @param len   [IN] The length to unmap
  */
-err_t vmar_unmap(vmar_t* vmar, void* addr, size_t len) {
-    err_t err = NO_ERROR;
-
-    CHECK_FAIL();
-
-cleanup:
-    return err;
+void vmar_unmap(vmar_t* vmar, void* addr, size_t len) {
+    ASSERT(!"TODO: unmap");
 }
 
 
@@ -355,41 +353,51 @@ static void vmar_print_tree_rec(vmar_region_t* region, char* prefix, size_t plen
         debug_print("%s", is_last ? "└── " : "├── ");
     }
 
-    // at this point we must be a vmar
-    ASSERT(region->object->type == OBJECT_TYPE_VMAR);
-    vmar_t* vmar = containerof(region->object, vmar_t, object);
-
     const char* name = region->object->name;
     if (name == NULL) {
         name = "<anonymous>";
     }
 
+    const char* type_str = NULL;
+    if (region->object->type == OBJECT_TYPE_VMO) {
+        type_str = "VMO ";
+    } else if (region->object->type == OBJECT_TYPE_VMAR) {
+        type_str = "VMAR";
+    } else {
+        ASSERT(false);
+    }
+
     uintptr_t start = (uintptr_t)region->start;
     uintptr_t end = (uintptr_t)(region->start + (PAGES_TO_SIZE(region->page_count) - 1));
-    debug_print("VMAR: 0x%08x'%08x-0x%08x'%08x: %lx pages [%s]\n",
+    debug_print("%s: 0x%08x'%08x-0x%08x'%08x: %ld pages [%s]\n",
+        type_str,
         (uint32_t)(start >> 32), (uint32_t)start,
         (uint32_t)(end >> 32), (uint32_t)end,
         region->page_count,
         name
     );
 
-    // this is a vmar that might have children
-    if (rb_first(&vmar->root) == NULL) {
-        // no children, exit
-        return;
+    if (region->object->type == OBJECT_TYPE_VMAR) {
+        vmar_t* vmar = containerof(region->object, vmar_t, object);
+
+        // this is a vmar that might have children
+        if (rb_first(&vmar->root) == NULL) {
+            // no children, exit
+            return;
+        }
+
+        const char *ext = is_last ? "    " : "│   ";
+        memcpy(prefix + plen, ext, 4);
+        size_t new_plen = plen + 4;
+        prefix[new_plen] = '\0';
+
+        for (struct rb_node* n = rb_first(&vmar->root); n != NULL; n = rb_next(n)) {
+            vmar_region_t* region = containerof(n, vmar_region_t, node);
+            vmar_print_tree_rec(region, prefix, new_plen, rb_next(n) == NULL);
+        }
+
+        prefix[plen] = '\0';
     }
-
-    const char *ext = is_last ? "    " : "│   ";
-    memcpy(prefix + plen, ext, 4);
-    size_t new_plen = plen + 4;
-    prefix[new_plen] = '\0';
-
-    for (struct rb_node* n = rb_first(&vmar->root); n != NULL; n = rb_next(n)) {
-        vmar_region_t* region = containerof(n, vmar_region_t, node);
-        vmar_print_tree_rec(region, prefix, new_plen, rb_next(n) == NULL);
-    }
-
-    prefix[plen] = '\0';
 }
 
 void vmar_print(vmar_t* vmar) {

@@ -54,7 +54,7 @@ err_t scheduler_init_per_core(void) {
 
     // setup the idle thread of this core
     thread_t* idle_thread = NULL;
-    RETHROW(thread_create(&idle_thread, scheduler_idle_loop, NULL, "[idle-%d]", get_cpu_id()));
+    RETHROW(thread_create(&idle_thread, scheduler_idle_loop, NULL, "idle-%d", get_cpu_id()));
     m_core.idle_thread = idle_thread;
 
     // setup the run queue

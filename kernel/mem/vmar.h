@@ -157,6 +157,20 @@ typedef enum vmar_map_options {
     VMAR_MAP_POPULATE = BIT3,
 } vmar_map_options_t;
 
+/**
+ * Map the given vmo
+ *
+ * If succeeds takes the ref
+ *
+ * @param vmar          [IN]    The VMAR to map into
+ * @param options       [IN]    The options for the mapping
+ * @param vmar_offset   [IN]    The offset in the vmar to map from, used with VMAR_MAP_SPECIFIC
+ * @param vmo           [IN]    The vmo to map
+ * @param vmo_offset    [IN]    The offset in the vmo to map, must be page aligned
+ * @param len           [IN]    The amount to map, must be page aligned
+ * @param order         [IN]    The alignment, as `log2(alignment) - 12`
+ * @param mapped_addr   [OUT]   The address that the vmo was mapped at
+ */
 err_t vmar_map(
     vmar_t* vmar,
     vmar_map_options_t options,
@@ -174,7 +188,7 @@ err_t vmar_map(
  * @param addr  [IN] The address to unmap from
  * @param len   [IN] The length to unmap
  */
-err_t vmar_unmap(vmar_t* vmar, void* addr, size_t len);
+void vmar_unmap(vmar_t* vmar, void* addr, size_t len);
 
 /**
  * Allocate from the bump allocator of the vmar, by the given amount of bytes.

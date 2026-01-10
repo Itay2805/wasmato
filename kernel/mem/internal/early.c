@@ -1,8 +1,11 @@
 #include "early.h"
 
+#include <cpuid.h>
+
 #include "direct.h"
 #include "limine_requests.h"
 #include "phys_map.h"
+#include "arch/cpuid.h"
 #include "arch/intrin.h"
 #include "arch/paging.h"
 #include "lib/elf64.h"
@@ -66,15 +69,11 @@ static void* early_alloc_page(void) {
 
 #define DIRECT_MAP_ATTRIBUTES   (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_U)
 
-static uint64_t* early_virt_get_next_level(uint64_t* entry, bool allocate, bool direct) {
+static uint64_t* early_virt_get_next_level(uint64_t* entry, bool direct) {
     // ensure we don't have a large page in the way
     ASSERT((*entry & IA32_PG_PS) == 0);
 
     if ((*entry & IA32_PG_P) == 0) {
-        if (!allocate) {
-            return NULL;
-        }
-
         void* phys = early_alloc_page();
         if (phys == NULL) {
             return NULL;
@@ -87,23 +86,23 @@ static uint64_t* early_virt_get_next_level(uint64_t* entry, bool allocate, bool 
     return phys_to_direct(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
-static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool allocate, bool direct) {
+static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool direct) {
     size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
     size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
     size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
     size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
 
-    uint64_t* pml3 = early_virt_get_next_level(&pml4[index4], allocate, direct);
+    uint64_t* pml3 = early_virt_get_next_level(&pml4[index4], direct);
     if (pml3 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml2 = early_virt_get_next_level(&pml3[index3], allocate, direct);
+    uint64_t* pml2 = early_virt_get_next_level(&pml3[index3], direct);
     if (pml2 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml1 = early_virt_get_next_level(&pml2[index2], allocate, direct);
+    uint64_t* pml1 = early_virt_get_next_level(&pml2[index2], direct);
     if (pml1 == NULL) {
         return NULL;
     }
@@ -114,37 +113,23 @@ static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool allocate, b
 static err_t early_virt_map(
     uint64_t* pml4,
     void* virt, uint64_t phys, size_t num_pages,
-    bool write, bool exec, bool direct
+    bool write, bool exec
 ) {
     err_t err = NO_ERROR;
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE, phys += PAGE_SIZE) {
-        uint64_t* pte = early_virt_get_pte(pml4, virt, true, direct);
+        uint64_t* pte = early_virt_get_pte(pml4, virt, false);
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
         uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A;
         if (!exec) entry |= IA32_PG_NX;
         if (write) entry |= IA32_PG_RW;
-        if (direct) entry |= IA32_PG_U;
 
         // and set it
         CHECK(*pte == 0);
         *pte = entry;
     }
-
-cleanup:
-    return err;
-}
-
-static err_t early_virt_unmap_direct(uint64_t* pml4, void* virt) {
-    err_t err = NO_ERROR;
-
-    uint64_t* pte = early_virt_get_pte(pml4, virt, false, true);
-    CHECK(pte != NULL);
-    CHECK(*pte == (direct_to_phys(virt) | DIRECT_MAP_ATTRIBUTES));
-    *pte = 0;
-    __invlpg(virt);
 
 cleanup:
     return err;
@@ -227,24 +212,12 @@ static err_t early_map_kernel(uint64_t* pml4) {
 
         // map it all
         size_t page_num = DIV_ROUND_UP(pend - paddr, PAGE_SIZE);
-        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, sections[i].write, sections[i].exec, false));
+        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, sections[i].write, sections[i].exec));
     }
 
 cleanup:
     return err;
 }
-
-static const char* m_limine_type_str[] = {
-    [LIMINE_MEMMAP_USABLE] = "Usable",
-    [LIMINE_MEMMAP_RESERVED] = "Reserved",
-    [LIMINE_MEMMAP_ACPI_RECLAIMABLE] = "ACPI Reclaimable",
-    [LIMINE_MEMMAP_ACPI_NVS] = "ACPI NVS",
-    [LIMINE_MEMMAP_BAD_MEMORY] = "Bad memory",
-    [LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE] = "Bootloader Reclaimable",
-    [LIMINE_MEMMAP_EXECUTABLE_AND_MODULES] = "Kernel and modules",
-    [LIMINE_MEMMAP_FRAMEBUFFER] = "Framebuffer",
-    [LIMINE_MEMMAP_ACPI_TABLES] = "ACPI Tables",
-};
 
 static err_t early_init_direct_map(void) {
     err_t err = NO_ERROR;
@@ -276,33 +249,46 @@ static err_t early_map_direct_map(uint64_t* pml4) {
     struct limine_memmap_response* response = g_limine_memmap_request.response;
     CHECK(response != NULL);
 
+    // check if we have 1gb pages
+    bool has_1gb_pages = false;
+    uint32_t a, b, c, d;
+    if (__get_cpuid(CPUID_EXTENDED_CPU_SIG, &a, &b, &c, &d)) {
+        CPUID_EXTENDED_CPU_SIG_EDX edx = { .packed = d };
+        has_1gb_pages = edx.Page1GB;
+    }
+
     // we already reserve everything required by the physical address bits, so
     // no need to check it again
     size_t top_address = 1ULL << get_physical_address_bits();
 
-    // map all the physical memory we need to access
-    TRACE("memory: Bootloader provided memory map:");
-    for (int i = 0; i < response->entry_count; i++) {
-        struct limine_memmap_entry* entry = response->entries[i];
-        if (entry->type < ARRAY_LENGTH(m_limine_type_str) && m_limine_type_str[entry->type] != NULL) {
-            TRACE("memory: \t%016lx-%016lx: %s", entry->base, entry->base + entry->length, m_limine_type_str[entry->type]);
-        } else {
-            TRACE("memory: \t%016lx-%016lx: <unknown type %lu>", entry->base, entry->base + entry->length, entry->type);
-        }
+    // ensure the HHDM is 1gb aligned
+    CHECK(((uintptr_t)g_direct_map_vmar.region.start % SIZE_1GB) == 0);
 
-        // must be below the address limit
-        CHECK(entry->base + entry->length <= top_address);
+    // the amount of top level entries we need, each entry is a 512gb range
+    // we can assume the value is correct because by this time the direct map
+    // was reserved in the VMAR
+    size_t pml4e_count = DIV_ROUND_UP(top_address, SIZE_512GB);
 
-        if (
-            entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE ||
-            entry->type == LIMINE_MEMMAP_USABLE
-        ) {
-            RETHROW(early_virt_map(
-                pml4,
-                phys_to_direct(entry->base),
-                entry->base, entry->length / PAGE_SIZE,
-                true, false, true
-            ));
+    // the amount of entries inside hte pml4e, because the phys bits are a log2
+    // we will only ever have a value that is less than 512 if there is less than
+    // 512gb of physical address space
+    size_t pml3e_count = MIN(DIV_ROUND_UP(top_address, SIZE_1GB), 512);
+
+    // map it all
+    for (size_t pml4i = 0; pml4i < pml4e_count; pml4i++) {
+        uint64_t* pml3 = early_alloc_page();
+        CHECK_ERROR(pml3 != NULL, ERROR_OUT_OF_MEMORY);
+        memset(pml3, 0, PAGE_SIZE);
+
+        // setup the pml4 entry, we offset by 256
+        // because upper half
+        pml4[256 + pml4i] = direct_to_phys(pml3) | IA32_PG_P | IA32_PG_RW | IA32_PG_NX | IA32_PG_U;
+
+        // and now the rest of the entries
+        for (size_t pml3i = 0; pml3i < pml3e_count; pml3i++) {
+            // and just map it as 1gb pages
+            CHECK(has_1gb_pages);
+            pml3[pml3i] = ((SIZE_512GB * pml4i) + (SIZE_1GB * pml3i)) | DIRECT_MAP_ATTRIBUTES | IA32_PG_PS;
         }
     }
 
@@ -343,7 +329,7 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
         void* bitmap_ptr = g_buddy_bitmap_vmar.region.start + bitmap_start;
         void* bitmap_end = g_buddy_bitmap_vmar.region.start + bitmap_start + bitmap_size;
         for (; bitmap_ptr < bitmap_end; bitmap_ptr += PAGE_SIZE) {
-            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, true, true);
+            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, true);
             CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
             // if not allocated already allocate it now
@@ -351,11 +337,6 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
                 void* page = early_alloc_page();
                 CHECK_ERROR(page != NULL, ERROR_OUT_OF_MEMORY);
                 memset(page, 0, PAGE_SIZE);
-
-                // unmap it from the direct map, for the most part we don't actually
-                // remove things from the direct map, but given the bitmap is static
-                // and will never be returned then we can do it
-                RETHROW(early_virt_unmap_direct(pml4, page));
 
                 // map the bitmap in the pte
                 // we are going to mark this as locked as
@@ -398,9 +379,6 @@ err_t init_early_mem(void) {
 
     // switch to the page table
     __writecr3(direct_to_phys(pml4));
-
-    vmar_print(&g_upper_half_vmar);
-    vmar_print(&g_lower_half_vmar);
 
 cleanup:
     return err;
