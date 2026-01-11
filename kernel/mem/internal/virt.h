@@ -7,16 +7,6 @@
 #include "mem/vmar.h"
 
 /**
- * Unlock the virtual address space
- */
-void virt_lock();
-
-/**
- * Lock the virtual address space
- */
-void virt_unlock(void);
-
-/**
  * Normal init, setting up the page tables before we can switch to them
  */
 err_t init_virt(void);
@@ -36,11 +26,9 @@ bool virt_is_mapped(uintptr_t virt);
 /**
  * Map the given VMO at the given address
  *
- * NOTE: The virt lock must already be taken
- *
  * @param region    [IN] The region to map into
  */
-err_t virt_map_and_populate_vmo(vmar_region_t* region);
+err_t virt_map_and_populate_vmo(mapping_t* region);
 
 /**
  * Attempt to handle a page fault for lazy-memory allocation

@@ -1,4 +1,5 @@
 #pragma once
+#include "mapping.h"
 #include "arch/paging.h"
 #include "lib/assert.h"
 #include "lib/list.h"
@@ -68,6 +69,12 @@ typedef struct vmo {
      * The amount of pages that are part of this VMO
      */
     size_t page_count;
+
+    /**
+     * Whenever we can we use this mapping instead of
+     * allocating a new one
+     */
+    mapping_t inline_mapping;
 
     /**
      * For physical VMO this only has the base address

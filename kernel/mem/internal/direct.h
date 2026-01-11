@@ -1,5 +1,5 @@
 #pragma once
-#include "mem/vmars.h"
+#include "mem/mappings.h"
 
 __attribute__((always_inline))
 static inline void unlock_direct_map(void) {

@@ -3,7 +3,7 @@
 #include "alloc.h"
 #include "arch/paging.h"
 #include "lib/string.h"
-#include "mem/vmars.h"
+#include "mem/mappings.h"
 #include "mem/internal/virt.h"
 #include "sync/spinlock.h"
 

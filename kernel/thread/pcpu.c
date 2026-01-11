@@ -4,7 +4,7 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mem/vmar.h"
-#include "mem/vmars.h"
+#include "mem/mappings.h"
 #include "mem/vmo.h"
 #include "mem/kernel/alloc.h"
 

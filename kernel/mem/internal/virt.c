@@ -10,39 +10,14 @@
 #include "thread/pcpu.h"
 
 /**
- * Spinlock for mapping virtual pages
+ * Spinlock to protect the page table modification
  */
 static irq_spinlock_t m_virt_lock = IRQ_SPINLOCK_INIT;
-static int m_virt_lock_cpu = 0;
-static size_t m_virt_lock_depth = 0;
-static bool m_virt_lock_irq_state = false;
-
-__attribute__((used))
-static const char* m_virt_lock_file = NULL;
-__attribute__((used))
-static size_t m_virt_lock_line = 0;
 
 /**
  * The kernel top level cr3
  */
 static uint64_t* m_pml4 = 0;
-
-void virt_lock() {
-    if (m_virt_lock_cpu == get_cpu_id()) {
-        m_virt_lock_depth++;
-        return;
-    }
-    m_virt_lock_irq_state = irq_spinlock_acquire(&m_virt_lock);
-    m_virt_lock_cpu = get_cpu_id();
-    m_virt_lock_depth = 1;
-}
-
-void virt_unlock(void) {
-    if (--m_virt_lock_depth == 0) {
-        m_virt_lock_cpu = -1;
-        irq_spinlock_release(&m_virt_lock, m_virt_lock_irq_state);
-    }
-}
 
 bool virt_is_mapped(uintptr_t virt) {
     size_t index4 = (virt >> 39) & PAGING_INDEX_MASK;
@@ -142,44 +117,7 @@ static uint64_t* virt_get_pte(void* virt, bool allocate) {
 // Page table operations
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static err_t virt_map_vmar_bump(vmar_t* region, void* ptr) {
-    err_t err = NO_ERROR;
-    void* page = NULL;
-
-    // ensure inside of the bump
-    CHECK(region->region.start <= ptr && ptr < region->bump_alloc_top);
-
-    // allocate a page for the mapping
-    page = phys_alloc(PAGE_SIZE);
-    CHECK_ERROR(page != NULL, ERROR_OUT_OF_MEMORY);
-    memset(page, 0, PAGE_SIZE);
-
-    // we are still not mapped, so we didn't
-    // race with another core
-    // TODO: we might want to turn the bump into something that is more like VMO
-    //       in the future for a more common path, and maybe for things like paging
-    //       memory
-    unlock_direct_map();
-    uint64_t* pte = virt_get_pte(ALIGN_DOWN(ptr, PAGE_SIZE), true);
-    CHECK(pte != NULL);
-
-    if ((*pte & IA32_PG_P) == 0) {
-        *pte = direct_to_phys(page) | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX;
-    }
-
-cleanup:
-    lock_direct_map();
-
-    if (IS_ERROR(err)) {
-        if (page != NULL) {
-            phys_free(page, PAGE_SIZE);
-        }
-    }
-
-    return err;
-}
-
-static err_t virt_map_vmo_page(vmar_region_t* region, size_t page_index) {
+static err_t virt_map_vmo_page(mapping_t* region, size_t page_index) {
     err_t err = NO_ERROR;
 
     // get the vmo itself
@@ -243,8 +181,10 @@ cleanup:
     return err;
 }
 
-err_t virt_map_and_populate_vmo(vmar_region_t* region) {
+err_t virt_map_and_populate_vmo(mapping_t* region) {
     err_t err = NO_ERROR;
+
+    bool irq_state = irq_spinlock_acquire(&m_virt_lock);
 
     // just go over all the pages in the region that needs to be
     // mapped and map them right away
@@ -253,6 +193,8 @@ err_t virt_map_and_populate_vmo(vmar_region_t* region) {
     }
 
 cleanup:
+    irq_spinlock_release(&m_virt_lock, irq_state);
+
     return err;
 }
 
@@ -263,7 +205,7 @@ cleanup:
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     err_t err = NO_ERROR;
 
-    virt_lock();
+    bool irq_state = irq_spinlock_acquire(&m_virt_lock);
 
     // ensure its either write protection or non-present, anything
     // else is considered illegal
@@ -282,30 +224,13 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     }
 
     // Search for the region that we fauled on
-    vmar_region_t* region = vmar_find_object(root_vmar, ptr);
+    mapping_t* region = vmar_find_mapping(root_vmar, ptr);
     CHECK(region != NULL);
-
-    if (region->object->type == OBJECT_TYPE_VMAR) {
-        // we got a VMAR, meaning this is part of
-        // the bump allocator
-        vmar_t* vmar = containerof(region, vmar_t, region);
-        CHECK((code & IA32_PF_EC_P) == 0);
-
-        // map it
-        RETHROW(virt_map_vmar_bump(vmar, ptr));
-
-    } else if (region->object->type == OBJECT_TYPE_VMO) {
-        // get the page index within the region and map it
-        size_t page_index = (ptr - region->start) / PAGE_SIZE;
-        RETHROW(virt_map_vmo_page(region, page_index));
-
-
-    } else {
-        CHECK_FAIL();
-    }
-
-    virt_unlock();
+    size_t page_index = (ptr - region->start) / PAGE_SIZE;
+    RETHROW(virt_map_vmo_page(region, page_index));
 
 cleanup:
+    irq_spinlock_release(&m_virt_lock, irq_state);
+
     return err;
 }

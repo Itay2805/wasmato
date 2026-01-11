@@ -4,7 +4,7 @@
 #include "arch/paging.h"
 #include "lib/assert.h"
 #include "lib/string.h"
-#include "mem/vmars.h"
+#include "mem/mappings.h"
 
 static atomic_uint_fast64_t m_alloc_binmap;
 static alloc_bin_t m_alloc_bins[64];
@@ -50,7 +50,7 @@ static int alloc_bin_index_up(size_t x) {
 }
 
 static void* alloc_expand_heap(size_t* pn) {
-    static unsigned mmap_step;
+    static size_t offset;
     size_t n = *pn;
 
     if (n > SIZE_MAX / 2 - PAGE_SIZE) {
@@ -58,25 +58,17 @@ static void* alloc_expand_heap(size_t* pn) {
     }
     n += -n & PAGE_SIZE-1;
 
-    void* ptr = vmar_allocate_bump(&g_heap_vmar, n);
-    if (ptr != NULL) {
-		*pn = n;
-        return ptr;
-    }
-
-    size_t min = (size_t)PAGE_SIZE << mmap_step / 2;
-    if (n < min) n = min;
-    // void* area = valloc_alloc(n);
-    ASSERT(!"TODO");
-    void* area = NULL;
-    if (area == NULL) {
+    // ensure we have space in the
+    // heap for more pages
+    if (offset + n > HEAP_SIZE) {
         return NULL;
     }
 
+    // move the offset and take the pointer
     *pn = n;
-    mmap_step++;
-    return area;
-
+    void* ptr = g_heap_vmo.vmo.inline_mapping.start + offset;
+    offset += n;
+    return (void*)(ptr);
 }
 
 static alloc_chunk_t* alloc_chunk(size_t n) {

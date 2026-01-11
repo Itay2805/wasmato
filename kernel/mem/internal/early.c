@@ -10,7 +10,7 @@
 #include "arch/paging.h"
 #include "lib/elf64.h"
 #include "lib/string.h"
-#include "mem/vmars.h"
+#include "mem/mappings.h"
 
 //----------------------------------------------------------------------------------------------------------------------
 // Early page allocator
@@ -182,37 +182,43 @@ static err_t early_map_kernel(uint64_t* pml4) {
     // TODO: something better than this? but I also don't want to look at
     //       the exec file from limine
     struct {
-        vmar_t* vmar;
+        vmo_t* vmo;
         void* start;
         void* end;
-        uint8_t write : 1;
-        uint8_t exec: 1;
+        vmar_map_options_t options;
     } sections[] = {
-        { &g_kernel_limine_requests_vmar, __kernel_limine_requests_start, __kernel_text_start, false, false },
-        { &g_kernel_text_vmar, __kernel_text_start, __kernel_rodata_start, false, true },
-        { &g_kernel_rodata_vmar, __kernel_rodata_start, __kernel_data_start, false, false },
-        { &g_kernel_data_vmar, __kernel_data_start, __kernel_end, true, false },
+        { &g_kernel_limine_requests_vmo, __kernel_limine_requests_start, __kernel_text_start, 0 },
+        { &g_kernel_text_vmo, __kernel_text_start, __kernel_rodata_start, VMAR_MAP_EXECUTE },
+        { &g_kernel_rodata_vmo, __kernel_rodata_start, __kernel_data_start, 0 },
+        { &g_kernel_data_vmo, __kernel_data_start, __kernel_end, VMAR_MAP_WRITE },
     };
     for (int i = 0; i < ARRAY_LENGTH(sections); i++) {
         void* vaddr = (void*)sections[i].start;
         void* vend = (void*)sections[i].end;
-
-        // reserve in the vmar
-        RETHROW(vmar_allocate_static(
-            &g_kernel_vmar,
-            sections[i].vmar,
-            VMAR_SPECIFIC,
-            vaddr - (void*)__kernel_start,
-            vend - vaddr,
-            0
-        ));
-
         uintptr_t paddr = ((uintptr_t)vaddr - virtual_base) + physical_base;
         uintptr_t pend = ((uintptr_t)vend - virtual_base) + physical_base;
+        size_t page_num = (pend - paddr) / PAGE_SIZE;
 
-        // map it all
-        size_t page_num = DIV_ROUND_UP(pend - paddr, PAGE_SIZE);
-        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, sections[i].write, sections[i].exec));
+        // setup the vmo to have the correct address and page count
+        vmo_t* vmo = sections[i].vmo;
+        vmo->page_count = page_num;
+        vmo->pages[0] = (paddr >> PAGE_SHIFT) | VMO_PAGE_PRESENT;
+
+        // map the vmo, we are not going to populate since the real VMM
+        // is not up and ready yet, so perform the mapping manually
+        RETHROW(vmar_map(
+            &g_kernel_vmar,
+            VMAR_MAP_SPECIFIC | sections[i].options,
+            vaddr - (void*)__kernel_start,
+            sections[i].vmo,
+            0, vend - vaddr, 0,
+            NULL
+        ));
+
+        // properly map it
+        bool write = sections[i].options & VMAR_MAP_WRITE;
+        bool exec = sections[i].options & VMAR_MAP_EXECUTE;
+        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, write, exec));
     }
 
 cleanup:
@@ -368,13 +374,13 @@ err_t init_early_mem(void) {
     RETHROW(early_map_direct_map(pml4));
     RETHROW(early_map_buddy_bitmap(pml4));
 
-    // setup the heap region, this is required to continue
-    // with setting up other stuff
-    RETHROW(vmar_allocate_static(
+    // allocate the heap region in the vmar
+    RETHROW(vmar_map(
         &g_upper_half_vmar,
-        &g_heap_vmar,
-        VMAR_CAN_BUMP,
-        0, SIZE_16GB, 0
+        VMAR_MAP_WRITE, 0,
+        &g_heap_vmo.vmo, 0,
+        HEAP_SIZE, 0,
+        NULL
     ));
 
     // switch to the page table

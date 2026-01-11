@@ -47,6 +47,7 @@ LD				:= ld.lld
 #
 CFLAGS			:= -target x86_64-pc-none-elf
 CFLAGS			+= -Wall -Werror -std=gnu11
+CFLAGS			+= -Wno-gnu-variable-sized-type-not-at-end
 CFLAGS			+= -mgeneral-regs-only
 CFLAGS			+= -march=x86-64-v3 -mxsave -mxsaveopt
 CFLAGS			+= -fno-pie -fno-pic -ffreestanding -fno-builtin -static

@@ -1,52 +1,10 @@
 #pragma once
 
+#include "mapping.h"
 #include "vmo.h"
 #include "lib/except.h"
 #include "object/object.h"
-#include "lib/rbtree/rbtree.h"
 #include "sync/spinlock.h"
-
-/**
- * Represents a single vmar region
- */
-typedef struct vmar_region {
-    /**
-     * The node in the VMAR that this region is part of
-     */
-    struct rb_node node;
-
-    /**
-     * The object that this region represents
-     */
-    object_t* object;
-
-    /**
-     * The address range that the region takes
-     */
-    void* start;
-
-    /**
-     * The page offset from the object that is mapped
-     * - for VMAR is always zero
-     * - for VMO is the page inside of it
-     */
-    size_t page_offset;
-
-    /**
-     * How many pages are mapped
-     */
-    size_t page_count;
-
-    /**
-     * Is this region writable
-     */
-    bool write;
-
-    /**
-     * Is this region executable
-     */
-    bool exec;
-} vmar_region_t;
 
 /**
  * Virtual Memory Address Region
@@ -61,22 +19,12 @@ typedef struct vmar {
      * The region object that is used to be
      * part of the parent
      */
-    vmar_region_t region;
+    mapping_t region;
 
     /**
      * The root for this region entries
      */
     struct rb_root root;
-
-    /**
-     * The bump allocator's current address
-     */
-    void* bump_alloc_top;
-
-    /**
-     * The bump allocators max address
-     */
-    void* bump_alloc_max;
 } vmar_t;
 
 static inline bool vmar_contains_ptr(vmar_t* vmar, void* ptr) {
@@ -91,11 +39,6 @@ typedef enum vmar_options {
      * Allocate the vmar at a specific address
      */
     VMAR_SPECIFIC = BIT0,
-
-    /**
-     * Can the bump allocator be used
-     */
-    VMAR_CAN_BUMP = BIT1,
 } vmar_options_t;
 
 /**
@@ -191,29 +134,18 @@ err_t vmar_map(
 void vmar_unmap(vmar_t* vmar, void* addr, size_t len);
 
 /**
- * Allocate from the bump allocator of the vmar, by the given amount of bytes.
- *
- * The memory of the bump allocator allocated on demand
- *
- * @param size          [IN] How much to allocate
- * @return The pointer to the start of the allocated area from the bump
- */
-void* vmar_allocate_bump(vmar_t* vmar, size_t size);
-
-/**
- * Attempt to find a mapped object in the given vmar
+ * Attempt to find a mapped VMO in the given vmar
  *
  * Will return the region that should have a mapped object.
  *
- * For the bump allocator it will return the VMAR that contains
- * the allocator.
+ * The object will always be a VMO
  *
  * The virt lock must be taken at this point
  *
  * @param vmar  [IN]    The VMAR to search from
  * @param ptr   [IN]    The pointer to search for
  */
-vmar_region_t* vmar_find_object(vmar_t* vmar, void* ptr);
+mapping_t* vmar_find_mapping(vmar_t* vmar, void* ptr);
 
 /**
  * Pretty print a vmar tree
