@@ -37,25 +37,6 @@ include scripts/defs.mk
 PHONY += all
 all:
 
-# General cflags that everything will use
-cflags-y += -target x86_64-pc-none-elf
-cflags-y += -Wall -Werror -std=gnu11
-cflags-y += -march=x86-64-v3 -mxsave -mxsaveopt
-cflags-y += -flto -g
-cflags-y += -fno-omit-frame-pointer -fvisibility=hidden
-cflags-y += -Wno-unused-label
-
-# General ldflags that everything will use
-ldflags-y += -flto
-
-# enable optimizations
-cflags-$(OPTIMIZE) += -O3
-
-# When debugging disable some warnings and add ubsan
-cflags-$(DEBUG) += -fsanitize=undefined
-cflags-$(DEBUG) += -D__DEBUG__
-cflags-$(DEBUG) += -Wno-unused-function -Wno-unused-label -Wno-unused-variable
-
 quiet_cmd_clean = CLEAN   $(BUILD)
       cmd_clean = rm -rf $(BUILD)
 
@@ -64,6 +45,7 @@ clean:
 	$(call cmd,clean)
 
 include kernel/Makefile
+include makefiles/limine.mk
 include scripts/build.mk
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -73,24 +55,13 @@ include scripts/build.mk
 # The name of the image we are building
 IMAGE_NAME 	:= $(BUILD)/tomato.img
 
-.PHONY: FORCE
-FORCE:
-
-$(OBJ)/limine.stamp: $(shell find lib/limine)
-	@mkdir -p $(@D)
-	@cp -rpT lib/limine $(OBJ)/limine
-	@touch $@
-
-$(OBJ)/limine/limine: FORCE | $(OBJ)/limine.stamp
-	@$(MAKE) -C $(OBJ)/limine
-
 # Build a limine image with both bios and uefi boot options
-$(IMAGE_NAME): artifacts/limine.conf $(OBJ)/limine/limine build/kernel
+$(IMAGE_NAME): artifacts/limine.conf $(BUILD)/limine $(BUILD)/kernel
 	mkdir -p $(@D)
 	rm -f $(IMAGE_NAME)
 	dd if=/dev/zero bs=1M count=0 seek=64 of=$(IMAGE_NAME)
 	sgdisk $(IMAGE_NAME) -n 1:2048 -t 1:ef00 -m 1
-	$(OBJ)/limine/limine bios-install $(IMAGE_NAME)
+	$(BUILD)/limine bios-install $(IMAGE_NAME)
 	mformat -i $(IMAGE_NAME)@@1M
 	mmd -i $(IMAGE_NAME)@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine
 	mcopy -i $(IMAGE_NAME)@@1M build/kernel ::/boot
