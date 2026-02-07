@@ -35,6 +35,8 @@ OBJ := $(BUILD)/obj
 
 include scripts/defs.mk
 
+ldflags-y += -fuse-ld=lld
+
 PHONY += all
 all:
 
@@ -45,6 +47,7 @@ PHONY += clean
 clean:
 	$(call cmd,clean)
 
+include src/rust-libs/Makefile
 include src/runtime/Makefile
 include src/kernel/Makefile
 include makefiles/limine.mk

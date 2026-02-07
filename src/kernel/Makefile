@@ -20,14 +20,21 @@ cflags-kernel-y += -Ilib/limine-protocol/include
 # we need the runtime for the kernel to work
 ccodeps-kernel-y += $(BUILD)/runtime
 
+# ensure we link with lto and all the fun
 ldflags-kernel-y += -flto
-ldflags-kernel-y += -Tsrc/kernel/linker.ld
 ldflags-kernel-y += -nostdlib
 ldflags-kernel-y += -static
 
+# linker script
+lddeps-kernel-y += src/kernel/linker.ld
+ldflags-kernel-y += -Tsrc/kernel/linker.ld
+
+# don't include floating point support in the printf for the kernel
 cflags-kernel-y += -DSTB_SPRINTF_NOFLOAT
 
+#
 cflags-kernel-$(OPTIMIZE) += -O3
+ldflags-kernel-$(OPTIMIZE) += -O3
 
 cflags-kernel-$(DEBUG) += -fsanitize=undefined
 cflags-kernel-$(DEBUG) += -D__DEBUG__

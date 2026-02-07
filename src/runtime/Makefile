@@ -25,5 +25,10 @@ cflags-runtime-$(DEBUG) += -fsanitize=undefined
 cflags-runtime-$(DEBUG) += -D__DEBUG__
 cflags-runtime-$(DEBUG) += -Wno-unused-function -Wno-unused-label -Wno-unused-variable
 
+# link with our rust libs
+lddeps-runtime-y += $(RUST_LIBS)
+ldflags-runtime-y += -L$(CARGO_LIBS_PATH)
+ldlibs-runtime-y += rust_libs
+
 runtime-y += $(shell find src/runtime -name '*.c')
 runtime-y += $(shell find src/common -name '*.c')

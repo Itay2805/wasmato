@@ -4,3 +4,6 @@
 [submodule "lib/limine"]
 	path = lib/limine
 	url = https://codeberg.org/Limine/Limine.git
+[submodule "lib/spidir"]
+	path = lib/spidir
+	url = git@github.com:nmraz/spidir.git

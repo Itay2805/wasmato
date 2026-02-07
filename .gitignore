@@ -4,5 +4,6 @@
 build
 obj
 bin
+target
 *.DotSettings.user
 compile_commands.json
