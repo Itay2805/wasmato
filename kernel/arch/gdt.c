@@ -16,8 +16,6 @@ typedef struct tss64 {
 } PACKED tss64_t;
 STATIC_ASSERT(sizeof(tss64_t) == 104);
 
-#define TSS_ALLOC_SIZE (sizeof(tss64_t) + SIZE_8KB * 7)
-
 typedef struct gdt {
     uint16_t size;
     gdt_entries_t* entries;
@@ -49,6 +47,22 @@ static gdt_entries_t m_entries = {
         .granularity    = 0b00000000,
         .base_high      = 0x00
     },
+    {   // user code
+        .limit          = 0x0000,
+        .base_low       = 0x0000,
+        .base_mid       = 0x00,
+        .access         = 0b11111010,
+        .granularity    = 0b00100000,
+        .base_high      = 0x00
+    },
+    {   // user data
+        .limit          = 0x0000,
+        .base_low       = 0x0000,
+        .base_mid       = 0x00,
+        .access         = 0b11110010,
+        .granularity    = 0b00000000,
+        .base_high      = 0x00
+    },
 {   // TSS
         .length         = 0,
         // Will be filled by the init function
@@ -70,21 +84,23 @@ void init_gdt() {
     asm volatile (
         "lgdt %0\n"
         "movq %%rsp, %%rax\n"
-        "pushq $16\n"
+        "pushq %2\n"
         "pushq %%rax\n"
         "pushfq\n"
-        "pushq $8\n"
+        "pushq %1\n"
         "lea 1f(%%rip), %%rax\n"
         "pushq %%rax\n"
         "iretq\n"
         "1:\n"
-        "movw $16, %%ax\n"
+        "movw %2, %%ax\n"
         "movw %%ax, %%ds\n"
         "movw %%ax, %%es\n"
         "movw %%ax, %%fs\n"
         "movw %%ax, %%gs\n"
         :
         : "m"(gdt)
+        , "i"(GDT_KERNEL_CODE)
+        , "i"(GDT_KERNEL_DATA)
         : "memory", "rax"
     );
 }
@@ -102,21 +118,18 @@ __attribute__((aligned(16)))
 static CPU_LOCAL tss64_t m_tss = {};
 
 /**
- * Stacks that require a separate stack that is not the normal
- * stack of a process:
- * - Exceptions
- * - NMI
- * - Double fault
+ * per-cpu stacks to use, for special interrupts
  */
 __attribute__((aligned(16)))
-static CPU_LOCAL char m_stacks[3][SIZE_4KB] = {};
+static CPU_LOCAL char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
 
 void init_tss(void) {
-    // set the ists
     tss64_t* tss = pcpu_get_pointer(&m_tss);
-    tss->ist[TSS_IST_EXCEPTION] = (uintptr_t)pcpu_get_pointer(&m_stacks[0]) + SIZE_4KB - 16;
-    tss->ist[TSS_IST_NMI] = (uintptr_t)pcpu_get_pointer(&m_stacks[1]) + SIZE_4KB - 16;
-    tss->ist[TSS_IST_DB] = (uintptr_t)pcpu_get_pointer(&m_stacks[2]) + SIZE_4KB - 16;
+
+    // the ists
+    for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
+        tss->ist[ist] = (uintptr_t)pcpu_get_pointer(&m_stacks[ist]) + SIZE_4KB - 16;
+    }
 
     spinlock_acquire(&m_tss_lock);
 
@@ -136,5 +149,5 @@ void init_tss(void) {
 }
 
 void tss_set_irq_stack(void* rsp) {
-    m_tss.ist[TSS_IST_IRQ] = (uintptr_t)rsp;
+    m_tss.rsp0 = (uintptr_t)rsp;
 }

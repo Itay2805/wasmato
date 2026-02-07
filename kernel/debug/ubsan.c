@@ -1,8 +1,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <lib/except.h>
 
+#include "lib/except.h"
 #include "lib/string.h"
 
 #include "log.h"

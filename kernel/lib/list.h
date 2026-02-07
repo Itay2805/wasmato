@@ -3,7 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <debug/log.h>
+
+#include "debug/log.h"
 
 typedef struct list_entry {
     struct list_entry* next;

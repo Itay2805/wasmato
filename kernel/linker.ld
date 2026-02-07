@@ -13,33 +13,35 @@ PHDRS
 SECTIONS
 {
     . = 0xffffffff80000000;
-    __kernel_start = .;
-    __kernel_limine_requests_start = .;
 
-    .limine_requests : {
+    .limine_requests : ALIGN(4096) {
+        __kernel_limine_requests_base = .;
         KEEP(*(.limine_requests_start))
         KEEP(*(.limine_requests))
         KEEP(*(.limine_requests_end))
     } :limine_requests
 
     . = ALIGN(4096);
-    __kernel_text_start = .;
+    __kernel_limine_requests_page_count = ABSOLUTE(. - __kernel_limine_requests_base) / 4096;
 
-    .text : {
+    .text : ALIGN(4096) {
+        __kernel_text_base = .;
         *(.text .text.*)
     } :text
 
     . = ALIGN(4096);
-    __kernel_rodata_start = .;
+    __kernel_text_page_count = ABSOLUTE(. - __kernel_text_base) / 4096;
 
-    .rodata : {
+    .rodata : ALIGN(4096) {
+        __kernel_rodata_base = .;
         *(.rodata .rodata.*)
     } :rodata
 
     . = ALIGN(4096);
-    __kernel_data_start = .;
+    __kernel_rodata_page_count = ABSOLUTE(. - __kernel_rodata_base) / 4096;
 
-    .data : {
+    .data : ALIGN(4096) {
+        __kernel_data_base = .;
         *(.data .data.*)
     } :data
 
@@ -49,5 +51,6 @@ SECTIONS
     } :data
 
     . = ALIGN(4096);
-    __kernel_end = .;
+    __kernel_data_page_count = ABSOLUTE(. - __kernel_data_base) / 4096;
+
 }

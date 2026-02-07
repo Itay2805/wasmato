@@ -12,15 +12,13 @@ list_t g_phys_map = LIST_INIT(&g_phys_map);
 irq_spinlock_t g_phys_map_lock = IRQ_SPINLOCK_INIT;
 
 /**
- * Allocate phys map entry
+ * Allocator for phys map entries
  */
-static phys_map_entry_t* allocate_phys_map_entry(void) {
-    return alloc_type(phys_map_entry_t);
-}
+static mem_alloc_t m_phys_map_alloc;
 
 static void phys_map_insert_new_entry(list_entry_t* link, uint64_t start, uint64_t end, phys_map_type_t type, bool next) {
     // allocate an entry
-    phys_map_entry_t* entry = allocate_phys_map_entry();
+    phys_map_entry_t* entry = mem_alloc(&m_phys_map_alloc);
     ASSERT(entry != NULL);
 
     // set it up
@@ -37,7 +35,7 @@ static void phys_map_insert_new_entry(list_entry_t* link, uint64_t start, uint64
 static void phys_map_remove_old_entry(phys_map_entry_t* entry) {
     // remove from the linked list
     list_del(&entry->link);
-    free_type(phys_map_entry_t, entry);
+    mem_free(&m_phys_map_alloc, entry);
 }
 
 void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length) {
@@ -209,6 +207,9 @@ static const phys_map_type_t m_limine_memmap_type[] = {
 
 err_t init_phys_map(void) {
     err_t err = NO_ERROR;
+
+    // setup the allocator
+    mem_alloc_init(&m_phys_map_alloc, sizeof(phys_map_entry_t), alignof(phys_map_entry_t));
 
     // Get the physical address bits and set the entire range as unused
     // We verify we can also map that entire physical memory space in the higher half

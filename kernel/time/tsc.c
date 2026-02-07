@@ -12,6 +12,7 @@
 #include "lib/defs.h"
 #include "lib/list.h"
 #include "../mem/kernel/alloc.h"
+#include "mem/internal/phys.h"
 #include "sync/spinlock.h"
 
 typedef struct tsc_refine_ctx {
@@ -105,7 +106,7 @@ static void tsc_refine_callback(timer_t* timer) {
     // recalibrate the lapic timer
     lapic_timer_recalibrate();
 
-    free_type(tsc_refine_ctx_t, ctx);
+    phys_free(ctx, sizeof(*ctx));
 }
 
 err_t init_tsc(void) {
@@ -124,8 +125,8 @@ err_t tsc_refine(void) {
     err_t err = NO_ERROR;
 
     // setup
-    tsc_refine_ctx_t* ctx = alloc_type(tsc_refine_ctx_t);
-    CHECK(ctx != NULL);
+    tsc_refine_ctx_t* ctx = phys_alloc(sizeof(tsc_refine_ctx_t));
+    CHECK_ERROR(ctx != NULL, ERROR_OUT_OF_MEMORY);
     ctx->tsc_start = tsc_read_refs(&ctx->ref_start);
     timer_set(&ctx->timer, tsc_refine_callback, tsc_ms_deadline(1000));
 

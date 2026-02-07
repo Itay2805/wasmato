@@ -114,122 +114,93 @@ static uint64_t* virt_get_pte(void* virt, bool allocate) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Page table operations
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-static err_t virt_map_vmo_page(mapping_t* region, size_t page_index) {
-    err_t err = NO_ERROR;
-
-    // get the vmo itself
-    CHECK(region->object->type == OBJECT_TYPE_VMO);
-    vmo_t* vmo = containerof(region->object, vmo_t, object);
-
-    // we need the offset inside of the vmo
-    size_t vmo_page_offset = region->page_offset + page_index;
-
-    // setup the entry for the allocation
-    uint64_t entry_template = IA32_PG_P | IA32_PG_D | IA32_PG_A;
-
-    // permissions
-    if (region->write) entry_template |= IA32_PG_RW;
-    if (!region->exec) entry_template |= IA32_PG_NX;
-
-    // choose the caching
-    switch (vmo->cache_policy) {
-        case VMO_CACHE_POLICY_CACHED: /* nothing to do */ break;
-        case VMO_CACHE_POLICY_UNCACHED: entry_template |= IA32_PG_CACHE_UC; break;
-        case VMO_CACHE_POLICY_WRITE_COMBINING: entry_template |= IA32_PG_CACHE_WC_4K; break;
-        default: CHECK_FAIL();
-    }
-
-    // the physical page
-    switch (vmo->type) {
-        case VMO_TYPE_NORMAL: {
-            // allocate the page if need be
-            if ((vmo->pages[vmo_page_offset] & VMO_PAGE_PRESENT) == 0) {
-                unlock_direct_map();
-                void* ptr = phys_alloc(PAGE_SIZE);
-                CHECK_ERROR(ptr != NULL, ERROR_OUT_OF_MEMORY);
-                memset(ptr, 0, PAGE_SIZE);
-                vmo->pages[vmo_page_offset] = (direct_to_phys(ptr) >> PAGE_SHIFT) | VMO_PAGE_PRESENT;
-            }
-
-            entry_template |= vmo->pages[vmo_page_offset] << PAGE_SHIFT;
-        } break;
-
-        case VMO_TYPE_PHYSICAL: {
-            // for physical this is just the base + the offset
-            CHECK(vmo->pages[0] & VMO_PAGE_PRESENT);
-            entry_template |= ((vmo->pages[0] + vmo_page_offset) << PAGE_SHIFT);
-        } break;
-
-        default:
-            CHECK_FAIL();
-    }
-
-    // and now we can actually set the page
-    unlock_direct_map();
-    void* virt = region->start + PAGES_TO_SIZE(page_index);
-    uint64_t* pte = virt_get_pte(virt, true);
-    CHECK(pte != NULL);
-    CHECK(*pte == 0);
-    *pte = entry_template;
-
-cleanup:
-    lock_direct_map();
-
-    return err;
-}
-
-err_t virt_map_and_populate_vmo(mapping_t* region) {
-    err_t err = NO_ERROR;
-
-    bool irq_state = irq_spinlock_acquire(&m_virt_lock);
-
-    // just go over all the pages in the region that needs to be
-    // mapped and map them right away
-    for (size_t i = 0; i < region->page_count; i++) {
-        RETHROW(virt_map_vmo_page(region, i));
-    }
-
-cleanup:
-    irq_spinlock_release(&m_virt_lock, irq_state);
-
-    return err;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Page fault handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
+err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel) {
     err_t err = NO_ERROR;
 
     bool irq_state = irq_spinlock_acquire(&m_virt_lock);
 
-    // ensure its either write protection or non-present, anything
-    // else is considered illegal
-    CHECK((code & ~(IA32_PF_EC_P | IA32_PF_EC_WR)) == 0);
+    // these are the only accesses that could make sense for our handler
+    uint32_t allowed_mask = IA32_PF_EC_WRITE | IA32_PF_EC_USER;
+    CHECK((code & allowed_mask) == code);
 
-    void* ptr = (void*)addr;
-
-    // find the root vmar for this request
-    vmar_t* root_vmar = NULL;
-    if (vmar_contains_ptr(&g_upper_half_vmar, ptr)) {
-        root_vmar = &g_upper_half_vmar;
-    } else if (vmar_contains_ptr(&g_lower_half_vmar, ptr)) {
-        root_vmar = &g_lower_half_vmar;
+    // get the region it happened in
+    region_t* region = NULL;
+    if (kernel) {
+        CHECK(g_kernel_memory.base <= (void*)addr);
+        region = &g_kernel_memory;
+        CHECK((code & IA32_PF_EC_USER) == 0);
     } else {
+        CHECK((void*)addr <= g_user_memory.base);
+        region = &g_user_memory;
+        CHECK(code & IA32_PF_EC_USER);
+    }
+
+    // search for the actual mapping where we faulted
+    region = region_find_mapping(region, (void*)addr);
+    CHECK(region != NULL);
+
+    // we don't expect executable pages to ever fault, since at the time
+    // we get to them they should be setup properly
+    CHECK(region->protection != MAPPING_PROTECTION_RX);
+
+    // if we have a read-only page, don't allow to fault on write
+    if (region->protection == MAPPING_PROTECTION_RO) {
+        CHECK((code & IA32_PF_EC_WRITE) == 0);
+    }
+
+    // get the pte, we assume it was not allocated yet
+    // TODO: when we support protection faults we should assume its already allocated
+    uint64_t* pte = virt_get_pte((void*)addr, true);
+    CHECK(pte != NULL);
+    CHECK(*pte == 0);
+
+    // we can now actually do stuff
+    uint64_t phys;
+    if (region->type == REGION_TYPE_MAPPING_PHYS) {
+        // TODO: map this nicely, and maybe even try to use larger mappings
+        //       when possible
+        CHECK_FAIL("TODO: this");
+
+    } else if (region->type == REGION_TYPE_MAPPING_ALLOC) {
+        // allocate the page
+        void* page = phys_alloc(PAGE_SIZE);
+        CHECK(page != NULL);
+        phys = direct_to_phys(page);
+
+    } else {
+        // invalid type
         CHECK_FAIL();
     }
 
-    // Search for the region that we fauled on
-    mapping_t* region = vmar_find_mapping(root_vmar, ptr);
-    CHECK(region != NULL);
-    size_t page_index = (ptr - region->start) / PAGE_SIZE;
-    RETHROW(virt_map_vmo_page(region, page_index));
+    // setup the pte, we assume it can't be executable so mark as NX right away
+    uint64_t new_pte = phys | IA32_PG_P | IA32_PG_NX | IA32_PG_A | IA32_PG_D;
+    if (!kernel) new_pte |= IA32_PG_U;
+    if (region->protection == MAPPING_PROTECTION_RW) new_pte |= IA32_PG_RW;
+
+    // setup caching
+    switch (region->cache_policy) {
+        case MAPPING_CACHE_POLICY_CACHED: new_pte |= IA32_PG_CACHE_WB; break;
+        case MAPPING_CACHE_POLICY_FRAMEBUFFER: new_pte |= IA32_PG_CACHE_WC_4K; break;
+        case MAPPING_CACHE_POLICY_PREFETCHABLE: new_pte |= IA32_PG_CACHE_WT; break;
+        case MAPPING_CACHE_POLICY_UNCACHED: new_pte |= IA32_PG_CACHE_UCM; break;
+        default: CHECK_FAIL();
+    }
+
+    // and set it
+    *pte = new_pte;
 
 cleanup:
+    if (IS_ERROR(err)) {
+        if (kernel) {
+            region_dump(&g_kernel_memory);
+        } else {
+            region_dump(&g_user_memory);
+        }
+    }
+
     irq_spinlock_release(&m_virt_lock, irq_state);
 
     return err;

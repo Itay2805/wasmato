@@ -38,7 +38,7 @@ typedef struct thread {
 
     // Stacks used for running interrupts, to ensure that
     // we can properly reschedule from interrupts
-    void* irq_stack;
+    void* kernel_stack;
 
     // the entry and argument to pass to the entry
     thread_entry_t entry;
@@ -59,12 +59,12 @@ typedef struct thread {
 extern size_t g_extended_state_size;
 
 /**
-* Create a new thread, you need to schedule it yourself
+* Create a new kernel thread, you need to schedule it yourself
 */
 err_t thread_create(thread_t** out_thread, thread_entry_t callback, void* arg, const char* name_fmt, ...);
 
 /**
- * Reset the thread to its initial state
+ * Reset the kernel thread to its initial state
  */
 void thread_reset(thread_t* thread);
 

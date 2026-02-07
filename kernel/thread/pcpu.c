@@ -1,11 +1,11 @@
 #include "pcpu.h"
 
 #include "arch/intrin.h"
+#include "arch/paging.h"
 #include "lib/printf.h"
 #include "lib/string.h"
-#include "mem/vmar.h"
+#include "mem/region.h"
 #include "mem/mappings.h"
-#include "mem/vmo.h"
 #include "mem/kernel/alloc.h"
 
 extern char __start_pcpu_data[];
@@ -25,8 +25,9 @@ static CPU_LOCAL char m_pcpu_mapping_name[sizeof("pcpu-") + 11];
 
 /**
  * All the fs-bases of all the cores
+ * TODO: support for more cores or something, this should be good enough for now
  */
-static uintptr_t* m_all_fs_bases;
+static uintptr_t m_all_fs_bases[256];
 
 void init_early_pcpu(void) {
     // the BSP uses offset zero, because the per-cpu variables are
@@ -40,35 +41,33 @@ void init_early_pcpu(void) {
 err_t init_pcpu(int cpu_count) {
     err_t err = NO_ERROR;
 
-    // TODO: check if TSC deadline is supported, if so use it, otherwise use
-    //       lapic timer or whatever else we want
-    m_all_fs_bases = alloc_array(uintptr_t, cpu_count);
-    CHECK_ERROR(m_all_fs_bases != NULL, ERROR_OUT_OF_MEMORY);
+    CHECK(cpu_count <= ARRAY_LENGTH(m_all_fs_bases));
 
     // the BSP is always at offset zero
     m_all_fs_bases[0] = 0;
 
     // setup the rest of the cores
-    size_t pcpu_size = ALIGN_UP(__stop_pcpu_data - __start_pcpu_data, PAGE_SIZE);
+    size_t pcpu_size = __stop_pcpu_data - __start_pcpu_data;
     for (int i = 1; i < cpu_count; i++) {
         // allocate and map the pcpu data
-        vmo_t* vmo = vmo_create(pcpu_size);
-        CHECK_ERROR(vmo != NULL, ERROR_OUT_OF_MEMORY);
-        void* mapped_addr = NULL;
-        RETHROW(vmar_map(
-            &g_upper_half_vmar,
-            VMAR_MAP_WRITE | VMAR_MAP_POPULATE, 0,
-            vmo, 0, pcpu_size, 0,
-            &mapped_addr
-        ));
+        region_t* region = region_allocate(
+            &g_kernel_memory,
+            SIZE_TO_PAGES(pcpu_size),
+            0, NULL
+        );
+        CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
+
+        // initialize it right away to ensure the other cores will
+        // not need to fault
+        memset(region->base, 0, pcpu_size);
 
         // remember the offset
-        m_all_fs_bases[i] = mapped_addr - (void*)__start_pcpu_data;
+        m_all_fs_bases[i] = region->base - (void*)__start_pcpu_data;
 
         // and set the name
         char* name = pcpu_get_pointer_of(&m_pcpu_mapping_name, i);
         snprintf_(name, sizeof(m_pcpu_mapping_name) - 1, "pcpu-%d", i);
-        vmo->object.name = name;
+        region->name = name;
     }
 
 cleanup:

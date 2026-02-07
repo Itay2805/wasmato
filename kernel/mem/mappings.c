@@ -1,95 +1,104 @@
 #include "mappings.h"
 
-vmar_t g_upper_half_vmar = {
-    .object = {
-        .name = "upper-half",
-        .ref_count = 1,
-        .flags = OBJECT_STATIC,
-        .type = OBJECT_TYPE_VMAR
-    },
-    .region = {
-        // for the upper half just have the entire region
-        .start = (void*)0xFFFF800000000000,
-        .page_count = SIZE_128TB / PAGE_SIZE,
-        .object = &g_upper_half_vmar.object,
-    },
+#include "arch/paging.h"
+
+region_t g_kernel_memory ={
+    .name = "kernel-memory",
+    .root = RB_ROOT,
+    .base = (void*)0xFFFF800000000000,
+    .page_count = SIZE_128TB / PAGE_SIZE,
+    .type = REGION_TYPE_DEFAULT,
+    .pinned = true,
 };
 
-vmar_t g_lower_half_vmar = {
-    .object = {
-        .name = "lower-half",
-        .ref_count = 1,
-        .flags = OBJECT_STATIC,
-        .type = OBJECT_TYPE_VMAR
-    },
-    .region = {
-        // for the lower half leave the lowest 4gb unmapped at all times
-        // and go right up to the top of it
-        .start = (void*)SIZE_4GB,
-        .page_count = (SIZE_128TB - SIZE_4GB) / PAGE_SIZE,
-        .object = &g_lower_half_vmar.object,
-    },
+region_t g_user_memory = {
+    .name = "user-memory",
+    .root = RB_ROOT,
+    .base = (void*)BASE_4GB,
+    .page_count = (SIZE_128TB - SIZE_4GB) / PAGE_SIZE,
+    .type = REGION_TYPE_DEFAULT,
+    .pinned = true,
 };
 
-#define VMAR_STATIC_INIT(_name) \
-    (vmar_t){ \
-        .object = { \
-            .name = _name, \
-            .ref_count = 1, \
-            .flags = OBJECT_STATIC, \
-            .type = OBJECT_TYPE_VMAR \
-        } \
-    }
-
-#define PHYSICAL_VMO_STATIC_INIT(_name) \
-    { \
-        .object = { \
-            .name = _name, \
-            .ref_count = 1, \
-            .flags = OBJECT_STATIC, \
-            .type = OBJECT_TYPE_VMO \
-        }, \
-        .type = VMO_TYPE_PHYSICAL, \
-        .cache_policy = VMO_CACHE_POLICY_CACHED, \
-        .page_count = 0, \
-        .pages = { 0 } \
-    }
-
-#define VIRTUAL_VMO_STATIC_INIT(_name, size) \
-    { \
-        .object = { \
-            .name = _name, \
-            .ref_count = 1, \
-            .flags = OBJECT_STATIC, \
-            .type = OBJECT_TYPE_VMO \
-        }, \
-        .type = VMO_TYPE_PHYSICAL, \
-        .cache_policy = VMO_CACHE_POLICY_CACHED, \
-        .page_count = SIZE_TO_PAGES(size), \
-        .pages = { 0 } \
-    }
-
-vmar_t g_code_vmar = VMAR_STATIC_INIT("code");
-vmar_t g_kernel_vmar = VMAR_STATIC_INIT("kernel");
-
-vmo_t g_kernel_limine_requests_vmo = PHYSICAL_VMO_STATIC_INIT("limine_requests");
-vmo_t g_kernel_text_vmo = PHYSICAL_VMO_STATIC_INIT("text");
-vmo_t g_kernel_rodata_vmo = PHYSICAL_VMO_STATIC_INIT("rodata");
-vmo_t g_kernel_data_vmo = PHYSICAL_VMO_STATIC_INIT("data");
-
-heap_vmo_t g_heap_vmo = {
-    .vmo = {
-        .object = {
-            .name = "heap",
-            .ref_count = 1,
-            .flags = OBJECT_STATIC,
-            .type = OBJECT_TYPE_VMO
-        },
-        .type = VMO_TYPE_NORMAL,
-        .cache_policy = VMO_CACHE_POLICY_CACHED,
-        .page_count = SIZE_TO_PAGES(HEAP_SIZE)
-    }
+region_t g_kernel_region = {
+    .name = "kernel",
+    .root = RB_ROOT,
+    .base = (void*)0xffffffff80000000,
+    .page_count = SIZE_2GB / PAGE_SIZE,
+    .type = REGION_TYPE_DEFAULT,
+    .pinned = true,
 };
 
-vmar_t g_direct_map_vmar = VMAR_STATIC_INIT("direct-map");
-vmar_t g_buddy_bitmap_vmar = VMAR_STATIC_INIT("buddy-bitmap");
+extern char __kernel_limine_requests_base[];
+extern char __kernel_text_base[];
+extern char __kernel_rodata_base[];
+extern char __kernel_data_base[];
+
+extern char __kernel_limine_requests_page_count[];
+extern char __kernel_text_page_count[];
+extern char __kernel_rodata_page_count[];
+extern char __kernel_data_page_count[];
+
+region_t g_kernel_limine_requests_region = {
+    .name = "limine_requests",
+    .base = __kernel_limine_requests_base,
+    .page_count = (size_t)__kernel_limine_requests_page_count,
+    .type = REGION_TYPE_MAPPING_SPECIAL,
+    .cache_policy = MAPPING_CACHE_POLICY_CACHED,
+    .protection = MAPPING_PROTECTION_RO,
+    .locked = true,
+    .pinned = true,
+};
+
+region_t g_kernel_text_region = {
+    .name = "text",
+    .base = __kernel_text_base,
+    .page_count = (size_t)__kernel_text_page_count,
+    .type = REGION_TYPE_MAPPING_SPECIAL,
+    .cache_policy = MAPPING_CACHE_POLICY_CACHED,
+    .protection = MAPPING_PROTECTION_RX,
+    .locked = true,
+    .pinned = true,
+};
+
+region_t g_kernel_rodata_region = {
+    .name = "rodata",
+    .base = __kernel_rodata_base,
+    .page_count = (size_t)__kernel_rodata_page_count,
+    .type = REGION_TYPE_MAPPING_SPECIAL,
+    .cache_policy = MAPPING_CACHE_POLICY_CACHED,
+    .protection = MAPPING_PROTECTION_RO,
+    .locked = true,
+    .pinned = true,
+};
+
+region_t g_kernel_data_region = {
+    .name = "data",
+    .base = __kernel_data_base,
+    .page_count = (size_t)__kernel_data_page_count,
+    .type = REGION_TYPE_MAPPING_SPECIAL,
+    .cache_policy = MAPPING_CACHE_POLICY_CACHED,
+    .protection = MAPPING_PROTECTION_RW,
+    .locked = true,
+    .pinned = true,
+};
+
+region_t g_direct_map_region = {
+    .name = "direct-map",
+    .type = REGION_TYPE_MAPPING_PHYS,
+    .phys = 0,
+    .cache_policy = MAPPING_CACHE_POLICY_CACHED,
+    .protection = MAPPING_PROTECTION_RW,
+    .locked = true,
+    .pinned = true,
+};
+
+region_t g_buddy_bitmap_region = {
+    .name = "buddy-bitmap",
+    .type = REGION_TYPE_MAPPING_SPECIAL,
+    .cache_policy = MAPPING_CACHE_POLICY_CACHED,
+    .protection = MAPPING_PROTECTION_RW,
+    .locked = true,
+    .pinned = true,
+};
+

@@ -1,19 +1,11 @@
 #include "log.h"
 
+#include <stdarg.h>
+
 #include "arch/intrin.h"
 #include "sync/spinlock.h"
 #include "lib/defs.h"
-
-#include <stdarg.h>
-
-
-#include <limine.h>
-#include <limine_requests.h>
-#include <lib/printf.h>
-
-#include "../mem/kernel/alloc.h"
-#include "../mem/internal/phys.h"
-
+#include "lib/printf.h"
 
 static irq_spinlock_t m_debug_lock = IRQ_SPINLOCK_INIT;
 

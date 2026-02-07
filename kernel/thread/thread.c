@@ -5,8 +5,8 @@
 #include "arch/paging.h"
 #include "lib/printf.h"
 #include "lib/string.h"
+#include "mem/internal/phys.h"
 #include "mem/kernel/alloc.h"
-#include "mem/kernel/stack.h"
 
 /**
  * The size of the extended state
@@ -27,7 +27,7 @@ err_t thread_create(thread_t** out_thread, thread_entry_t callback, void* arg, c
 
     // allocate and zero the thread struct
     size_t thread_total_size = sizeof(thread_t) + g_extended_state_size;
-    thread_t* thread = mem_alloc(thread_total_size, alignof(thread_t));
+    thread_t* thread = phys_alloc(thread_total_size);
     CHECK_ERROR(thread != NULL, ERROR_OUT_OF_MEMORY);
     memset(thread, 0, thread_total_size);
 
@@ -37,9 +37,10 @@ err_t thread_create(thread_t** out_thread, thread_entry_t callback, void* arg, c
     vsnprintf_(thread->name, sizeof(thread->name) - 1, name_fmt, va);
     va_end(va);
 
-    // allocate the stacks
-    RETHROW(stack_alloc(thread->name, SIZE_32KB, &thread->stack));
-    RETHROW(stack_alloc(thread->name, PAGE_SIZE, &thread->irq_stack));
+    // allocate the stack for the kernel
+    void* kernel_stack = phys_alloc(PAGE_SIZE);
+    CHECK(kernel_stack != NULL);
+    thread->kernel_stack = kernel_stack + PAGE_SIZE;
 
     // remember the entry
     thread->entry = callback;
@@ -68,7 +69,10 @@ cleanup:
 }
 
 void thread_reset(thread_t* thread) {
-    uintptr_t* stack = thread->stack - 16;
+    // this must not be a usermode thread
+    ASSERT(thread->stack == NULL);
+
+    uintptr_t* stack = thread->kernel_stack - 16;
     *--stack = (uintptr_t)thread_exit;
     thread->cpu_state = (void*)stack - sizeof(*thread->cpu_state);
     thread->cpu_state->rflags = (rflags_t){
@@ -98,7 +102,7 @@ void thread_switch(thread_t* from, thread_t* to) {
     __builtin_ia32_xrstor64(to->extended_state, ~0ull);
 
     // set the kernel stack
-    tss_set_irq_stack(to->irq_stack - 16);
+    tss_set_irq_stack(to->kernel_stack - 16);
 
     // and now we can jump to the thread
     thread_do_switch(from, to);
@@ -110,7 +114,7 @@ void thread_jump(thread_t* to) {
     __builtin_ia32_xrstor64(to->extended_state, ~0ull);
 
     // set the kernel stack
-    tss_set_irq_stack(to->irq_stack - 16);
+    tss_set_irq_stack(to->kernel_stack - 16);
 
     // and now we can jump to the thread
     thread_do_jump(to);
@@ -118,6 +122,6 @@ void thread_jump(thread_t* to) {
 
 void thread_free(thread_t* thread) {
     ASSERT(thread != NULL);
-    // TODO: free stacks
-    mem_free(thread, sizeof(thread_t) + g_extended_state_size, alignof(thread_t));
+    phys_free(thread->kernel_stack - PAGE_SIZE, PAGE_SIZE);
+    phys_free(thread, sizeof(thread_t) + g_extended_state_size);
 }

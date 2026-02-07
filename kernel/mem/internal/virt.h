@@ -2,9 +2,10 @@
 
 #include <stdbool.h>
 
+#include "arch/intr.h"
 #include "lib/defs.h"
 #include "lib/except.h"
-#include "mem/vmar.h"
+#include "mem/region.h"
 
 /**
  * Normal init, setting up the page tables before we can switch to them
@@ -24,13 +25,6 @@ void switch_page_table(void);
 bool virt_is_mapped(uintptr_t virt);
 
 /**
- * Map the given VMO at the given address
- *
- * @param region    [IN] The region to map into
- */
-err_t virt_map_and_populate_vmo(mapping_t* region);
-
-/**
  * Attempt to handle a page fault for lazy-memory allocation
  */
-err_t virt_handle_page_fault(uintptr_t addr, uint32_t code);
+err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel);

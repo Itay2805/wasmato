@@ -1,46 +1,32 @@
 #pragma once
-#include "vmar.h"
+
+#include "region.h"
 
 /**
- * The VMAR that represents the higher half of the address space
+ * The upper half region
  */
-extern vmar_t g_upper_half_vmar;
+extern region_t g_kernel_memory;
 
 /**
- * The VMAR that represents the lower half of the address space
+ * The lower half region
  */
-extern vmar_t g_lower_half_vmar;
+extern region_t g_user_memory;
 
 /**
- * The VMAR that represents the last 2gb of memory, where the kernel
- * and jit code can live easily
+ * The different segments of the kernel
  */
-extern vmar_t g_code_vmar;
+extern region_t g_kernel_region;
+extern region_t g_kernel_limine_requests_region;
+extern region_t g_kernel_text_region;
+extern region_t g_kernel_rodata_region;
+extern region_t g_kernel_data_region;
 
 /**
- * VMARs that represent the kernel itself
+ * The direct map of the kernel
  */
-extern vmar_t g_kernel_vmar;
-
-extern vmo_t g_kernel_limine_requests_vmo;
-extern vmo_t g_kernel_text_vmo;
-extern vmo_t g_kernel_rodata_vmo;
-extern vmo_t g_kernel_data_vmo;
-
-#define HEAP_SIZE   SIZE_4GB
-
-typedef struct heap_vmo {
-    vmo_t vmo;
-    uint64_t pages[SIZE_TO_PAGES(HEAP_SIZE)];
-} heap_vmo_t;
+extern region_t g_direct_map_region;
 
 /**
- * The kernel heap
+ * The bitmap of the buddy allocator of the kernel
  */
-extern heap_vmo_t g_heap_vmo;
-
-/**
- * VMARs that represent the direct map of the kernel
- */
-extern vmar_t g_direct_map_vmar;
-extern vmar_t g_buddy_bitmap_vmar;
+extern region_t g_buddy_bitmap_region;

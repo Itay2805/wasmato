@@ -45,6 +45,12 @@
         s.value; \
     })
 
+#define LOG2(x) \
+    ({ \
+        uint32_t value__ = x; \
+        31 - __builtin_clz(value__); \
+    })
+
 #define  BIT0   0x00000001
 #define  BIT1   0x00000002
 #define  BIT2   0x00000004

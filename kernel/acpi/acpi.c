@@ -47,9 +47,6 @@ typedef struct address32 {
 err_t init_acpi_tables() {
     err_t err = NO_ERROR;
 
-    // we need the direct map to look at the tables
-    unlock_direct_map();
-
     CHECK(g_limine_rsdp_request.response != NULL);
     acpi_rsdp_t* rsdp = g_limine_rsdp_request.response->address;
 
@@ -114,8 +111,6 @@ err_t init_acpi_tables() {
     m_acpi_timer_port = facp->pm_tmr_blk;
 
 cleanup:
-    lock_direct_map();
-
     return err;
 }
 

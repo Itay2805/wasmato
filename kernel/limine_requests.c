@@ -2,9 +2,10 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <debug/log.h>
-#include <lib/except.h>
 #include <stdint.h>
+
+#include "debug/log.h"
+#include "lib/except.h"
 
 //
 // Metadata for limine to find our requests

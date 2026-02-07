@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lib/defs.h"
-
 #include <stdint.h>
+
+#include "lib/defs.h"
 
 #define ACPI_RSDP_SIGNATURE SIGNATURE_64('R', 'S', 'D', ' ', 'P', 'T', 'R', ' ')
 

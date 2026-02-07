@@ -2,8 +2,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <cpuid.h>
-#include <debug/log.h>
 
+#include "debug/log.h"
 #include "defs.h"
 
 void* memset(void* s, int c, size_t n) {

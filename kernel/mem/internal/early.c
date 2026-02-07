@@ -67,9 +67,9 @@ static void* early_alloc_page(void) {
 // Early mapping utilities
 //----------------------------------------------------------------------------------------------------------------------
 
-#define DIRECT_MAP_ATTRIBUTES   (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_U)
+#define DIRECT_MAP_ATTRIBUTES   (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX)
 
-static uint64_t* early_virt_get_next_level(uint64_t* entry, bool direct) {
+static uint64_t* early_virt_get_next_level(uint64_t* entry) {
     // ensure we don't have a large page in the way
     ASSERT((*entry & IA32_PG_PS) == 0);
 
@@ -80,29 +80,29 @@ static uint64_t* early_virt_get_next_level(uint64_t* entry, bool direct) {
         }
         memset(phys, 0, PAGE_SIZE);
 
-        *entry = direct_to_phys(phys) | IA32_PG_P | IA32_PG_RW | (direct ? IA32_PG_U : 0);
+        *entry = direct_to_phys(phys) | IA32_PG_P | IA32_PG_RW;
     }
 
     return phys_to_direct(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
-static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool direct) {
+static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt) {
     size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
     size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
     size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
     size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
 
-    uint64_t* pml3 = early_virt_get_next_level(&pml4[index4], direct);
+    uint64_t* pml3 = early_virt_get_next_level(&pml4[index4]);
     if (pml3 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml2 = early_virt_get_next_level(&pml3[index3], direct);
+    uint64_t* pml2 = early_virt_get_next_level(&pml3[index3]);
     if (pml2 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml1 = early_virt_get_next_level(&pml2[index2], direct);
+    uint64_t* pml1 = early_virt_get_next_level(&pml2[index2]);
     if (pml1 == NULL) {
         return NULL;
     }
@@ -113,18 +113,18 @@ static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, bool direct) {
 static err_t early_virt_map(
     uint64_t* pml4,
     void* virt, uint64_t phys, size_t num_pages,
-    bool write, bool exec
+    mapping_protection_t protection
 ) {
     err_t err = NO_ERROR;
 
     for (size_t i = 0; i < num_pages; i++, virt += PAGE_SIZE, phys += PAGE_SIZE) {
-        uint64_t* pte = early_virt_get_pte(pml4, virt, false);
+        uint64_t* pte = early_virt_get_pte(pml4, virt);
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
         uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A;
-        if (!exec) entry |= IA32_PG_NX;
-        if (write) entry |= IA32_PG_RW;
+        if (protection != MAPPING_PROTECTION_RX) entry |= IA32_PG_NX;
+        if (protection == MAPPING_PROTECTION_RW) entry |= IA32_PG_RW;
 
         // and set it
         CHECK(*pte == 0);
@@ -139,86 +139,34 @@ cleanup:
 // Initialization of all the mappings
 //----------------------------------------------------------------------------------------------------------------------
 
-extern char __kernel_start[];
-extern char __kernel_limine_requests_start[];
-extern char __kernel_text_start[];
-extern char __kernel_rodata_start[];
-extern char __kernel_data_start[];
-extern char __kernel_end[];
-
 static err_t early_map_kernel(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
-    // The code region is always at -2gb of the upper half
-    void* code_region = (void*)0xffffffff80000000;
-    CHECK(code_region >= g_upper_half_vmar.region.start);
-    RETHROW(vmar_allocate_static(
-        &g_upper_half_vmar,
-        &g_code_vmar,
-        VMAR_SPECIFIC, code_region - g_upper_half_vmar.region.start,
-        SIZE_2GB,
+    // The kernel region is at the -2gb, its used only for kernel stuff
+    CHECK_ERROR(region_reserve(
+        &g_kernel_memory,
+        &g_kernel_region,
         0
-    ));
-
-    // reserve the space for the kernel itself
-    CHECK((void*)__kernel_start >= code_region);
-    RETHROW(vmar_allocate_static(
-        &g_code_vmar,
-        &g_kernel_vmar,
-        VMAR_SPECIFIC, (void*)__kernel_start - code_region,
-        __kernel_end - __kernel_start,
-        0
-    ));
+    ), ERROR_OUT_OF_MEMORY);
 
     // get the physical and virtual base, and ensure that they are the same
     // as what we expect from the kernel start symbol
     CHECK(g_limine_executable_address_request.response != NULL);
-    uintptr_t physical_base = g_limine_executable_address_request.response->physical_base;
-    uintptr_t virtual_base = g_limine_executable_address_request.response->virtual_base;
-    CHECK(virtual_base == (uintptr_t)__kernel_start);
+    uint64_t physical_base = g_limine_executable_address_request.response->physical_base;
+    void* virtual_base = (void*)g_limine_executable_address_request.response->virtual_base;
 
-    // and now go over the sections (we just hard code them) and map
-    // them properly
-    // TODO: something better than this? but I also don't want to look at
-    //       the exec file from limine
-    struct {
-        vmo_t* vmo;
-        void* start;
-        void* end;
-        vmar_map_options_t options;
-    } sections[] = {
-        { &g_kernel_limine_requests_vmo, __kernel_limine_requests_start, __kernel_text_start, 0 },
-        { &g_kernel_text_vmo, __kernel_text_start, __kernel_rodata_start, VMAR_MAP_EXECUTE },
-        { &g_kernel_rodata_vmo, __kernel_rodata_start, __kernel_data_start, 0 },
-        { &g_kernel_data_vmo, __kernel_data_start, __kernel_end, VMAR_MAP_WRITE },
+    region_t* kernel_regions[] = {
+        &g_kernel_limine_requests_region,
+        &g_kernel_text_region,
+        &g_kernel_rodata_region,
+        &g_kernel_data_region,
     };
-    for (int i = 0; i < ARRAY_LENGTH(sections); i++) {
-        void* vaddr = (void*)sections[i].start;
-        void* vend = (void*)sections[i].end;
-        uintptr_t paddr = ((uintptr_t)vaddr - virtual_base) + physical_base;
-        uintptr_t pend = ((uintptr_t)vend - virtual_base) + physical_base;
-        size_t page_num = (pend - paddr) / PAGE_SIZE;
 
-        // setup the vmo to have the correct address and page count
-        vmo_t* vmo = sections[i].vmo;
-        vmo->page_count = page_num;
-        vmo->pages[0] = (paddr >> PAGE_SHIFT) | VMO_PAGE_PRESENT;
-
-        // map the vmo, we are not going to populate since the real VMM
-        // is not up and ready yet, so perform the mapping manually
-        RETHROW(vmar_map(
-            &g_kernel_vmar,
-            VMAR_MAP_SPECIFIC | sections[i].options,
-            vaddr - (void*)__kernel_start,
-            sections[i].vmo,
-            0, vend - vaddr, 0,
-            NULL
-        ));
-
-        // properly map it
-        bool write = sections[i].options & VMAR_MAP_WRITE;
-        bool exec = sections[i].options & VMAR_MAP_EXECUTE;
-        RETHROW(early_virt_map(pml4, vaddr, paddr, page_num, write, exec));
+    for (int i = 0; i < ARRAY_LENGTH(kernel_regions); i++) {
+        region_t* region = kernel_regions[i];
+        uint64_t phys_base = (region->base - virtual_base) + physical_base;
+        CHECK(region_reserve(&g_kernel_region, region, 0));
+        RETHROW(early_virt_map(pml4, region->base, phys_base, region->page_count, region->protection));
     }
 
 cleanup:
@@ -231,19 +179,20 @@ static err_t early_init_direct_map(void) {
     // get the direct map base if the request was fulfilled
     CHECK(g_limine_hhdm_request.response != NULL);
     void* direct_map_base = (void*)g_limine_hhdm_request.response->offset;
+    CHECK(((uintptr_t)direct_map_base % SIZE_1GB) == 0);
 
     // the top physical address
     uint64_t top_phys = 1ul << get_physical_address_bits();
 
     // Setup the vmar of the direct map, this will take into account the KASLR
     // provided by the bootloader
-    CHECK(direct_map_base >= g_upper_half_vmar.region.start);
-    RETHROW(vmar_allocate_static(
-        &g_upper_half_vmar,
-        &g_direct_map_vmar,
-        VMAR_SPECIFIC, direct_map_base - g_upper_half_vmar.region.start,
-        top_phys, 0
-    ));
+    g_direct_map_region.base = direct_map_base;
+    g_direct_map_region.page_count = SIZE_TO_PAGES(top_phys);
+    CHECK_ERROR(region_reserve(
+        &g_kernel_memory,
+        &g_direct_map_region,
+        LOG2(SIZE_1GB) >> PAGE_SHIFT
+    ), ERROR_OUT_OF_MEMORY);
 
 cleanup:
     return err;
@@ -266,9 +215,6 @@ static err_t early_map_direct_map(uint64_t* pml4) {
     // we already reserve everything required by the physical address bits, so
     // no need to check it again
     size_t top_address = 1ULL << get_physical_address_bits();
-
-    // ensure the HHDM is 1gb aligned
-    CHECK(((uintptr_t)g_direct_map_vmar.region.start % SIZE_1GB) == 0);
 
     // the amount of top level entries we need, each entry is a 512gb range
     // we can assume the value is correct because by this time the direct map
@@ -312,13 +258,12 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
     // can fit the entire physical address space in it
     uint64_t top_address = 1ULL << get_physical_address_bits();
     size_t total_bitmap_size = ALIGN_UP(DIV_ROUND_UP(DIV_ROUND_UP(top_address, PAGE_SIZE), 8), PAGE_SIZE);
-    RETHROW(vmar_allocate_static(
-        &g_upper_half_vmar,
-        &g_buddy_bitmap_vmar,
-        0, 0,
-        total_bitmap_size,
+    g_buddy_bitmap_region.page_count = SIZE_TO_PAGES(total_bitmap_size);
+    CHECK_ERROR(region_reserve(
+        &g_kernel_memory,
+        &g_buddy_bitmap_region,
         0
-    ));
+    ), ERROR_OUT_OF_MEMORY);
 
     // map all the ranges now
     for (int i = 0; i < response->entry_count; i++) {
@@ -332,10 +277,10 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
         size_t bitmap_size = ALIGN_UP(DIV_ROUND_UP(entry->length / PAGE_SIZE, 8), PAGE_SIZE);
 
         // map the entire bitmap right now
-        void* bitmap_ptr = g_buddy_bitmap_vmar.region.start + bitmap_start;
-        void* bitmap_end = g_buddy_bitmap_vmar.region.start + bitmap_start + bitmap_size;
+        void* bitmap_ptr = g_buddy_bitmap_region.base + bitmap_start;
+        void* bitmap_end = g_buddy_bitmap_region.base + bitmap_start + bitmap_size;
         for (; bitmap_ptr < bitmap_end; bitmap_ptr += PAGE_SIZE) {
-            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, true);
+            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr);
             CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
             // if not allocated already allocate it now
@@ -359,10 +304,11 @@ cleanup:
 err_t init_early_mem(void) {
     err_t err = NO_ERROR;
 
-    // start by setting up the direct map
+    // start by setting up the direct map, this is needed to make
+    // sure we can virt-to-phys and phys-to-virt
     RETHROW(early_init_direct_map());
 
-    // find the first region for the allocator
+    // find the first region for the early allocator
     early_alloc_next_region();
 
     // allocate the pml4
@@ -373,15 +319,6 @@ err_t init_early_mem(void) {
     RETHROW(early_map_kernel(pml4));
     RETHROW(early_map_direct_map(pml4));
     RETHROW(early_map_buddy_bitmap(pml4));
-
-    // allocate the heap region in the vmar
-    RETHROW(vmar_map(
-        &g_upper_half_vmar,
-        VMAR_MAP_WRITE, 0,
-        &g_heap_vmo.vmo, 0,
-        HEAP_SIZE, 0,
-        NULL
-    ));
 
     // switch to the page table
     __writecr3(direct_to_phys(pml4));

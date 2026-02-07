@@ -62,7 +62,7 @@ static bool buddy_is_block_free(void* ptr) {
     uintptr_t addr = direct_to_phys(ptr);
     size_t index = (addr / PAGE_SIZE) / 8;
     size_t shift = (addr / PAGE_SIZE) % 8;
-    uint8_t* buddy_bitmap = g_buddy_bitmap_vmar.region.start;
+    uint8_t* buddy_bitmap = g_buddy_bitmap_region.base;
     return (buddy_bitmap[index] >> shift) & 1;
 }
 
@@ -70,7 +70,7 @@ static void buddy_set_block_allocated(void* ptr) {
     uintptr_t addr = direct_to_phys(ptr);
     size_t index = (addr / PAGE_SIZE) / 8;
     size_t shift = (addr / PAGE_SIZE) % 8;
-    uint8_t* buddy_bitmap = g_buddy_bitmap_vmar.region.start;
+    uint8_t* buddy_bitmap = g_buddy_bitmap_region.base;
     buddy_bitmap[index] &= ~(1U << shift);
 }
 
@@ -78,7 +78,7 @@ static void buddy_set_block_free(void* ptr) {
     uintptr_t addr = direct_to_phys(ptr);
     size_t index = (addr / PAGE_SIZE) / 8;
     size_t shift = (addr / PAGE_SIZE) % 8;
-    uint8_t* buddy_bitmap = g_buddy_bitmap_vmar.region.start;
+    uint8_t* buddy_bitmap = g_buddy_bitmap_region.base;
     buddy_bitmap[index] |= 1U << shift;
 }
 
@@ -304,7 +304,6 @@ err_t reclaim_bootloader_memory(void) {
     err_t err = NO_ERROR;
 
     bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
-    unlock_direct_map();
 
     TRACE("memory: Reclaiming bootloader memory");
     while (true) {
@@ -335,7 +334,6 @@ err_t reclaim_bootloader_memory(void) {
     }
 
 cleanup:
-    lock_direct_map();
     irq_spinlock_release(&g_phys_map_lock, irq_state);
 
     return err;

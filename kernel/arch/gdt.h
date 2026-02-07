@@ -1,12 +1,14 @@
 #pragma once
 
-#include "lib/defs.h"
-
 #include <stdint.h>
-#include <lib/except.h>
 
-#define GDT_CODE offsetof(gdt_entries_t, code)
-#define GDT_DATA offsetof(gdt_entries_t, data)
+#include "lib/defs.h"
+#include "lib/except.h"
+
+#define GDT_KERNEL_CODE offsetof(gdt_entries_t, kernel_code)
+#define GDT_KERNEL_DATA offsetof(gdt_entries_t, kernel_data)
+#define GDT_USER_CODE offsetof(gdt_entries_t, user_code)
+#define GDT_USER_DATA offsetof(gdt_entries_t, user_data)
 #define GDT_TSS offsetof(gdt_entries_t, tss)
 
 typedef struct gdt64_entry {
@@ -31,16 +33,18 @@ typedef struct tss64_entry {
 
 typedef struct gdt_entries {
     gdt64_entry_t null;
-    gdt64_entry_t code;
-    gdt64_entry_t data;
+    gdt64_entry_t kernel_code;
+    gdt64_entry_t kernel_data;
+    gdt64_entry_t user_code;
+    gdt64_entry_t user_data;
     tss64_entry_t tss;
 } PACKED gdt_entries_t;
 
 typedef enum tss_ist {
-    TSS_IST_IRQ,
-    TSS_IST_EXCEPTION,
+    TSS_IST_DF,
     TSS_IST_NMI,
     TSS_IST_DB,
+    TSS_IST_MCE,
     TSS_IST_MAX,
 } tss_ist_t;
 STATIC_ASSERT(TSS_IST_MAX <= 7);

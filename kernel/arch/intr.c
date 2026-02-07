@@ -63,20 +63,6 @@ typedef struct exception_frame {
     uint64_t ss;
 } exception_frame_t;
 
-typedef union page_fault_error {
-    struct {
-        uint32_t present : 1;
-        uint32_t write : 1;
-        uint32_t user : 1;
-        uint32_t reserved_write : 1;
-        uint32_t instruction_fetch : 1;
-        uint32_t protection_key : 1;
-        uint32_t shadow_stack : 1;
-        uint32_t sgx : 1;
-    };
-    uint32_t packed;
-} PACKED page_fault_error_t;
-
 typedef union selector_error_code {
     struct {
         uint32_t e : 1;
@@ -195,20 +181,24 @@ static void default_exception_handler(exception_frame_t* ctx) {
     ERROR("****************************************************");
     ERROR("");
 
-    page_fault_error_t page_fault_code = {};
     if (ctx->int_num == 0x0E) {
-        page_fault_code = (page_fault_error_t) { .packed = ctx->error_code };
-        if (page_fault_code.reserved_write) {
-            ERROR("one or more page directory entries contain reserved bits which are set to 1");
-        } else if (page_fault_code.instruction_fetch) {
-            ERROR("tried to run non-executable code");
-        } else {
-            const char* rw = page_fault_code.write ? "write to" : "read from";
-            if (!page_fault_code.present) {
-                ERROR("%s non-present page", rw);
-            } else {
-                ERROR("page-protection violation when %s page", rw);
-            }
+        const char* prot = (ctx->error_code & IA32_PF_EC_PROT) ? "protection fault" : "no page found";
+        const char* access = (ctx->error_code & IA32_PF_EC_WRITE) ? "write access" : "read access";
+        const char* user = (ctx->error_code & IA32_PF_EC_USER) ? "user-mode access" : "kernel-mode access";
+        ERROR("page fault: %s, %s, %s", prot, access, user);
+
+        if (ctx->error_code & IA32_PF_EC_RSVD) {
+            ERROR("\tuse of reserved bit detected");
+        } else if (ctx->error_code & IA32_PF_EC_INSTR) {
+            ERROR("\tfault was an instruction fetch");
+        } else if (ctx->error_code & IA32_PF_EC_PK) {
+            ERROR("\tprotections keys block access");
+        } else if (ctx->error_code & IA32_PF_EC_SHSTK) {
+            ERROR("\tshadow stack access fault");
+        } else if (ctx->error_code & IA32_PF_EC_SGX) {
+            ERROR("\tSGX MMU page-fault");
+        } else if (ctx->error_code & IA32_PF_EC_RMP) {
+            ERROR("\tfault was due to RMP violation");
         }
         ERROR("");
     } else if (ctx->int_num == 0x0D && ctx->error_code != 0) {
@@ -317,7 +307,7 @@ void common_exception_handler(exception_frame_t* ctx) {
 
     // special case for page
     if (ctx->int_num == EXCEPT_IA32_PAGE_FAULT) {
-        RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code));
+        RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code, ctx->cs == GDT_KERNEL_CODE));
     }
 
 cleanup:
@@ -358,50 +348,50 @@ static idt_entry_t m_idt_entries[256];
 /**
  * Set a single idt entry
  */
-static void set_idt_entry(int vector, void* func, tss_ist_t ist, bool cli) {
+static void set_idt_entry(int vector, void* func, int ist) {
     m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)func & 0xFFFF);
     m_idt_entries[vector].handler_high = (uint64_t) ((uintptr_t)func >> 16);
-    m_idt_entries[vector].gate_type = cli ? IDT_TYPE_INTERRUPT_32 : IDT_TYPE_TRAP_32;
-    m_idt_entries[vector].selector = offsetof(gdt_entries_t, code);
+    m_idt_entries[vector].gate_type = IDT_TYPE_INTERRUPT_32;
+    m_idt_entries[vector].selector = GDT_KERNEL_CODE;
     m_idt_entries[vector].present = 1;
     m_idt_entries[vector].ring = 0;
     m_idt_entries[vector].ist = ist + 1;
 }
 
 void init_idt(void) {
-    set_idt_entry(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI, true);
-    set_idt_entry(EXCEPT_IA32_BREAKPOINT, exception_handler_0x03, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_OVERFLOW, exception_handler_0x04, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_BOUND, exception_handler_0x05, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_INVALID_OPCODE, exception_handler_0x06, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x07, exception_handler_0x07, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_DOUBLE_FAULT, exception_handler_0x08, TSS_IST_DB, true);
-    set_idt_entry(0x09, exception_handler_0x09, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_INVALID_TSS, exception_handler_0x0A, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, -1, true);
-    set_idt_entry(0x0F, exception_handler_0x0F, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_MACHINE_CHECK, exception_handler_0x12, TSS_IST_EXCEPTION, true);
-    set_idt_entry(EXCEPT_IA32_SIMD, exception_handler_0x13, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x14, exception_handler_0x14, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x15, exception_handler_0x15, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x16, exception_handler_0x16, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x17, exception_handler_0x17, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x18, exception_handler_0x18, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x19, exception_handler_0x19, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x1A, exception_handler_0x1A, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x1B, exception_handler_0x1B, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x1C, exception_handler_0x1C, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x1D, exception_handler_0x1D, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x1E, exception_handler_0x1E, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x1F, exception_handler_0x1F, TSS_IST_EXCEPTION, true);
-    set_idt_entry(0x20, timer_interrupt_handler, TSS_IST_IRQ, true);
+    set_idt_entry(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, -1);
+    set_idt_entry(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_DB);
+    set_idt_entry(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI);
+    set_idt_entry(EXCEPT_IA32_BREAKPOINT, exception_handler_0x03, TSS_IST_DB);
+    set_idt_entry(EXCEPT_IA32_OVERFLOW, exception_handler_0x04, -1);
+    set_idt_entry(EXCEPT_IA32_BOUND, exception_handler_0x05, -1);
+    set_idt_entry(EXCEPT_IA32_INVALID_OPCODE, exception_handler_0x06, -1);
+    set_idt_entry(0x07, exception_handler_0x07, -1);
+    set_idt_entry(EXCEPT_IA32_DOUBLE_FAULT, exception_handler_0x08, TSS_IST_DF);
+    set_idt_entry(0x09, exception_handler_0x09, -1);
+    set_idt_entry(EXCEPT_IA32_INVALID_TSS, exception_handler_0x0A, -1);
+    set_idt_entry(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, -1);
+    set_idt_entry(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, -1);
+    set_idt_entry(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, -1);
+    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, -1);
+    set_idt_entry(0x0F, exception_handler_0x0F, -1);
+    set_idt_entry(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, -1);
+    set_idt_entry(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, -1);
+    set_idt_entry(EXCEPT_IA32_MACHINE_CHECK, exception_handler_0x12, TSS_IST_MCE);
+    set_idt_entry(EXCEPT_IA32_SIMD, exception_handler_0x13, -1);
+    set_idt_entry(0x14, exception_handler_0x14, -1);
+    set_idt_entry(0x15, exception_handler_0x15, -1);
+    set_idt_entry(0x16, exception_handler_0x16, -1);
+    set_idt_entry(0x17, exception_handler_0x17, -1);
+    set_idt_entry(0x18, exception_handler_0x18, -1);
+    set_idt_entry(0x19, exception_handler_0x19, -1);
+    set_idt_entry(0x1A, exception_handler_0x1A, -1);
+    set_idt_entry(0x1B, exception_handler_0x1B, -1);
+    set_idt_entry(0x1C, exception_handler_0x1C, -1);
+    set_idt_entry(0x1D, exception_handler_0x1D, -1);
+    set_idt_entry(0x1E, exception_handler_0x1E, -1);
+    set_idt_entry(0x1F, exception_handler_0x1F, -1);
+    set_idt_entry(0x20, timer_interrupt_handler, -1);
 
     idt_t idt = {
         .limit = sizeof(m_idt_entries) - 1,

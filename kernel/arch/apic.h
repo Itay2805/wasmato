@@ -2,7 +2,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <lib/except.h>
+
+#include "lib/except.h"
 
 /**
  * Initialize the APIC globally

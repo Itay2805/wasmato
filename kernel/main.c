@@ -36,7 +36,7 @@ static void init_thread_entry(void* arg) {
 
     // for fun and profit
     phys_map_dump();
-    vmar_print(&g_upper_half_vmar);
+    region_dump(&g_kernel_memory);
 
 cleanup:
     ASSERT(!IS_ERROR(err));
@@ -133,6 +133,7 @@ static void set_extended_state_features(void) {
         __cpuid_count(0xD, 0, a, b, c, d);
         TRACE("cpu: extended state size is %d bytes", b);
         g_extended_state_size = b;
+        ASSERT((g_extended_state_size + sizeof(thread_t)) <= PAGE_SIZE);
     }
 
     first = false;
@@ -145,29 +146,19 @@ static void set_cpu_features(void) {
     __writecr0(CR0_PG | CR0_PE | CR0_MP | CR0_WP);
 
     // ensure we have support for smap
-    uint32_t a, b, c, d;
-    ASSERT(__get_cpuid_count(7, 0, &a, &b, &c, &d));
-    ASSERT(b & BIT20, "Missing support for SMAP");
-
     // ensure we have xsave (for the basic support sutff)
+    uint32_t a, b, c, d;
     __cpuid(1, a, b, c, d);
     ASSERT(c & bit_XSAVE, "Missing support for xsave");
 
     // PAE - required for long mode
     // OSFXSR/OSXMMEXCPT - required for SSE
-    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT);
+    // XSAVE - using xsave
+    // SMAP/SMEP - prevent kernel from accessing usermode memory
+    // UMIP - prevent usermode from leaking kernel memory
+    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP);
 
     set_extended_state_features();
-}
-
-static void enable_direct_map_locking() {
-    // we are going to unlock before we are enabling
-    // the locking to ensure that we won't fault on a
-    // stack that is still in the direct map
-    unlock_direct_map();
-
-    // finally enable smap
-    __writecr4(__readcr4() | CR4_SMAP);
 }
 
 static void halt() {
@@ -199,7 +190,6 @@ static void smp_entry(struct limine_mp_info* info) {
     m_smp_count++;
 
     // we can trigger the scheduler,
-    enable_direct_map_locking();
     scheduler_start_per_core();
 
 cleanup:
@@ -245,6 +235,7 @@ void _start() {
     RETHROW(init_phys());
     RETHROW(init_virt());
     RETHROW(init_phys_map());
+    init_region_alloc();
 
     // we need acpi for some early sleep primitives
     RETHROW(init_acpi_tables());
@@ -308,7 +299,6 @@ void _start() {
     scheduler_wakeup_thread(m_init_thread);
 
     // and we are ready to start the scheduler
-    enable_direct_map_locking();
     scheduler_start_per_core();
 
 cleanup:

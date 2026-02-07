@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#include <lib/except.h>
+#include "lib/except.h"
 
 /**
  * Initialize the early acpi subsystem, should just be enough for

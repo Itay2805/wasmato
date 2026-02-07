@@ -3,51 +3,67 @@
 #include <stddef.h>
 #include <stdalign.h>
 
+#include "sync/spinlock.h"
+#include "lib/list.h"
 #include "lib/string.h"
 
-#define alloc_type(type) \
-    ({ \
-        type* __ptr = mem_alloc(sizeof(type), alignof(type)); \
-        if (__ptr != NULL) { \
-            memset(__ptr, 0, sizeof(type)); \
-        } \
-        __ptr; \
-    })
+typedef struct mem_alloc {
+    /**
+     * Linked list of all the slabs
+     * in the system
+     */
+    list_entry_t link;
 
+    /**
+     * List of slabs with available objects
+     */
+    list_t partial;
 
-#define free_type(type, ptr) \
-    do { \
-        type* __ptr = ptr; \
-        mem_free(__ptr, sizeof(type), alignof(type)); \
-    } while (0)
+    /**
+     * List of full slabs
+     */
+    list_t full;
 
-#define alloc_array(type, count) \
-    ({ \
-        size_t __total_size = sizeof(type) * (count); \
-        type* __ptr = mem_alloc(__total_size, alignof(type)); \
-        if (__ptr != NULL) { \
-            memset(__ptr, 0, __total_size); \
-        } \
-        __ptr; \
-    })
+    /**
+     * List of empty slabs, available as cache
+     */
+    list_t empty;
 
-#define realloc_array(type, ptr, old_count, new_count) \
-    ({ \
-        void* __ptr = ptr; \
-        size_t __old_count = old_count; \
-        size_t __new_count = new_count; \
-        (type*)mem_realloc(__ptr, sizeof(type) * __old_count, alignof(type), sizeof(type) * __new_count); \
-    })
+    /**
+     * Lock to protect the allocator
+     */
+    irq_spinlock_t lock;
 
-#define free_array(type, ptr, count) \
-    do { \
-        type* __ptr = ptr; \
-        size_t __count = count; \
-        mem_free(__ptr, sizeof(type) * __count, alignof(type)); \
-    } while(0)
+    /**
+     * Size of a single slab
+     */
+    uint16_t slab_size;
 
-void* mem_alloc(size_t size, size_t align);
+    /**
+     * The objects in each slab
+     */
+    uint16_t objects_per_slab;
 
-void* mem_realloc(void* ptr, size_t old_size, size_t align, size_t new_size);
+    /**
+     * The stride of each object
+     */
+    uint16_t object_stride;
 
-void mem_free(void* ptr, size_t size, size_t align);
+    /**
+     * The size of each object
+     */
+    uint16_t object_size;
+
+    /**
+     * The object's alignment
+     */
+    uint16_t objet_align;
+} mem_alloc_t;
+
+void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align);
+
+void* mem_alloc(mem_alloc_t* alloc);
+
+void* mem_calloc(mem_alloc_t* alloc);
+
+void mem_free(mem_alloc_t* slab, void* p);
