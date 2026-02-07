@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../debug/log.h"
+#include "log.h"
 #include "cpp_magic.h"
 
 #define ASSERT(expr, ...) \

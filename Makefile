@@ -44,7 +44,8 @@ PHONY += clean
 clean:
 	$(call cmd,clean)
 
-include kernel/Makefile
+include src/runtime/Makefile
+include src/kernel/Makefile
 include makefiles/limine.mk
 include scripts/build.mk
 

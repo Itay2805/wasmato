@@ -1,4 +1,4 @@
-#include "log.h"
+#include "lib/log.h"
 
 #include <stdarg.h>
 
@@ -27,12 +27,4 @@ void debug_print(const char* fmt, ...) {
     vprintf_(fmt, args);
     irq_spinlock_release(&m_debug_lock, irq_state);
     va_end(args);
-}
-
-void debug_vprint(const char* prefix, const char* suffix, const char* fmt, va_list va) {
-    bool irq_state = irq_spinlock_acquire(&m_debug_lock);
-    printf_("%s", prefix);
-    vprintf_(fmt, va);
-    printf_("%s", suffix);
-    irq_spinlock_release(&m_debug_lock, irq_state);
 }

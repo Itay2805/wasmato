@@ -17,4 +17,3 @@ void init_early_logging(void);
  * Print a string to the debug log
  */
 void debug_print(const char* fmt, ...) __attribute__((format(printf, (1), (2))));
-void debug_vprint(const char* prefix, const char* suffix, const char* fmt, va_list va);

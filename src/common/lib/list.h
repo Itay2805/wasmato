@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "debug/log.h"
+#include "log.h"
 
 typedef struct list_entry {
     struct list_entry* next;

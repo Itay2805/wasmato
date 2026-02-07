@@ -139,6 +139,19 @@ static void set_extended_state_features(void) {
     first = false;
 }
 
+static void string_verify_features(void) {
+    uint32_t eax, ebx, ecx, edx;
+
+    __cpuid_count(7, 0, eax, ebx, ecx, edx);
+    if ((ebx & bit_ENH_MOVSB) == 0) WARN("string: Missing enhanced REP MOVSB/STOSB");
+    if ((edx & BIT4) == 0) WARN("string: Missing fast short REP MOVSB");
+
+    __cpuid_count(7, 1, eax, ebx, ecx, edx);
+    // if ((eax & BIT10) == 0) LOG_WARN("string: Missing zero-length REP MOVSB");
+    if ((eax & BIT11) == 0) WARN("string: Missing fast short REP STOSB");
+    // if ((eax & BIT12) == 0) LOG_WARN("string: Missing fast short REP CMPSB/CSASB");
+}
+
 static void set_cpu_features(void) {
     // PG/PE - required for long mode
     // MP - required for SSE

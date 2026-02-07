@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "debug/log.h"
+#include "lib/log.h"
 #include "lib/except.h"
 
 //

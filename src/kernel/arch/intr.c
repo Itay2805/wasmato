@@ -2,7 +2,7 @@
 
 #include "apic.h"
 #include "gdt.h"
-#include "debug/log.h"
+#include "lib/log.h"
 #include "mem/internal/virt.h"
 #include "sync/spinlock.h"
 #include "thread/pcpu.h"
