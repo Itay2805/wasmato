@@ -17,17 +17,17 @@ bin-outputs = $(addprefix $(BUILD)/,$(bins-y))
 targets += $(bin-outputs)
 
 define build-objs
-objs-$1-c := $$(patsubst %.c,$(OBJ)/$1/%.o,$$(filter %.c,$$($1-y)))
-objs-$1-S := $$(patsubst %.S,$(OBJ)/$1/%.o,$$(filter %.S,$$($1-y)))
+objs-$1-c := $$(patsubst %.c,$(OBJ)/$1/%.c.o,$$(filter %.c,$$($1-y)))
+objs-$1-S := $$(patsubst %.S,$(OBJ)/$1/%.S.o,$$(filter %.S,$$($1-y)))
 
 objs-$1 := $$(objs-$1-c) $$(objs-$1-S)
 
 $$(objs-$1): private linktarget := $1
 
-$$(objs-$1-c): $(OBJ)/$1/%.o: %.c $(ccdeps-y) $(ccdeps-$1-y) FORCE | $(ccodeps-y) $(ccodeps-$1-y)
+$$(objs-$1-c): $(OBJ)/$1/%.c.o: %.c $(ccdeps-y) $(ccdeps-$1-y) FORCE | $(ccodeps-y) $(ccodeps-$1-y)
 	$$(call cmd,cc)
 
-$$(objs-$1-S): $(OBJ)/$1/%.o: %.S $(asdeps-y) $(asdeps-$1-y) FORCE | $(asodeps-y) $(asodeps-$1-y)
+$$(objs-$1-S): $(OBJ)/$1/%.S.o: %.S $(asdeps-y) $(asdeps-$1-y) FORCE | $(asodeps-y) $(asodeps-$1-y)
 	$$(call cmd,as)
 
 targets += $$(objs-$1)
