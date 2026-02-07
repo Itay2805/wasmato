@@ -3,6 +3,7 @@
 #include "arch/regs.h"
 #include "lib/except.h"
 #include "lib/list.h"
+#include "mem/region.h"
 
 typedef void (*thread_entry_t)(void *arg);
 
@@ -31,14 +32,12 @@ typedef struct thread {
     // either a freelist link or the scheduler link
     list_t link;
 
-    // The actual stack of the thread, it goes from start
-    // to end, meaning that start is a higher address than
-    // end
-    void* stack;
-
     // Stacks used for running interrupts, to ensure that
     // we can properly reschedule from interrupts
     void* kernel_stack;
+
+    // the stack regions
+    region_t* stack_region;
 
     // the entry and argument to pass to the entry
     thread_entry_t entry;
@@ -62,6 +61,11 @@ extern size_t g_extended_state_size;
 * Create a new kernel thread, you need to schedule it yourself
 */
 err_t thread_create(thread_t** out_thread, thread_entry_t callback, void* arg, const char* name_fmt, ...);
+
+/**
+* Create a new kernel thread, you need to schedule it yourself
+*/
+err_t user_thread_create(thread_t** out_thread, void* callback, void* arg, const char* name_fmt, ...);
 
 /**
  * Reset the kernel thread to its initial state

@@ -168,6 +168,16 @@ STATIC_ASSERT(ARRAY_LENGTH(m_exception_names) == 32);
 
 static spinlock_t m_exception_lock = SPINLOCK_INIT;
 
+static const char* get_segment_name(uint64_t segment) {
+    switch (segment & ~0b111) {
+        case GDT_KERNEL_CODE: return "kernel-code";
+        case GDT_USER_CODE: return "user-code";
+        case GDT_KERNEL_DATA: return "kernel-data";
+        case GDT_USER_DATA: return "user-data";
+        default: return "<unknown>";
+    }
+}
+
 /**
  * The default exception handler, simply panics...
  */
@@ -239,7 +249,10 @@ static void default_exception_handler(exception_frame_t* ctx) {
             ctx->rflags.PF ? 'P' : '-',
             ctx->rflags.CF ? 'C' : '-'
     );
-    ERROR("FS =%016lx GS =%016x", __rdmsr(MSR_IA32_FS_BASE), 0); // TODO: GS BASE
+    TRACE("CS =%04lx DPL=%ld [%s]", ctx->cs, ctx->cs & 0b111, get_segment_name(ctx->cs));
+    TRACE("SS =%04lx DPL=%ld [%s]", ctx->ss, ctx->ss & 0b111, get_segment_name(ctx->ss));
+    TRACE("FS =%016lx", __rdmsr(MSR_IA32_FS_BASE));
+    TRACE("GS =%016lx", __rdmsr(MSR_IA32_GS_BASE));
     ERROR("CR0=%08lx CR2=%016lx CR3=%016lx CR4=%08lx", __readcr0(), __readcr2(), __readcr3(), __readcr4());
 
     ERROR("");
@@ -307,7 +320,7 @@ void common_exception_handler(exception_frame_t* ctx) {
 
     // special case for page
     if (ctx->int_num == EXCEPT_IA32_PAGE_FAULT) {
-        RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code, ctx->cs == GDT_KERNEL_CODE));
+        RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code));
     }
 
 cleanup:

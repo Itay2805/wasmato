@@ -23,15 +23,7 @@ typedef struct gdt {
 
 // TODO: make readonly after boot
 static gdt_entries_t m_entries = {
-    {   // null descriptor
-        .limit          = 0x0000,
-        .base_low       = 0x0000,
-        .base_mid       = 0x00,
-        .access         = 0b00000000,
-        .granularity    = 0b00000000,
-        .base_high      = 0x00
-    },
-    {   // kernel code
+    .kernel_code = {   // kernel code
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
@@ -39,7 +31,7 @@ static gdt_entries_t m_entries = {
         .granularity    = 0b00100000,
         .base_high      = 0x00
     },
-    {   // kernel data
+    .kernel_data = {   // kernel data
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
@@ -47,15 +39,7 @@ static gdt_entries_t m_entries = {
         .granularity    = 0b00000000,
         .base_high      = 0x00
     },
-    {   // user code
-        .limit          = 0x0000,
-        .base_low       = 0x0000,
-        .base_mid       = 0x00,
-        .access         = 0b11111010,
-        .granularity    = 0b00100000,
-        .base_high      = 0x00
-    },
-    {   // user data
+    .user_data = {   // user data
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
@@ -63,7 +47,15 @@ static gdt_entries_t m_entries = {
         .granularity    = 0b00000000,
         .base_high      = 0x00
     },
-{   // TSS
+    .user_code = {   // user code
+        .limit          = 0x0000,
+        .base_low       = 0x0000,
+        .base_mid       = 0x00,
+        .access         = 0b11111010,
+        .granularity    = 0b00100000,
+        .base_high      = 0x00
+    },
+    .tss = {   // TSS
         .length         = 0,
         // Will be filled by the init function
         .low            = 0,

@@ -16,7 +16,6 @@ cflags-runtime-y += -isystem $(shell $(CC) --print-resource-dir)/include
 cflags-runtime-y += -Isrc/runtime
 
 ldflags-runtime-y += -flto
-ldflags-runtime-y += -Tsrc/runtime/linker.ld
 ldflags-runtime-y += -nostdlib
 ldflags-runtime-y += -static
 

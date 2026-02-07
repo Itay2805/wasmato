@@ -25,6 +25,15 @@ void switch_page_table(void);
 bool virt_is_mapped(uintptr_t virt);
 
 /**
+ * Change the protections of a given memory range
+ *
+ * @param virt          [IN] The virtual start address
+ * @param page_count    [IN] The amount of pages to modify
+ * @param protection    [IN] The new protections we want
+ */
+void virt_protect(void* virt, size_t page_count, mapping_protection_t protection);
+
+/**
  * Attempt to handle a page fault for lazy-memory allocation
  */
-err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel);
+err_t virt_handle_page_fault(uintptr_t addr, uint32_t code);

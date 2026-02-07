@@ -108,7 +108,14 @@ static inline INTRIN_ATTR void __monitor(uintptr_t eax, uintptr_t ecx, uintptr_t
 // MSR access
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#define MSR_IA32_STAR  0xC0000081
+#define MSR_IA32_LSTAR  0xC0000082
+#define MSR_IA32_CSTAR  0xC0000083
+#define MSR_IA32_FMASK  0xC0000084
+
 #define MSR_IA32_FS_BASE  0xC0000100
+#define MSR_IA32_GS_BASE  0xC0000101
+#define MSR_IA32_KERNEL_GS_BASE  0xC0000102
 
 #define MSR_IA32_APIC_BASE 0x0000001B
 
@@ -123,6 +130,21 @@ typedef union {
     };
     uint64_t packed;
 } MSR_IA32_APIC_BASE_REGISTER;
+#define MSR_IA32_EFER  0xC0000080
+
+typedef union {
+    struct {
+        uint32_t sce : 1;
+        uint32_t : 7;
+        uint32_t lme : 1;
+        uint32_t : 1;
+        uint32_t lma : 1;
+        uint32_t nxe : 1;
+        uint32_t : 20;
+        uint32_t : 32;
+    };
+    uint32_t packed;
+} MSR_IA32_EFER_REGISTER;
 
 #define MSR_IA32_TSC_DEADLINE  0x000006E0
 

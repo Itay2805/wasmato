@@ -85,3 +85,44 @@ thread_do_jump:
 
     /* finally restore the ip */
     ret
+
+/**
+ * void thread_do_jump_to_user(void* rip, void* stack, void* arg);
+ */
+.global thread_do_jump_to_user
+thread_do_jump_to_user:
+    /*
+     * setup the user cotext after the sysret
+     *  rcx -> rip
+     *  r11 -> rflags (BIT1 | IF | IOPL(3) | ID)
+     */
+    movq %rdi, %rcx
+    movq $0x203202, %r11
+
+    /**
+     * Disable interrupts, and switch to the usermode stack
+     * the sysret will restore interrupts nicely
+     */
+    cli
+    movq %rsi, %rsp
+
+    /*
+     * clear the other registers
+     */
+    movq $0, %rax
+    movq %rax, %rbx
+    movq %rax, %rdx
+    movq %rax, %rsi
+    movq %rax, %rbp
+    movq %rax, %r8
+    movq %rax, %r9
+    movq %rax, %r10
+    movq %rax, %r12
+    movq %rax, %r13
+    movq %rax, %r14
+    movq %rax, %r15
+
+    /**
+     * and go to usermode
+     */
+    sysretq

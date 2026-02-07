@@ -2,6 +2,7 @@
 #include <cpuid.h>
 
 #include "limine_requests.h"
+#include "runtime.h"
 #include "acpi/acpi.h"
 #include "arch/apic.h"
 #include "arch/gdt.h"
@@ -15,6 +16,7 @@
 #include "mem/internal/virt.h"
 #include "thread/pcpu.h"
 #include "thread/scheduler.h"
+#include "thread/syscall.h"
 #include "thread/thread.h"
 #include "time/timer.h"
 #include "time/tsc.h"
@@ -22,13 +24,6 @@
  * The init thread
  */
 static thread_t* m_init_thread;
-
-/**
- * The elf of the usermode runtime
- */
-static uint8_t m_runtime_elf[] = {
-    #embed "build/runtime"
-};
 
 static void init_thread_entry(void* arg) {
     err_t err = NO_ERROR;
@@ -39,10 +34,12 @@ static void init_thread_entry(void* arg) {
     // at this point
     RETHROW(reclaim_bootloader_memory());
 
+    // load and start the runtime
+    RETHROW(load_and_start_runtime());
+
     // TODO: reclaim init code
 
-    // for fun and profit
-    phys_map_dump();
+    region_dump(&g_user_memory);
     region_dump(&g_kernel_memory);
 
 cleanup:
@@ -178,6 +175,18 @@ static void set_cpu_features(void) {
     // UMIP - prevent usermode from leaking kernel memory
     __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP);
 
+    // setup the efer
+    // NXE - Enable NX bit
+    // SCE - Enable syscall/sysret opcodes
+    MSR_IA32_EFER_REGISTER efer = { .packed = __rdmsr(MSR_IA32_EFER) };
+    efer.nxe = 1;
+    efer.sce = 1;
+    __wrmsr(MSR_IA32_EFER, efer.packed);
+
+    // setup the syscall stuff
+    init_syscall();
+
+    // setup extended cpu features
     set_extended_state_features();
 }
 

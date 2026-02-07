@@ -1,6 +1,8 @@
 #include "region.h"
 
+#include "mappings.h"
 #include "arch/paging.h"
+#include "internal/virt.h"
 #include "kernel/alloc.h"
 #include "lib/string.h"
 #include "lib/rbtree/rbtree.h"
@@ -16,6 +18,19 @@ typedef struct range {
  * TODO: move to fine-grained locks
  */
 static irq_spinlock_t m_region_lock = IRQ_SPINLOCK_INIT;
+
+/**
+ * The region object allocator
+ */
+static mem_alloc_t m_region_alloc;
+
+void init_region_alloc(void) {
+    mem_alloc_init(&m_region_alloc, sizeof(region_t), alignof(region_t));
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// RBTree operations to do everything we need to
+//----------------------------------------------------------------------------------------------------------------------
 
 static void rbtree_find_insert_spot(
     struct rb_root* root, void* base,
@@ -143,7 +158,11 @@ static bool rbtree_find_exact(
     return true;
 }
 
-bool region_reserve(region_t* parent_region, region_t* child_region, size_t order) {
+//----------------------------------------------------------------------------------------------------------------------
+// Locked versions of the operations (assume the lock is already locked
+//----------------------------------------------------------------------------------------------------------------------
+
+static bool region_reserve_static_locked(region_t* parent_region, region_t* child_region, size_t order) {
     size_t alignment = 1 << (order + PAGE_SHIFT);
 
     // validate child
@@ -153,13 +172,11 @@ bool region_reserve(region_t* parent_region, region_t* child_region, size_t orde
     ASSERT(parent_region->type == REGION_TYPE_DEFAULT);
     ASSERT(!parent_region->locked);
 
-    bool irq_state = irq_spinlock_acquire(&m_region_lock);
-
     // these two code paths will return us the location that we need
     // to place the region into
-    struct rb_node* parent = NULL;
-    struct rb_node** link = NULL;
-    if (child_region->base == NULL) {
+    struct rb_node* parent = nullptr;
+    struct rb_node** link = nullptr;
+    if (child_region->base == nullptr) {
         // no base address given, allocate one
         void* new_base = rbtree_find_top_find_space(
             parent_region,
@@ -167,11 +184,13 @@ bool region_reserve(region_t* parent_region, region_t* child_region, size_t orde
             &parent, &link
         );
         if (new_base == NULL) {
-            irq_spinlock_release(&m_region_lock, irq_state);
             return false;
         }
         child_region->base = new_base;
     } else {
+        // ensure the alignment is correct
+        ASSERT(((uintptr_t)child_region->base % alignment) == 0);
+
         // base address given, ensure it doesn't overlap
         // we consider it an error if it overlaps because
         // no user path will ever pass an exact address
@@ -186,21 +205,33 @@ bool region_reserve(region_t* parent_region, region_t* child_region, size_t orde
     rb_link_node(&child_region->node, parent, link);
     rb_insert_color(&child_region->node, &parent_region->root);
 
-    irq_spinlock_release(&m_region_lock, irq_state);
-
     return true;
 }
 
-static mem_alloc_t m_region_alloc;
+static region_t* region_reserve_locked(region_t* parent, size_t page_count, size_t order, void* addr) {
+    region_t* region = mem_calloc(&m_region_alloc);
+    if (region == nullptr) {
+        return nullptr;
+    }
 
-void init_region_alloc(void) {
-    mem_alloc_init(&m_region_alloc, sizeof(region_t), alignof(region_t));
+    region->base = addr;
+    region->page_count = page_count;
+    region->root = RB_ROOT;
+    region->type = REGION_TYPE_DEFAULT;
+
+    // and attempt to reserve that much area
+    if (!region_reserve_static_locked(parent, region, order)) {
+        mem_free(&m_region_alloc, region);
+        return nullptr;
+    }
+
+    return region;
 }
 
-region_t* region_allocate(region_t* region, size_t page_count, size_t order, void* addr) {
+static region_t* region_allocate_locked(region_t* region, size_t page_count, size_t order, void* addr) {
     region_t* child = mem_calloc(&m_region_alloc);
     if (child == NULL) {
-        return NULL;
+        return nullptr;
     }
 
     child->base = addr;
@@ -212,48 +243,12 @@ region_t* region_allocate(region_t* region, size_t page_count, size_t order, voi
 
     // actually reserve it, if failed free the region and
     // return null
-    if (!region_reserve(region, child, order)) {
+    if (!region_reserve_static_locked(region, child, order)) {
         mem_free(&m_region_alloc, child);
-        return NULL;
+        return nullptr;
     }
 
     return child;
-}
-
-region_t* region_map_phys(region_t* region, uint64_t phys, mapping_cache_policy_t cache, size_t page_count, void* addr) {
-    region_t* child = mem_calloc(&m_region_alloc);
-    if (child == NULL) {
-        return NULL;
-    }
-
-    region->base = addr;
-    region->page_count = page_count;
-
-    region->phys = phys;
-    region->type = REGION_TYPE_MAPPING_PHYS;
-    region->cache_policy = cache;
-    region->protection = MAPPING_PROTECTION_RW;
-
-    // actually reserve it, if failed free the region and
-    // return null
-    if (!region_reserve(region, child, 0)) {
-        mem_free(&m_region_alloc, child);
-        return NULL;
-    }
-
-    return region;
-}
-
-void mapping_protect(region_t* region, void* addr, mapping_protection_t protection) {
-    // TODO: this
-}
-
-void mapping_unmap(region_t* region, void* addr) {
-    // TODO: this
-}
-
-void region_free(region_t* region) {
-    // TODO: this
 }
 
 static region_t* region_find_mapping_locked(region_t* region, void* addr) {
@@ -294,12 +289,134 @@ static region_t* region_find_mapping_locked(region_t* region, void* addr) {
     return found;
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+// Normal versions of the operations (lock it)
+//----------------------------------------------------------------------------------------------------------------------
+
+bool region_reserve_static(region_t* parent_region, region_t* child_region, size_t order) {
+    bool irq_state = irq_spinlock_acquire(&m_region_lock);
+    bool value = region_reserve_static_locked(parent_region, child_region, order);
+    irq_spinlock_release(&m_region_lock, irq_state);
+    return value;
+}
+
+region_t* region_reserve(region_t* parent, size_t page_count, size_t order, void* addr) {
+    bool irq_state = irq_spinlock_acquire(&m_region_lock);
+    region_t* region = region_reserve_locked(parent, page_count, order, addr);
+    irq_spinlock_release(&m_region_lock, irq_state);
+    return region;
+}
+
+region_t* region_allocate(region_t* region, size_t page_count, size_t order, void* addr) {
+    bool irq_state = irq_spinlock_acquire(&m_region_lock);
+    region_t* child = region_allocate_locked(region, page_count, order, addr);
+    irq_spinlock_release(&m_region_lock, irq_state);
+    return child;
+}
+
+region_t* region_map_phys(region_t* region, uint64_t phys, mapping_cache_policy_t cache, size_t page_count, void* addr) {
+    region_t* child = mem_calloc(&m_region_alloc);
+    if (child == nullptr) {
+        return nullptr;
+    }
+
+    region->base = addr;
+    region->page_count = page_count;
+
+    region->phys = phys;
+    region->type = REGION_TYPE_MAPPING_PHYS;
+    region->cache_policy = cache;
+    region->protection = MAPPING_PROTECTION_RW;
+
+    // actually reserve it, if failed free the region and
+    // return null
+    if (!region_reserve_static(region, child, 0)) {
+        mem_free(&m_region_alloc, child);
+        return nullptr;
+    }
+
+    return region;
+}
+
+region_t* region_allocate_user_stack(size_t stack_size) {
+    bool irq_state = irq_spinlock_acquire(&m_region_lock);
+
+    // reserve the user stack
+    region_t* stack_guard_region = region_reserve_locked(
+        &g_user_memory,
+        SIZE_TO_PAGES(stack_size) + 2, 0,
+        NULL
+    );
+    if (stack_guard_region == nullptr) {
+        irq_spinlock_release(&m_region_lock, irq_state);
+        return nullptr;
+    }
+
+    // and allocate the stack itself
+    region_t* stack_region = region_allocate_locked(
+        stack_guard_region,
+        SIZE_TO_PAGES(stack_size),
+        0,
+        stack_guard_region->base + PAGE_SIZE
+    );
+    if (stack_region == nullptr) {
+        region_free(stack_guard_region);
+        irq_spinlock_release(&m_region_lock, irq_state);
+        return nullptr;
+    }
+
+    // lock both regions
+    stack_guard_region->locked = true;
+    stack_region->locked = true;
+    stack_guard_region->pinned = true;
+    stack_region->pinned = true;
+
+    irq_spinlock_release(&m_region_lock, irq_state);
+
+    // return the top region, which is what we want them to free
+    return stack_guard_region;
+}
+
+void mapping_protect(void* addr, mapping_protection_t protection) {
+    bool irq_state = irq_spinlock_acquire(&m_region_lock);
+
+    // find the region, ensure that we find it and that we find the exact base
+    region_t* region = region_find_mapping_locked(&g_user_memory, addr);
+    ASSERT(region != NULL);
+    ASSERT(region->base == addr);
+
+    // double check we have a mapping that is allocated
+    ASSERT(region->type == REGION_TYPE_MAPPING_ALLOC);
+
+    // can only change a region that is RW and reduce
+    // its protections, can't do the opposite
+    ASSERT(region->protection == MAPPING_PROTECTION_RW);
+
+    // can't change a region that is locked
+    ASSERT(!region->locked);
+
+    // set the new protections
+    region->protection = protection;
+    virt_protect(region->base, region->page_count, protection);
+
+    irq_spinlock_release(&m_region_lock, irq_state);
+}
+
+void region_free(region_t* region) {
+    // TODO: this
+    ASSERT(!"TODO: this");
+}
+
 region_t* region_find_mapping(region_t* region, void* addr) {
     bool irq_state = irq_spinlock_acquire(&m_region_lock);
     region_t* found = region_find_mapping_locked(region, addr);
     irq_spinlock_release(&m_region_lock, irq_state);
     return found;
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+// Dumping
+//----------------------------------------------------------------------------------------------------------------------
 
 static void region_print_tree_rec(region_t* region, char* prefix, size_t plen, bool is_last) {
     if (plen) {

@@ -14,8 +14,8 @@ region_t g_kernel_memory ={
 region_t g_user_memory = {
     .name = "user-memory",
     .root = RB_ROOT,
-    .base = (void*)BASE_4GB,
-    .page_count = (SIZE_128TB - SIZE_4GB) / PAGE_SIZE,
+    .base = (void*)BASE_4MB,
+    .page_count = (SIZE_128TB - BASE_4MB) / PAGE_SIZE,
     .type = REGION_TYPE_DEFAULT,
     .pinned = true,
 };
@@ -27,6 +27,24 @@ region_t g_kernel_region = {
     .page_count = SIZE_2GB / PAGE_SIZE,
     .type = REGION_TYPE_DEFAULT,
     .pinned = true,
+};
+
+region_t g_runtime_region = {
+    .name = "runtime",
+    .root = RB_ROOT,
+    .base = NULL,
+    .page_count = 0,
+    .type = REGION_TYPE_DEFAULT,
+    .pinned = true
+};
+
+region_t g_runtime_heap_region = {
+    .name = "jit",
+    .root = RB_ROOT,
+    .base = NULL,
+    .page_count = 0,
+    .type = REGION_TYPE_DEFAULT,
+    .pinned = true
 };
 
 extern char __kernel_limine_requests_base[];

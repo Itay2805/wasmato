@@ -11,6 +11,8 @@ extern region_t g_kernel_memory;
  * The lower half region
  */
 extern region_t g_user_memory;
+extern region_t g_runtime_region;
+extern region_t g_runtime_heap_region;
 
 /**
  * The different segments of the kernel

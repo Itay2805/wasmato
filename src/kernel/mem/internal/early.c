@@ -8,7 +8,7 @@
 #include "arch/cpuid.h"
 #include "arch/intrin.h"
 #include "arch/paging.h"
-#include "lib/elf64.h"
+#include "lib/elf_common.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
 
@@ -143,7 +143,7 @@ static err_t early_map_kernel(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     // The kernel region is at the -2gb, its used only for kernel stuff
-    CHECK_ERROR(region_reserve(
+    CHECK_ERROR(region_reserve_static(
         &g_kernel_memory,
         &g_kernel_region,
         0
@@ -165,9 +165,11 @@ static err_t early_map_kernel(uint64_t* pml4) {
     for (int i = 0; i < ARRAY_LENGTH(kernel_regions); i++) {
         region_t* region = kernel_regions[i];
         uint64_t phys_base = (region->base - virtual_base) + physical_base;
-        CHECK(region_reserve(&g_kernel_region, region, 0));
+        CHECK(region_reserve_static(&g_kernel_region, region, 0));
         RETHROW(early_virt_map(pml4, region->base, phys_base, region->page_count, region->protection));
     }
+
+    g_kernel_region.locked = true;
 
 cleanup:
     return err;
@@ -188,7 +190,7 @@ static err_t early_init_direct_map(void) {
     // provided by the bootloader
     g_direct_map_region.base = direct_map_base;
     g_direct_map_region.page_count = SIZE_TO_PAGES(top_phys);
-    CHECK_ERROR(region_reserve(
+    CHECK_ERROR(region_reserve_static(
         &g_kernel_memory,
         &g_direct_map_region,
         LOG2(SIZE_1GB) >> PAGE_SHIFT
@@ -259,7 +261,7 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
     uint64_t top_address = 1ULL << get_physical_address_bits();
     size_t total_bitmap_size = ALIGN_UP(DIV_ROUND_UP(DIV_ROUND_UP(top_address, PAGE_SIZE), 8), PAGE_SIZE);
     g_buddy_bitmap_region.page_count = SIZE_TO_PAGES(total_bitmap_size);
-    CHECK_ERROR(region_reserve(
+    CHECK_ERROR(region_reserve_static(
         &g_kernel_memory,
         &g_buddy_bitmap_region,
         0

@@ -68,6 +68,8 @@ err_t init_pcpu(int cpu_count) {
         char* name = pcpu_get_pointer_of(&m_pcpu_mapping_name, i);
         snprintf_(name, sizeof(m_pcpu_mapping_name) - 1, "pcpu-%d", i);
         region->name = name;
+        region->locked = true;
+        region->pinned = true;
     }
 
 cleanup:

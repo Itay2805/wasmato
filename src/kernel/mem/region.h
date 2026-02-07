@@ -154,7 +154,18 @@ static inline void* region_end(region_t* region) {
  * @param order         [IN] The alignment, as `log2(alignment) - PAGE_SHIFT`
  * @returns false if out of memory
  */
-bool region_reserve(region_t* parent_region, region_t* child_region, size_t order);
+bool region_reserve_static(region_t* parent_region, region_t* child_region, size_t order);
+
+/**
+ * Reserve a memory region inside the given memory region.
+ *
+ * @param parent        [IN] The region to reserve inside
+ * @param page_count    [IN] The amount of pages to reserve
+ * @param order         [IN] The alignment, as `log2(alignment) - PAGE_SHIFT`
+ * @param addr          [IN] The address to map it at, or NULL if any
+ * @returns NULL if out of space
+ */
+region_t* region_reserve(region_t* parent, size_t page_count, size_t order, void* addr);
 
 /**
  * Initialize the memory regions allocator
@@ -195,24 +206,22 @@ region_t* region_map_phys(region_t* region, uint64_t phys, mapping_cache_policy_
 /**
  * Protect the memory mapping at the given address
  *
+ * NOTE: this assumes the memory is a user address
+ *
  * NOTE: once something is set to locked it can't be protected again
  *
- * @param region        [IN/OPTIONAL] The region to search inside, if NULL will search the entire tree
  * @param addr          [IN] The address to search for, must be exact
  * @param protection    [IN] The protection to set
  */
-void mapping_protect(region_t* region, void* addr, mapping_protection_t protection);
+void mapping_protect(void* addr, mapping_protection_t protection);
 
 /**
- * Unmap the given mapping
- *
- * @param region        [IN/OPTIONAL] The region to search inside, if NULL will search the entire tree
- * @param addr          [IN] The address to search for, must be exact
+ * Allocate user stack with guard pages around it
  */
-void mapping_unmap(region_t* region, void* addr);
+region_t* region_allocate_user_stack(size_t stack_size);
 
 /**
- * Free the entire region, unmapping everything under it
+ * Free the entire region, also freeing all regions under it
  *
  * @param region        [IN] The region to free and unmap
  */

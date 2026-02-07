@@ -68,7 +68,7 @@ void switch_page_table(void) {
 // Mapping utilities
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static uint64_t* virt_get_next_level(uint64_t* entry, bool allocate) {
+static uint64_t* virt_get_next_level(uint64_t* entry, bool allocate, bool kernel) {
     // ensure we don't have a large page in the way
     ASSERT((*entry & IA32_PG_PS) == 0);
 
@@ -83,29 +83,29 @@ static uint64_t* virt_get_next_level(uint64_t* entry, bool allocate) {
         }
         memset(phys, 0, PAGE_SIZE);
 
-        *entry = direct_to_phys(phys) | IA32_PG_P | IA32_PG_RW;
+        *entry = direct_to_phys(phys) | IA32_PG_P | IA32_PG_RW | (kernel ? 0 : IA32_PG_U);
     }
 
     return phys_to_direct(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
-static uint64_t* virt_get_pte(void* virt, bool allocate) {
+static uint64_t* virt_get_pte(void* virt, bool allocate, bool kernel) {
     size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
     size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
     size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
     size_t index1 = ((uintptr_t)virt >> 12) & PAGING_INDEX_MASK;
 
-    uint64_t* pml3 = virt_get_next_level(&m_pml4[index4], allocate);
+    uint64_t* pml3 = virt_get_next_level(&m_pml4[index4], allocate, kernel);
     if (pml3 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml2 = virt_get_next_level(&pml3[index3], allocate);
+    uint64_t* pml2 = virt_get_next_level(&pml3[index3], allocate, kernel);
     if (pml2 == NULL) {
         return NULL;
     }
 
-    uint64_t* pml1 = virt_get_next_level(&pml2[index2], allocate);
+    uint64_t* pml1 = virt_get_next_level(&pml2[index2], allocate, kernel);
     if (pml1 == NULL) {
         return NULL;
     }
@@ -113,11 +113,30 @@ static uint64_t* virt_get_pte(void* virt, bool allocate) {
     return &pml1[index1];
 }
 
+void virt_protect(void* virt, size_t page_count, mapping_protection_t protection) {
+    for (size_t i = 0; i < page_count; i++, virt += PAGE_SIZE) {
+        // get the pte
+        uint64_t* pte = virt_get_pte(virt, false, false);
+        if (pte == NULL) {
+            continue;
+        }
+
+        // change the protections
+        uint64_t new_pte = *pte & ~((uint64_t)(IA32_PG_RW | IA32_PG_NX));
+        if (protection != MAPPING_PROTECTION_RX) new_pte |= IA32_PG_NX;
+        if (protection == MAPPING_PROTECTION_RW) new_pte |= IA32_PG_RW;
+        *pte = new_pte;
+
+        // TODO: queue tlb invalidation
+        __invlpg(virt);
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Page fault handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel) {
+err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     err_t err = NO_ERROR;
 
     bool irq_state = irq_spinlock_acquire(&m_virt_lock);
@@ -128,14 +147,17 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel) {
 
     // get the region it happened in
     region_t* region = NULL;
-    if (kernel) {
-        CHECK(g_kernel_memory.base <= (void*)addr);
+    bool kernel = false;
+    if (g_kernel_memory.base <= (void*)addr) {
         region = &g_kernel_memory;
         CHECK((code & IA32_PF_EC_USER) == 0);
-    } else {
-        CHECK((void*)addr <= g_user_memory.base);
+        kernel = true;
+
+    } else if ((void*)addr <= region_end(&g_user_memory)) {
         region = &g_user_memory;
-        CHECK(code & IA32_PF_EC_USER);
+
+    } else {
+        CHECK_FAIL();
     }
 
     // search for the actual mapping where we faulted
@@ -153,7 +175,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel) {
 
     // get the pte, we assume it was not allocated yet
     // TODO: when we support protection faults we should assume its already allocated
-    uint64_t* pte = virt_get_pte((void*)addr, true);
+    uint64_t* pte = virt_get_pte((void*)addr, true, region == &g_user_memory);
     CHECK(pte != NULL);
     CHECK(*pte == 0);
 
@@ -194,7 +216,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code, bool kernel) {
 
 cleanup:
     if (IS_ERROR(err)) {
-        if (kernel) {
+        if (g_kernel_memory.base <= (void*)addr) {
             region_dump(&g_kernel_memory);
         } else {
             region_dump(&g_user_memory);
