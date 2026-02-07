@@ -1,7 +1,13 @@
 #pragma once
 
 typedef enum syscall {
+    /**
+     * arg1 - string to print
+     * arg2 - the length of the string to print
+     */
     SYSCALL_DEBUG_PRINT,
+
+    SYSCALL_
 } syscall_t;
 
 #define syscall0(num) \
