@@ -191,6 +191,10 @@ static bool region_reserve_static_locked(region_t* parent_region, region_t* chil
         // ensure the alignment is correct
         ASSERT(((uintptr_t)child_region->base % alignment) == 0);
 
+        // ensure its fully inside of the region
+        ASSERT(parent_region->base <= child_region->base);
+        ASSERT(region_end(child_region) <= region_end(parent_region));
+
         // base address given, ensure it doesn't overlap
         // we consider it an error if it overlaps because
         // no user path will ever pass an exact address
@@ -254,10 +258,10 @@ static region_t* region_allocate_locked(region_t* region, size_t page_count, siz
 static region_t* region_find_mapping_locked(region_t* region, void* addr) {
     // not inside of this region at all
     if (addr < region->base || region_end(region) < addr) {
-        return NULL;
+        return nullptr;
     }
 
-    region_t* found = NULL;
+    region_t* found = nullptr;
     struct rb_node* node = region->root.rb_node;
     while (node) {
         region_t* child = rb_entry(node, region_t, node);
@@ -276,8 +280,8 @@ static region_t* region_find_mapping_locked(region_t* region, void* addr) {
     }
 
     // not found, return null
-    if (found == NULL) {
-        return NULL;
+    if (found == nullptr) {
+        return nullptr;
     }
 
     if (found->type == REGION_TYPE_DEFAULT) {

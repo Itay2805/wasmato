@@ -14,8 +14,8 @@ region_t g_kernel_memory ={
 region_t g_user_memory = {
     .name = "user-memory",
     .root = RB_ROOT,
-    .base = (void*)BASE_4MB,
-    .page_count = (SIZE_128TB - BASE_4MB) / PAGE_SIZE,
+    .base = (void*)BASE_64KB,
+    .page_count = (SIZE_128TB - BASE_64KB) / PAGE_SIZE,
     .type = REGION_TYPE_DEFAULT,
     .pinned = true,
 };

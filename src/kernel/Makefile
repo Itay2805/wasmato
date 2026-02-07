@@ -13,7 +13,7 @@ cflags-kernel-y += -mgeneral-regs-only
 cflags-kernel-y += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
 cflags-kernel-y += -mcmodel=kernel -mno-red-zone
 cflags-kernel-y += -nostdlib -nostdinc
-cflags-kernel-y += -isystem $(shell $(CC) --print-resource-dir)/include
+cflags-kernel-y += -isystem $(CLANG_RESOURCE_DIR)/include
 cflags-kernel-y += -Isrc/kernel
 cflags-kernel-y += -Ilib/limine-protocol/include
 

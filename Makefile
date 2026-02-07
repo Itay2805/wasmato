@@ -12,7 +12,7 @@ override MAKEFLAGS += -rR
 # Are we compiling as debug or not
 DEBUG 			?= y
 
-ifeq ($(DEBUG),1)
+ifeq ($(DEBUG),y)
 OPTIMIZE		?= n
 else
 OPTIMIZE		?= y
@@ -25,6 +25,8 @@ endif
 CC := clang
 AS := clang
 AR := llvm-ar
+
+CLANG_RESOURCE_DIR := $(shell $(CC) --print-resource-dir)
 
 BUILD := build
 OBJ := $(BUILD)/obj

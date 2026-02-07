@@ -105,7 +105,7 @@ err_t load_and_start_runtime(void) {
         // align to page
         uintptr_t vaddr = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
         size_t top_address;
-        CHECK(!__builtin_add_overflow(vaddr, phdr->p_memsz, &top_address));
+        CHECK(!__builtin_add_overflow(phdr->p_vaddr, phdr->p_memsz, &top_address));
         top_address = ALIGN_UP(top_address, PAGE_SIZE);
         size_t aligned_size = top_address - vaddr;
 
@@ -148,7 +148,7 @@ err_t load_and_start_runtime(void) {
 
         // set the correct protections now
         if (protection != MAPPING_PROTECTION_RW) {
-            mapping_protect((void*)phdr->p_vaddr, protection);
+            mapping_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
         }
 
         // TODO: lock region

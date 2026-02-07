@@ -30,5 +30,8 @@ lddeps-runtime-y += $(RUST_LIBS)
 ldflags-runtime-y += -L$(CARGO_LIBS_PATH)
 ldlibs-runtime-y += rust_libs
 
+# spidir headers
+cflags-runtime-y += -Ilib/spidir/c-api/include
+
 runtime-y += $(shell find src/runtime -name '*.c')
 runtime-y += $(shell find src/common -name '*.c')

@@ -1,3 +1,5 @@
+#include "lib/log.h"
+
 #include <stdarg.h>
 
 #include "lib/printf.h"
@@ -12,3 +14,7 @@ void debug_print(const char* fmt, ...) {
     syscall2(SYSCALL_DEBUG_PRINT, buffer, len);
 }
 
+void rust_platform_panic(const char* message, size_t message_len) {
+    ERROR("%.*s", (int)message_len, message);
+    __builtin_trap();
+}

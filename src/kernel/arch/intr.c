@@ -327,6 +327,9 @@ void common_exception_handler(exception_frame_t* ctx) {
     // special case for page
     if (ctx->int_num == EXCEPT_IA32_PAGE_FAULT) {
         RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code));
+
+    } else {
+        CHECK_FAIL();
     }
 
 cleanup:

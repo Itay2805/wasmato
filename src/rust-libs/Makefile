@@ -20,11 +20,15 @@ CARGO_CMD += --
 CARGO_CMD += -C force-frame-pointers=yes
 CARGO_CMD += $(RUSTC_FLAGS)
 
-quiet_cmd_cargo = CARGO $@
+quiet_cmd_cargo = CARGO   $@
 	  cmd_cargo = $(CARGO_CMD)
 
 targets += $(RUST_LIBS)
-$(RUST_LIBS): FORCE
+
+PHONY += rust_libs
+rust_libs:
 	$(call cmd,cargo)
 
+$(RUST_LIBS): rust_libs
+	@:
 
