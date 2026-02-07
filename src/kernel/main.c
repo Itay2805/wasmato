@@ -23,6 +23,13 @@
  */
 static thread_t* m_init_thread;
 
+/**
+ * The elf of the usermode runtime
+ */
+static uint8_t m_runtime_elf[] = {
+    #embed "build/runtime"
+};
+
 static void init_thread_entry(void* arg) {
     err_t err = NO_ERROR;
 

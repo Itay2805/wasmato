@@ -67,11 +67,11 @@ static void* rbtree_try_gap(
         void* min_base = ALIGN_UP(gap_lo, align);
         if (max_base >= min_base) {
             void* base = max_base;
-            rbtree_find_insert_spot(root, base, out_parent, out_link, NULL, NULL);
+            rbtree_find_insert_spot(root, base, out_parent, out_link, nullptr, nullptr);
             return base;
         }
     }
-    return false;
+    return nullptr;
 }
 
 static void* rbtree_find_top_find_space(

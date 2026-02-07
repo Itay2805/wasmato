@@ -2,7 +2,7 @@
 bins-y += kernel
 
 cflags-kernel-y += -target x86_64-pc-none-elf
-cflags-kernel-y += -Wall -Werror -std=gnu11
+cflags-kernel-y += -Wall -Werror -std=gnu23
 cflags-kernel-y += -march=x86-64-v3 -mxsave -mxsaveopt
 cflags-kernel-y += -flto -g
 cflags-kernel-y += -fno-omit-frame-pointer -fvisibility=hidden
@@ -16,6 +16,9 @@ cflags-kernel-y += -nostdlib -nostdinc
 cflags-kernel-y += -isystem $(shell $(CC) --print-resource-dir)/include
 cflags-kernel-y += -Isrc/kernel
 cflags-kernel-y += -Ilib/limine-protocol/include
+
+# we need the runtime for the kernel to work
+ccodeps-kernel-y += $(BUILD)/runtime
 
 ldflags-kernel-y += -flto
 ldflags-kernel-y += -Tsrc/kernel/linker.ld

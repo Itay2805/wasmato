@@ -2,7 +2,7 @@
 bins-y += runtime
 
 cflags-runtime-y += -target x86_64-pc-none-elf
-cflags-runtime-y += -Wall -Werror -std=gnu11
+cflags-runtime-y += -Wall -Werror -std=gnu23
 cflags-runtime-y += -march=x86-64-v3
 cflags-runtime-y += -flto -g
 cflags-runtime-y += -Isrc/common
