@@ -1,15 +1,5 @@
 #pragma once
 
-typedef enum syscall {
-    /**
-     * arg1 - string to print
-     * arg2 - the length of the string to print
-     */
-    SYSCALL_DEBUG_PRINT,
-
-    SYSCALL_
-} syscall_t;
-
 #define syscall0(num) \
     ({ \
 	    long _ret; \
@@ -127,4 +117,29 @@ typedef enum syscall {
 	    ); \
 	    _ret; \
     })
+#include "lib/string.h"
 
+typedef enum syscall {
+    /**
+     * Print to the debug console, used for early debugging
+     *  arg1 - string to print
+     *  arg2 - the length of the string to print
+     */
+    SYSCALL_DEBUG_PRINT,
+
+    /**
+     * Allocate memory in page granularity, can be anywhere
+     * in the usermode virtual address space
+     *  arg1 - page count
+     *  arg2 - order
+     */
+    SYSCALL_MEM_ALLOC,
+} syscall_t;
+
+static inline void sys_debug_print(const char* message, size_t message_len) {
+    syscall2(SYSCALL_DEBUG_PRINT, message, message_len);
+}
+
+static inline void* sys_mem_alloc(size_t page_count, size_t order) {
+    return (void*)syscall2(SYSCALL_MEM_ALLOC, page_count, order);
+}

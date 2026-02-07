@@ -6,6 +6,8 @@
 #include "arch/regs.h"
 #include "pcpu.h"
 #include "lib/string.h"
+#include "mem/mappings.h"
+#include "mem/region.h"
 
 /**
  * The id of the current cpu
@@ -42,6 +44,19 @@ void syscall_handler(syscall_frame_t* frame) {
             char buffer[512];
             copy_from_user(buffer, frame->rdi, frame->rsi);
             debug_print("%.*s", (int)frame->rsi, buffer);
+        } break;
+
+        case SYSCALL_MEM_ALLOC: {
+            region_t* region = region_allocate(
+                &g_user_memory,
+                frame->rdi, frame->rsi,
+                NULL
+            );
+            if (region == NULL) {
+                frame->rax = 0;
+            } else {
+                frame->rax = (uintptr_t)region->base;
+            }
         } break;
 
         default:

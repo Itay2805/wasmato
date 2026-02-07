@@ -190,6 +190,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         // allocate the page
         void* page = phys_alloc(PAGE_SIZE);
         CHECK(page != NULL);
+        memset(page, 0, PAGE_SIZE);
         phys = direct_to_phys(page);
 
     } else {

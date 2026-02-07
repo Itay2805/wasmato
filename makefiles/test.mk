@@ -1,5 +1,3 @@
-
-# The name of the image we are building
 IMAGE_NAME 	:= $(BUILD)/tomato.img
 
 quiet_cmd_mkimage = MKIMAGE $@
@@ -29,7 +27,7 @@ quiet_cmd_run = QEMU    $<
                     -m 256M \
                     -smp 4 \
                     -s \
-                    -hda $(IMAGE_NAME) \
+                    -drive format=raw,file=$<,media=disk \
                     -debugcon stdio \
                     -monitor telnet:127.0.0.1:5555,server,nowait \
                     -no-reboot \

@@ -23,5 +23,8 @@ int _start() {
 
     spidir_module_handle_t module = spidir_module_create();
 
+    spidir_module_destroy(module);
+
+    TRACE("Finished runtime init");
     while (1);
 }
