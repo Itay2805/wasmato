@@ -47,29 +47,14 @@ void* memmove(void* dest, const void* src, size_t n) {
     void* d = dest;
 
     if (src < dest && dest < src + n) {
-        // calculate the backwards copy size
-        size_t tail_size = dest - src;
-
-        // we are going to copy backwards at a chunk size of the non-overlapping
-        // area, the tail size is always smaller than n at the start, so we can
-        // use a do-while, and we are starting from that area
-        dest += n - tail_size;
-        src += n - tail_size;
-        do {
-            // perform the forward copy
-            __rep_movsb(dest, src, tail_size);
-
-            // and now move the pointers and size backwards
-            dest -= tail_size;
-            src -= tail_size;
-            n -= tail_size;
-        } while (n > tail_size);
-
-        // if we are left with non-zero size then we
-        // just need to perform this one last copy
-        if (n != 0) {
-            __rep_movsb(dest, src, n);
-        }
+        asm volatile (
+            "std\n"
+            "rep movsb\n"
+            "cld\n"
+            : "+D"(dest), "+S"(src), "+c"(n)
+            :
+            : "memory"
+        );
     } else {
         // not overlapping, use a normal copy
         __rep_movsb(dest, src, n);

@@ -63,10 +63,15 @@ err_t load_and_start_runtime(void) {
         if (phdr->p_type != PT_LOAD)
             continue;
 
-        size_t top_address;
-        CHECK(!__builtin_add_overflow(phdr->p_vaddr, phdr->p_memsz, &top_address));
+        // align to page
+        uintptr_t vaddr = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
 
-        elf_load_address = MIN(phdr->p_vaddr, elf_load_address);
+        // align to page
+        size_t top_address;
+        CHECK(!__builtin_add_overflow(vaddr, phdr->p_memsz, &top_address));
+        top_address = ALIGN_UP(top_address, PAGE_SIZE);
+
+        elf_load_address = MIN(vaddr, elf_load_address);
         elf_top_address = MAX(top_address, elf_top_address);
     }
 
@@ -93,21 +98,22 @@ err_t load_and_start_runtime(void) {
             default: CHECK_FAIL();
         }
 
-        // calculate the alignment we want
-        int order = 0;
-        if (phdr->p_align > PAGE_SIZE) {
-            order = LOG2(phdr->p_align) - PAGE_SHIFT;
-        }
-
         // get the data
         CHECK(phdr->p_memsz >= phdr->p_filesz);
         void* data = ELF_ARR(char, phdr->p_filesz, phdr->p_offset);
 
+        // align to page
+        uintptr_t vaddr = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
+        size_t top_address;
+        CHECK(!__builtin_add_overflow(vaddr, phdr->p_memsz, &top_address));
+        top_address = ALIGN_UP(top_address, PAGE_SIZE);
+        size_t aligned_size = top_address - vaddr;
+
         // setup the region
         region_t* region = region_allocate(
             &g_runtime_region,
-            SIZE_TO_PAGES(phdr->p_memsz), order,
-            (void*)phdr->p_vaddr
+            SIZE_TO_PAGES(aligned_size), 0,
+            (void*)vaddr
         );
         CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
         region->name = name;
@@ -115,9 +121,9 @@ err_t load_and_start_runtime(void) {
 
         // copy the data, we need to enable accessing user memory while we do that
         asm("stac");
-        memset(region->base, 0, SIZE_TO_PAGES(phdr->p_memsz));
+        memset((void*)phdr->p_vaddr, 0, SIZE_TO_PAGES(phdr->p_memsz));
         if (phdr->p_filesz != 0) {
-            memcpy((void*)region->base, data, phdr->p_filesz);
+            memcpy((void*)phdr->p_vaddr, data, phdr->p_filesz);
         }
         asm("clac");
     }

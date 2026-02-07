@@ -26,8 +26,8 @@ typedef struct thread {
     // accessed from assembly
     thread_frame_t* cpu_state;
 
-    // The thread name, not null terminated
-    char name[256];
+    // must be second because this is accessed in assembly
+    uintptr_t syscall_stack;
 
     // either a freelist link or the scheduler link
     list_t link;
@@ -45,6 +45,9 @@ typedef struct thread {
 
     // The node for the scheduler
     list_entry_t scheduler_node;
+
+    // The thread name, not null terminated
+    char name[256];
 
     // The extended state of the thread, must be aligned
     // for XSAVE to work

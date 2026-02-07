@@ -338,7 +338,7 @@ region_t* region_map_phys(region_t* region, uint64_t phys, mapping_cache_policy_
     return region;
 }
 
-region_t* region_allocate_user_stack(size_t stack_size) {
+region_t* region_allocate_user_stack(const char* name, size_t stack_size) {
     bool irq_state = irq_spinlock_acquire(&m_region_lock);
 
     // reserve the user stack
@@ -351,6 +351,7 @@ region_t* region_allocate_user_stack(size_t stack_size) {
         irq_spinlock_release(&m_region_lock, irq_state);
         return nullptr;
     }
+    stack_guard_region->name = "stack-with-guard";
 
     // and allocate the stack itself
     region_t* stack_region = region_allocate_locked(
@@ -364,6 +365,7 @@ region_t* region_allocate_user_stack(size_t stack_size) {
         irq_spinlock_release(&m_region_lock, irq_state);
         return nullptr;
     }
+    stack_region->name = name;
 
     // lock both regions
     stack_guard_region->locked = true;

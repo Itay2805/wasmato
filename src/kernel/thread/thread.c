@@ -1,6 +1,7 @@
 #include "thread.h"
 
 #include "scheduler.h"
+#include "syscall.h"
 #include "arch/gdt.h"
 #include "arch/paging.h"
 #include "lib/printf.h"
@@ -114,13 +115,14 @@ err_t user_thread_create(thread_t** out_thread, void* callback, void* arg, const
     va_end(va);
 
     // allocate the user stack
-    thread->stack_region = region_allocate_user_stack(SIZE_32KB);
+    thread->stack_region = region_allocate_user_stack(thread->name, SIZE_32KB);
     CHECK_ERROR(thread->stack_region != NULL, ERROR_OUT_OF_MEMORY);
 
     // allocate the stack for the kernel
     void* kernel_stack = phys_alloc(PAGE_SIZE);
     CHECK(kernel_stack != NULL);
     thread->kernel_stack = kernel_stack + PAGE_SIZE;
+    thread->syscall_stack = (uintptr_t)thread->kernel_stack;
 
     // set the entry point as something that will jump into the usermode code
     uintptr_t* stack = thread->kernel_stack - 16;
@@ -170,11 +172,14 @@ void thread_switch(thread_t* from, thread_t* to) {
     //       optimization
     __builtin_ia32_xsaveopt64(from->extended_state, ~0ull);
 
+    // switch the syscall stack of the threads
+    from->syscall_stack = switch_syscall_stack(to->syscall_stack);
+
     // Restore the extended state
     // TODO: support for xrstors when available
     __builtin_ia32_xrstor64(to->extended_state, ~0ull);
 
-    // set the kernel stack
+    // set the kernel stack of the new thread
     tss_set_irq_stack(to->kernel_stack - 16);
 
     // and now we can jump to the thread
@@ -182,11 +187,14 @@ void thread_switch(thread_t* from, thread_t* to) {
 }
 
 void thread_jump(thread_t* to) {
+    // Restore the syscall stack
+    switch_syscall_stack(to->syscall_stack);
+
     // Restore the extended state
     // TODO: support for xrstors when available
     __builtin_ia32_xrstor64(to->extended_state, ~0ull);
 
-    // set the kernel stack
+    // set the kernel stack of the new thread
     tss_set_irq_stack(to->kernel_stack - 16);
 
     // and now we can jump to the thread

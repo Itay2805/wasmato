@@ -218,7 +218,7 @@ void mapping_protect(void* addr, mapping_protection_t protection);
 /**
  * Allocate user stack with guard pages around it
  */
-region_t* region_allocate_user_stack(size_t stack_size);
+region_t* region_allocate_user_stack(const char* name, size_t stack_size);
 
 /**
  * Free the entire region, also freeing all regions under it

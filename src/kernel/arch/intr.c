@@ -267,8 +267,14 @@ static void default_exception_handler(exception_frame_t* ctx) {
     uintptr_t last_ret = 0;
 
     // if you want to print the assembly of a specific stack trace entry set this (start from 1)
+    asm("stac");
     int to_print = 0;
     while (true) {
+        if (((uintptr_t)base_ptr % alignof(void*)) != 0) {
+            ERROR("\t%p is unaligned!", base_ptr);
+            break;
+        }
+
         if (!virt_is_mapped((uintptr_t)base_ptr)) {
             ERROR("\t%p is unmapped!", base_ptr);
             break;
