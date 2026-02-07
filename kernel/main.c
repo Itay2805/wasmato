@@ -252,39 +252,33 @@ void _start() {
     RETHROW(init_scheduler());
 
     // perform cpu startup
-    if (g_limine_mp_request.response != NULL) {
-        struct limine_mp_response* response = g_limine_mp_request.response;
+    CHECK(g_limine_mp_request.response != NULL);
+    struct limine_mp_response* response = g_limine_mp_request.response;
 
-        g_cpu_count = response->cpu_count;
-        TRACE("smp: Starting CPUs (%zu)", g_cpu_count);
+    g_cpu_count = response->cpu_count;
+    TRACE("smp: Starting CPUs (%zu)", g_cpu_count);
 
-        // setup pcpu for the rest of the system
-        RETHROW(init_pcpu(g_limine_mp_request.response->cpu_count));
+    // setup pcpu for the rest of the system
+    RETHROW(init_pcpu(g_limine_mp_request.response->cpu_count));
 
-        for (size_t i = 0; i < g_cpu_count; i++) {
-            if (response->cpus[i]->lapic_id == response->bsp_lapic_id) {
-                TRACE("smp: \tCPU#%zu - LAPIC#%d (BSP)", i, response->cpus[i]->lapic_id);
+    for (size_t i = 0; i < g_cpu_count; i++) {
+        if (response->cpus[i]->lapic_id == response->bsp_lapic_id) {
+            TRACE("smp: \tCPU#%zu - LAPIC#%d (BSP)", i, response->cpus[i]->lapic_id);
 
-                // allocate the per-cpu storage now that we know our id
-                init_lapic_per_core();
-                RETHROW(scheduler_init_per_core());
+            // allocate the per-cpu storage now that we know our id
+            init_lapic_per_core();
+            RETHROW(scheduler_init_per_core());
 
-                m_smp_count++;
-            } else {
-                // start it up
-                response->cpus[i]->extra_argument = i;
-                response->cpus[i]->goto_address = smp_entry;
-            }
-
-            while (m_smp_count != i + 1) {
-                cpu_relax();
-            }
+            m_smp_count++;
+        } else {
+            // start it up
+            response->cpus[i]->extra_argument = i;
+            response->cpus[i]->goto_address = smp_entry;
         }
-    } else {
-        // no SMP startup available from bootloader,
-        // just assume we have a single cpu
-        WARN("smp: missing limine SMP support");
-        RETHROW(init_pcpu(1));
+
+        while (m_smp_count != i + 1) {
+            cpu_relax();
+        }
     }
 
     // wait for smp to finish up
