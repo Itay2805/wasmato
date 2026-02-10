@@ -3,9 +3,9 @@
 #include <cpuid.h>
 
 #include "intrin.h"
-#include "mem/internal/direct.h"
-#include "mem/internal/phys_map.h"
-#include "mem/internal/virt.h"
+#include "mem/direct.h"
+#include "mem/phys_map.h"
+#include "mem/virt.h"
 #include "time/tsc.h"
 
 

@@ -7,8 +7,8 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mem/stack.h"
-#include "mem/internal/phys.h"
-#include "mem/kernel/alloc.h"
+#include "mem/phys.h"
+#include "mem/alloc.h"
 
 /**
  * The size of the extended state

@@ -3,9 +3,8 @@
 
 #include "limine_requests.h"
 #include "arch/paging.h"
-#include "mem/internal/direct.h"
-#include "mem/internal/phys_map.h"
-#include "mem/internal/virt.h"
+#include "mem/direct.h"
+#include "mem/phys_map.h"
 
 /**
  * The frequency of the acpi timer

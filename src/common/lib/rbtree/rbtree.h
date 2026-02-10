@@ -25,7 +25,7 @@
 #define	_LINUX_RBTREE_H
 
 #include "rbtree_types.h"
-#include "../list.h"
+#include "lib/list.h"
 
 #include <stdbool.h>
 #include <stddef.h>

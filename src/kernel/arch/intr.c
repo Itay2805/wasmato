@@ -4,7 +4,7 @@
 #include "gdt.h"
 #include "lib/ipi.h"
 #include "lib/log.h"
-#include "mem/internal/virt.h"
+#include "mem/virt.h"
 #include "sync/spinlock.h"
 #include "thread/pcpu.h"
 #include "thread/scheduler.h"

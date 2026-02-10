@@ -1,11 +1,10 @@
-#include "alloc_internal.h"
 #include "alloc.h"
 
 #include "arch/paging.h"
 #include "lib/assert.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
-#include "mem/internal/phys.h"
+#include "phys.h"
 
 typedef struct free_node {
     struct free_node* next;

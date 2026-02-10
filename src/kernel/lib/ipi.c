@@ -2,7 +2,7 @@
 
 #include "arch/apic.h"
 #include "arch/smp.h"
-#include "mem/internal/virt.h"
+#include "mem/virt.h"
 #include "sync/spinlock.h"
 #include "thread/pcpu.h"
 

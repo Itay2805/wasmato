@@ -1,8 +1,8 @@
 #include "vmar.h"
 
 #include "mappings.h"
-#include "internal/virt.h"
-#include "kernel/alloc.h"
+#include "virt.h"
+#include "alloc.h"
 #include "lib/assert.h"
 #include "lib/rbtree/rbtree.h"
 

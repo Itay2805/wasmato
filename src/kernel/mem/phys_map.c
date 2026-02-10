@@ -4,7 +4,7 @@
 
 #include "limine.h"
 #include "limine_requests.h"
-#include "mem/kernel/alloc.h"
+#include "alloc.h"
 #include "arch/cpuid.h"
 
 

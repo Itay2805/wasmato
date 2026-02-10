@@ -5,7 +5,7 @@
 #include "lib/printf.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
-#include "mem/kernel/alloc.h"
+#include "mem/alloc.h"
 
 extern char __start_pcpu_data[];
 extern char __stop_pcpu_data[];
