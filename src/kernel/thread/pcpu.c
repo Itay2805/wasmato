@@ -4,7 +4,6 @@
 #include "arch/paging.h"
 #include "lib/printf.h"
 #include "lib/string.h"
-#include "mem/region.h"
 #include "mem/mappings.h"
 #include "mem/kernel/alloc.h"
 
@@ -50,12 +49,10 @@ err_t init_pcpu(int cpu_count) {
     size_t pcpu_size = __stop_pcpu_data - __start_pcpu_data;
     for (int i = 1; i < cpu_count; i++) {
         // allocate and map the pcpu data
-        region_t* region = region_allocate(
-            &g_kernel_memory,
-            SIZE_TO_PAGES(pcpu_size),
-            0, NULL
-        );
+        vmar_t* region = vmar_allocate(&g_kernel_memory, SIZE_TO_PAGES(pcpu_size), nullptr);
         CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
+        region->pinned = true;
+        region->locked = true;
 
         // initialize it right away to ensure the other cores will
         // not need to fault
@@ -68,8 +65,6 @@ err_t init_pcpu(int cpu_count) {
         char* name = pcpu_get_pointer_of(&m_pcpu_mapping_name, i);
         snprintf_(name, sizeof(m_pcpu_mapping_name) - 1, "pcpu-%d", i);
         region->name = name;
-        region->locked = true;
-        region->pinned = true;
     }
 
 cleanup:

@@ -7,7 +7,6 @@
 #include "pcpu.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
-#include "mem/region.h"
 
 /**
  * The id of the current cpu
@@ -46,12 +45,11 @@ void syscall_handler(syscall_frame_t* frame) {
             debug_print("%.*s", (int)frame->rsi, buffer);
         } break;
 
-        case SYSCALL_MEM_ALLOC: {
-            region_t* region = region_allocate(
-                &g_user_memory,
-                frame->rdi, frame->rsi,
-                NULL
-            );
+        case SYSCALL_HEAP_ALLOC: {
+            vmar_lock();
+            vmar_t* region = vmar_allocate(&g_user_memory, frame->rdi, nullptr);
+            vmar_unlock();
+
             if (region == NULL) {
                 frame->rax = 0;
             } else {

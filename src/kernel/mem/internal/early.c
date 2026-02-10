@@ -67,7 +67,11 @@ static void* early_alloc_page(void) {
 // Early mapping utilities
 //----------------------------------------------------------------------------------------------------------------------
 
-#define DIRECT_MAP_ATTRIBUTES   (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX)
+/**
+ * The bits to set to all kernel entries (except the kernel itself)
+ * basically does RW and global
+ */
+#define KERNEL_PTE_BITS (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_PS | IA32_PG_G)
 
 static uint64_t* early_virt_get_next_level(uint64_t* entry) {
     // ensure we don't have a large page in the way
@@ -122,7 +126,7 @@ static err_t early_virt_map(
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
-        uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A;
+        uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_G;
         if (protection != MAPPING_PROTECTION_RX) entry |= IA32_PG_NX;
         if (protection == MAPPING_PROTECTION_RW) entry |= IA32_PG_RW;
 
@@ -143,11 +147,7 @@ static err_t early_map_kernel(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     // The kernel region is at the -2gb, its used only for kernel stuff
-    CHECK_ERROR(region_reserve_static(
-        &g_kernel_memory,
-        &g_kernel_region,
-        0
-    ), ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(vmar_reserve_static(&g_kernel_memory, &g_kernel_region), ERROR_OUT_OF_MEMORY);
 
     // get the physical and virtual base, and ensure that they are the same
     // as what we expect from the kernel start symbol
@@ -155,7 +155,7 @@ static err_t early_map_kernel(uint64_t* pml4) {
     uint64_t physical_base = g_limine_executable_address_request.response->physical_base;
     void* virtual_base = (void*)g_limine_executable_address_request.response->virtual_base;
 
-    region_t* kernel_regions[] = {
+    vmar_t* kernel_regions[] = {
         &g_kernel_limine_requests_region,
         &g_kernel_text_region,
         &g_kernel_rodata_region,
@@ -163,10 +163,14 @@ static err_t early_map_kernel(uint64_t* pml4) {
     };
 
     for (int i = 0; i < ARRAY_LENGTH(kernel_regions); i++) {
-        region_t* region = kernel_regions[i];
-        uint64_t phys_base = (region->base - virtual_base) + physical_base;
-        CHECK(region_reserve_static(&g_kernel_region, region, 0));
-        RETHROW(early_virt_map(pml4, region->base, phys_base, region->page_count, region->protection));
+        vmar_t* vmar = kernel_regions[i];
+        uint64_t phys_base = (vmar->base - virtual_base) + physical_base;
+        CHECK(vmar_reserve_static(&g_kernel_region, vmar));
+        RETHROW(early_virt_map(
+            pml4, vmar->base, phys_base,
+            vmar->page_count,
+            vmar->alloc.protection
+        ));
     }
 
     g_kernel_region.locked = true;
@@ -190,11 +194,7 @@ static err_t early_init_direct_map(void) {
     // provided by the bootloader
     g_direct_map_region.base = direct_map_base;
     g_direct_map_region.page_count = SIZE_TO_PAGES(top_phys);
-    CHECK_ERROR(region_reserve_static(
-        &g_kernel_memory,
-        &g_direct_map_region,
-        LOG2(SIZE_1GB) >> PAGE_SHIFT
-    ), ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(vmar_reserve_static(&g_kernel_memory, &g_direct_map_region), ERROR_OUT_OF_MEMORY);
 
 cleanup:
     return err;
@@ -242,7 +242,7 @@ static err_t early_map_direct_map(uint64_t* pml4) {
         for (size_t pml3i = 0; pml3i < pml3e_count; pml3i++) {
             // and just map it as 1gb pages
             CHECK(has_1gb_pages);
-            pml3[pml3i] = ((SIZE_512GB * pml4i) + (SIZE_1GB * pml3i)) | DIRECT_MAP_ATTRIBUTES | IA32_PG_PS;
+            pml3[pml3i] = ((SIZE_512GB * pml4i) + (SIZE_1GB * pml3i)) | KERNEL_PTE_BITS | IA32_PG_PS;
         }
     }
 
@@ -261,11 +261,7 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
     uint64_t top_address = 1ULL << get_physical_address_bits();
     size_t total_bitmap_size = ALIGN_UP(DIV_ROUND_UP(DIV_ROUND_UP(top_address, PAGE_SIZE), 8), PAGE_SIZE);
     g_buddy_bitmap_region.page_count = SIZE_TO_PAGES(total_bitmap_size);
-    CHECK_ERROR(region_reserve_static(
-        &g_kernel_memory,
-        &g_buddy_bitmap_region,
-        0
-    ), ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(vmar_reserve_static(&g_kernel_memory, &g_buddy_bitmap_region), ERROR_OUT_OF_MEMORY);
 
     // map all the ranges now
     for (int i = 0; i < response->entry_count; i++) {
@@ -294,7 +290,7 @@ static err_t early_map_buddy_bitmap(uint64_t* pml4) {
                 // map the bitmap in the pte
                 // we are going to mark this as locked as
                 // part of the direct map
-                *pte = direct_to_phys(page) | DIRECT_MAP_ATTRIBUTES;
+                *pte = direct_to_phys(page) | KERNEL_PTE_BITS;
             }
         }
     }

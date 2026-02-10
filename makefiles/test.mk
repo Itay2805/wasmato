@@ -22,7 +22,7 @@ $(IMAGE_NAME): artifacts/limine.conf $(BUILD)/limine $(BUILD)/kernel FORCE
 quiet_cmd_run = QEMU    $<
       cmd_run = qemu-system-x86_64 \
                     --enable-kvm \
-                    -cpu host,+invtsc,+tsc-deadline \
+                    -cpu host,migratable=off \
                     -machine q35 \
                     -m 256M \
                     -smp 4 \

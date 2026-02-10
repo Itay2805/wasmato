@@ -36,8 +36,13 @@ static char m_runtime_elf[] = {
         CHECK(ARRAY_LENGTH(m_runtime_elf) >= top_address__); \
         (type*)&m_runtime_elf[offset__]; \
     })
+
 err_t load_and_start_runtime(void) {
     err_t err = NO_ERROR;
+
+    // NOTE: we are running all this code without the vmar lock
+    //       with the assumption it is done before anything that
+    //       can race with the code exists.
 
     // validate the elf header
     Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
@@ -81,7 +86,7 @@ err_t load_and_start_runtime(void) {
     // setup the runtime region, this should have the entire elf inside of it
     g_runtime_region.base = (void*)elf_load_address;
     g_runtime_region.page_count = SIZE_TO_PAGES(elf_top_address - elf_load_address);
-    CHECK(region_reserve_static(&g_user_memory, &g_runtime_region, 0));
+    CHECK(vmar_reserve_static(&g_user_memory, &g_runtime_region));
 
     // now actually map it
     for (int i = 0; i < ehdr->e_phnum; i++) {
@@ -110,11 +115,7 @@ err_t load_and_start_runtime(void) {
         size_t aligned_size = top_address - vaddr;
 
         // setup the region
-        region_t* region = region_allocate(
-            &g_runtime_region,
-            SIZE_TO_PAGES(aligned_size), 0,
-            (void*)vaddr
-        );
+        vmar_t* region = vmar_allocate(&g_runtime_region, SIZE_TO_PAGES(aligned_size), (void*)vaddr);
         CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
         region->name = name;
         region->pinned = true;
@@ -127,6 +128,9 @@ err_t load_and_start_runtime(void) {
         }
         asm("clac");
     }
+
+    // we created all mappings, we can lock the runtime
+    g_runtime_region.locked = true;
 
     // TODO: apply relocations
 
@@ -146,16 +150,9 @@ err_t load_and_start_runtime(void) {
             default: CHECK_FAIL();
         }
 
-        // set the correct protections now
-        if (protection != MAPPING_PROTECTION_RW) {
-            mapping_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
-        }
-
-        // TODO: lock region
+        // set the correct protections now, this will also lock the region
+        vmar_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
     }
-
-    // lock the runtime region itself
-    g_runtime_region.locked = true;
 
     // and finally create the usermode thread and start it
     thread_t* runtime_init_thread = nullptr;

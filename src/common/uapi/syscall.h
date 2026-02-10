@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 #define syscall0(num) \
     ({ \
 	    long _ret; \
@@ -129,17 +132,83 @@ typedef enum syscall {
 
     /**
      * Allocate memory in page granularity, can be anywhere
-     * in the usermode virtual address space
+     * in the usermode virtual address space, will be locked
+	 * to read-write access
      *  arg1 - page count
-     *  arg2 - order
+	 *	ret - pointer to allocated region (rw), NULL if out of memory
      */
-    SYSCALL_MEM_ALLOC,
+    SYSCALL_HEAP_ALLOC,
+
+	/**
+	 * Free an existing heap allocation, must give the exact
+	 * base address of the allocation
+	 *	arg1 - pointer to allocated region
+	 */
+	SYSCALL_HEAP_FREE,
+
+	/**
+	 * Allocate pages meant for jit allocation
+	 *	arg1 - page count
+	 *	arg2 - name
+	 *	ret - pointer to allocated region (rw), NULL if out of memory
+	 */
+	SYSCALL_JIT_ALLOC,
+
+	/**
+	 * Lock pages into a specific protection, once locked
+	 * the protection can't be changed again
+	 *	arg1 - pointer to allocated region
+	 *	arg2 - allow write
+	 * 	arg3 - allow execute
+	 */
+	SYSCALL_JIT_LOCK_PROTECTION,
+
+	/**
+	 * Free jit pages
+	 *	arg1 - pointer to allocated region
+	 */
+	SYSCALL_JIT_FREE,
+
+	/**
+	 * Reserve a memory region
+	 *	arg1 - page count
+	 *	arg2 - name
+	 *	ret - pointer to reserved region, NULL if out of memory
+	 */
+	SYSCALL_MEM_RESERVE,
+
+	/**
+	 * Map physical memory into a reserved region
+	 *	arg1 - pointer to reserved region
+	 *	arg2 - physical address
+	 * 	arg3 - page count
+	 *	ret - pointer to mapped region, NULL if out of memory
+	 */
+	SYSCALL_MEM_MAP_PHYS,
+
+	/**
+	 * Bump the memory region inside of a reserved region
+	 * into the given address
+	 *	arg1 - pointer to new bump address
+	 *	ret - true if success, false if out of memory
+	 */
+	SYSCALL_MEM_BUMP,
+
+	/**
+	 * Release reserved region
+	 * 	arg1 - pointer to reserved region
+	 */
+	SYSCALL_MEM_RELEASE,
 } syscall_t;
 
 static inline void sys_debug_print(const char* message, size_t message_len) {
     syscall2(SYSCALL_DEBUG_PRINT, message, message_len);
 }
 
-static inline void* sys_mem_alloc(size_t page_count, size_t order) {
-    return (void*)syscall2(SYSCALL_MEM_ALLOC, page_count, order);
+static inline void* sys_heap_alloc(size_t page_count) {
+    return (void*)syscall1(SYSCALL_HEAP_ALLOC, page_count);
+}
+
+static inline void sys_heap_free(void* base) {
+    (void)syscall1(SYSCALL_HEAP_FREE, base);
 }

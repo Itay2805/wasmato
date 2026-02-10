@@ -3,7 +3,7 @@
 #include "arch/regs.h"
 #include "lib/except.h"
 #include "lib/list.h"
-#include "mem/region.h"
+#include "mem/vmar.h"
 
 typedef void (*thread_entry_t)(void *arg);
 
@@ -37,7 +37,7 @@ typedef struct thread {
     void* kernel_stack;
 
     // the stack regions
-    region_t* stack_region;
+    void* user_stack;
 
     // the entry and argument to pass to the entry
     thread_entry_t entry;

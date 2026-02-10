@@ -6,8 +6,7 @@
 #include "arch/paging.h"
 #include "lib/printf.h"
 #include "lib/string.h"
-#include "mem/mappings.h"
-#include "mem/region.h"
+#include "mem/stack.h"
 #include "mem/internal/phys.h"
 #include "mem/kernel/alloc.h"
 
@@ -30,7 +29,7 @@ static void thread_entry(void) {
 }
 
 void thread_reset(thread_t* thread) {
-    ASSERT(thread->stack_region == NULL);
+    ASSERT(thread->user_stack == NULL);
     uintptr_t* stack = thread->kernel_stack - 16;
     *--stack = (uintptr_t)thread_exit;
     thread->cpu_state = (void*)stack - sizeof(*thread->cpu_state);
@@ -96,7 +95,7 @@ void thread_do_jump_to_user(void* rip, void* stack, void* arg);
 
 static void thread_user_entry(void) {
     thread_t* thread = scheduler_get_current_thread();
-    thread_do_jump_to_user(thread->entry, region_end(thread->stack_region) - PAGE_SIZE, thread->arg);
+    thread_do_jump_to_user(thread->entry, thread->user_stack - 16, thread->arg);
 }
 
 err_t user_thread_create(thread_t** out_thread, void* callback, void* arg, const char* name_fmt, ...) {
@@ -115,14 +114,14 @@ err_t user_thread_create(thread_t** out_thread, void* callback, void* arg, const
     va_end(va);
 
     // allocate the user stack
-    thread->stack_region = region_allocate_user_stack(thread->name, SIZE_32KB);
-    CHECK_ERROR(thread->stack_region != NULL, ERROR_OUT_OF_MEMORY);
+    thread->user_stack = user_stack_alloc(thread->name, SIZE_32KB);
+    CHECK_ERROR(thread->user_stack != nullptr, ERROR_OUT_OF_MEMORY);
 
     // allocate the stack for the kernel
     void* kernel_stack = phys_alloc(PAGE_SIZE);
-    CHECK(kernel_stack != NULL);
+    CHECK(kernel_stack != nullptr);
     thread->kernel_stack = kernel_stack + PAGE_SIZE;
-    thread->syscall_stack = (uintptr_t)thread->kernel_stack;
+    thread->syscall_stack = (uintptr_t)thread->kernel_stack - 16;
 
     // set the entry point as something that will jump into the usermode code
     uintptr_t* stack = thread->kernel_stack - 16;
@@ -204,8 +203,8 @@ void thread_jump(thread_t* to) {
 void thread_free(thread_t* thread) {
     ASSERT(thread != NULL);
 
-    if (thread->stack_region != NULL) {
-        region_free(thread->stack_region);
+    if (thread->user_stack != NULL) {
+        user_stack_free(thread->user_stack);
     }
 
     phys_free(thread->kernel_stack - PAGE_SIZE, PAGE_SIZE);

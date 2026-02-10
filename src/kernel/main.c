@@ -39,8 +39,8 @@ static void init_thread_entry(void* arg) {
 
     // TODO: reclaim init code
 
-    region_dump(&g_user_memory);
-    region_dump(&g_kernel_memory);
+    vmar_dump(&g_user_memory);
+    vmar_dump(&g_kernel_memory);
 
 cleanup:
     ASSERT(!IS_ERROR(err));
@@ -264,7 +264,7 @@ void _start() {
     RETHROW(init_phys());
     RETHROW(init_virt());
     RETHROW(init_phys_map());
-    init_region_alloc();
+    init_vmar_alloc();
 
     // we need acpi for some early sleep primitives
     RETHROW(init_acpi_tables());

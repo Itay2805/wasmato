@@ -5,7 +5,7 @@
 #include "arch/intr.h"
 #include "lib/defs.h"
 #include "lib/except.h"
-#include "mem/region.h"
+#include "uapi/mapping.h"
 
 /**
  * Normal init, setting up the page tables before we can switch to them

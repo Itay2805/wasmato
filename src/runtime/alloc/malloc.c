@@ -69,7 +69,7 @@ static void *__expand_heap(size_t *pn) {
 
     size_t min = (size_t) PAGE_SIZE << mmap_step / 2;
     if (n < min) n = min;
-    void *area = sys_mem_alloc(SIZE_TO_PAGES(n), 0);
+    void *area = sys_heap_alloc(SIZE_TO_PAGES(n));
     if (area == nullptr)
         return nullptr;
     *pn = n;
@@ -177,7 +177,7 @@ void* mem_alloc(size_t n) {
 
     if (n > MMAP_THRESHOLD) {
         size_t len = n + OVERHEAD + PAGE_SIZE - 1 & -PAGE_SIZE;
-        char *base = sys_mem_alloc(SIZE_TO_PAGES(len), 0);
+        char *base = sys_heap_alloc(SIZE_TO_PAGES(len));
         if (base == nullptr)
             return nullptr;
 
@@ -360,8 +360,7 @@ static void unmap_chunk(struct chunk *self) {
     size_t len = CHUNK_SIZE(self) + extra;
     /* Crash on double free */
     ASSERT ((extra & 1) == 0);
-    ASSERT(!"TODO: unmap_chunk");
-    // __munmap(base, len);
+    sys_heap_free(base);
 }
 
 void mem_free(void *p) {

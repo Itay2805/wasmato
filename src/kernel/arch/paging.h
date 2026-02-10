@@ -13,6 +13,7 @@
 #define IA32_PG_A           BIT5
 #define IA32_PG_D           BIT6
 #define IA32_PG_PS          BIT7
+#define IA32_PG_G           BIT8
 #define IA32_PG_PAT_2M      BIT12
 #define IA32_PG_PAT_4K      IA32_PG_PS
 #define IA32_PG_PMNT        BIT62
