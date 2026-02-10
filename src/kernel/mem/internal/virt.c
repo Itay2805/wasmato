@@ -5,6 +5,7 @@
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/paging.h"
+#include "lib/ipi.h"
 #include "lib/string.h"
 #include "sync/spinlock.h"
 #include "thread/pcpu.h"
@@ -62,6 +63,42 @@ void switch_page_table(void) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Mapping utilities
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The tlb entries to flush
+ */
+static void* m_tlb_flush_addresses[64];
+
+/**
+ * A value of zero means to not flush
+ * A value of 0-63 means to flush that amount
+ * A value of 0xFF means to flush everything
+ */
+static uint8_t m_tlb_flush_count = 0;
+
+static void tlb_invl_queue(void* addr) {
+    // might as well flush it normally on our core
+    __invlpg(addr);
+
+    // if no more space just flush everything
+    if (m_tlb_flush_count >= ARRAY_LENGTH(m_tlb_flush_addresses)) {
+        m_tlb_flush_count = 0xFF;
+    }
+
+    // if flushing everything don't add
+    if (m_tlb_flush_count == 0xFF) {
+        return;
+    }
+
+    // add to table and increment the count
+    m_tlb_flush_addresses[m_tlb_flush_count++] = addr;
+}
+
+static void tlb_invl_commit(void) {
+    if (m_tlb_flush_count != 0) {
+        ipi_broadcast(IPI_REASON_TLB_FLUSH);
+    }
+}
 
 static uint64_t* virt_get_next_level(uint64_t* entry, bool allocate, bool kernel) {
     // ensure we don't have a large page in the way
@@ -122,14 +159,33 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
         if (protection == MAPPING_PROTECTION_RW) new_pte |= IA32_PG_RW;
         *pte = new_pte;
 
-        // TODO: queue tlb invalidation
-        __invlpg(virt);
+        tlb_invl_queue(virt);
     }
+
+    tlb_invl_commit();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Page fault handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void virt_handle_tlb_flush_ipi(void) {
+    ASSERT(m_tlb_flush_count != 0);
+
+    if (m_tlb_flush_count == 0xFF) {
+        // flush everything by moving the cr3
+        __writecr3(__readcr3());
+
+    } else if (m_tlb_flush_count <= ARRAY_LENGTH(m_tlb_flush_addresses)) {
+        // flush the wanted addresses
+        for (int i = 0; i < m_tlb_flush_count; i++) {
+            __invlpg(m_tlb_flush_addresses[i]);
+        }
+
+    } else {
+        ASSERT(!"Invalid TLB flush count");
+    }
+}
 
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     err_t err = NO_ERROR;

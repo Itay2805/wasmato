@@ -2,6 +2,7 @@
 
 #include "apic.h"
 #include "gdt.h"
+#include "lib/ipi.h"
 #include "lib/log.h"
 #include "mem/internal/virt.h"
 #include "sync/spinlock.h"
@@ -346,6 +347,12 @@ cleanup:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 __attribute__((interrupt))
+static void ipi_interrupt_handler(interrupt_frame_t* frame) {
+    ipi_handle();
+    lapic_eoi();
+}
+
+__attribute__((interrupt))
 static void timer_interrupt_handler(interrupt_frame_t* frame) {
     lapic_eoi();
 
@@ -413,7 +420,8 @@ void init_idt(void) {
     set_idt_entry(0x1D, exception_handler_0x1D, -1);
     set_idt_entry(0x1E, exception_handler_0x1E, -1);
     set_idt_entry(0x1F, exception_handler_0x1F, -1);
-    set_idt_entry(0x20, timer_interrupt_handler, -1);
+    set_idt_entry(INTR_VECTOR_TIMER, timer_interrupt_handler, -1);
+    set_idt_entry(INTR_VECTOR_IPI, ipi_interrupt_handler, -1);
 
     idt_t idt = {
         .limit = sizeof(m_idt_entries) - 1,

@@ -34,6 +34,11 @@ bool virt_is_mapped(uintptr_t virt);
 void virt_protect(void* virt, size_t page_count, mapping_protection_t protection);
 
 /**
+ * Handle a TLB flush ipi
+ */
+void virt_handle_tlb_flush_ipi(void);
+
+/**
  * Attempt to handle a page fault for lazy-memory allocation
  */
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code);

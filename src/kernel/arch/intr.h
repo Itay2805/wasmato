@@ -39,4 +39,7 @@ typedef struct interrupt_frame {
 #define IA32_PF_EC_SGX      BIT15
 #define IA32_PF_EC_RMP      BIT31
 
+#define INTR_VECTOR_TIMER   0x20
+#define INTR_VECTOR_IPI     0x21
+
 void init_idt(void);

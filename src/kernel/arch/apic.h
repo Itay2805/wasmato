@@ -34,3 +34,8 @@ void lapic_timer_set_deadline(uint64_t tsc_deadline);
  * Clear the lapic timer
  */
 void lapic_timer_clear(void);
+
+/**
+ * Send an IPI to all cores except the current one
+ */
+void lapic_send_ipi_all_excluding_self(uint8_t vector);

@@ -93,6 +93,30 @@ typedef union {
     uint32_t packed;
 } LOCAL_APIC_LVT_TIMER;
 
+typedef union {
+    struct {
+        uint32_t vector : 8;
+        uint32_t delivery_mode : 3;
+        uint32_t destination_mode : 1;
+        uint32_t delivery_status : 1;
+        uint32_t : 1;
+        uint32_t level : 1;
+        uint32_t trigger_mode : 1;
+        uint32_t : 2;
+        uint32_t destination_shorthand : 2;
+        uint32_t : 12;
+    };
+    uint32_t packed;
+} LOCAL_APIC_ICR_LOW;
+
+typedef union {
+    struct {
+        uint32_t : 24;
+        uint32_t destination : 8;
+    };
+    uint32_t packed;
+} LOCAL_APIC_ICR_HIGH;
+
 /**
  * Are we using x2APIC mode
  */
@@ -301,4 +325,23 @@ void lapic_timer_mask(bool masked) {
     if (m_tsc_deadline && !m_x2apic_mode) {
         asm("mfence");
     }
+}
+
+static void lapic_send_ipi(uint32_t icr_low, uint32_t apic_id) {
+    if (m_x2apic_mode) {
+        uint64_t value = ((uint64_t)apic_id << 32) | icr_low;
+        __wrmsr(X2APIC_MSR_ICR_ADDRESS, value);
+    } else {
+        ASSERT(!"TODO: xapic");
+    }
+}
+
+void lapic_send_ipi_all_excluding_self(uint8_t vector) {
+    LOCAL_APIC_ICR_LOW icr_low = {
+        .delivery_mode = LOCAL_APIC_DELIVERY_MODE_FIXED,
+        .level = 1,
+        .destination_shorthand = LOCAL_APIC_DESTINATION_SHORTHAND_ALL_EXCLUDING_SELF,
+        .vector = vector
+    };
+    lapic_send_ipi(icr_low.packed, 0);
 }
