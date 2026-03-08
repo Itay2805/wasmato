@@ -1,12 +1,17 @@
 #include "syscall.h"
 #include "uapi/syscall.h"
 
+#include "arch/apic.h"
 #include "arch/gdt.h"
+#include "arch/intr.h"
 #include "arch/intrin.h"
 #include "arch/regs.h"
 #include "lib/pcpu.h"
 #include "lib/string.h"
+#include "lib/tsc.h"
 #include "mem/mappings.h"
+#include "mem/phys.h"
+#include "time/tsc.h"
 
 /**
  * The id of the current cpu
@@ -19,17 +24,25 @@ typedef struct syscall_frame {
     uint64_t r13;
     uint64_t r12;
     uint64_t r11;
-    uint64_t r10;
-    uint64_t r9;
-    uint64_t r8;
+    uint64_t arg4;
+    uint64_t arg6;
+    uint64_t arg5;
     uint64_t rbp;
-    uint64_t rdi;
-    uint64_t rsi;
-    uint64_t rdx;
+    uint64_t arg1;
+    uint64_t arg2;
+    uint64_t arg3;
     uint64_t rcx;
     uint64_t rbx;
-    uint64_t rax;
+    union {
+        uint64_t syscall;
+        uint64_t result;
+    };
 } syscall_frame_t;
+
+/**
+ * are we done with early memory
+ */
+static bool m_early_done = false;
 
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     asm("stac");
@@ -38,28 +51,74 @@ static void copy_from_user(void* dst, uintptr_t src, size_t size) {
 }
 
 void syscall_handler(syscall_frame_t* frame) {
-    switch (frame->rax) {
+    err_t err = NO_ERROR;
+
+    switch (frame->syscall) {
         case SYSCALL_DEBUG_PRINT: {
             char buffer[512];
-            copy_from_user(buffer, frame->rdi, frame->rsi);
-            debug_print("%.*s", (int)frame->rsi, buffer);
+            copy_from_user(buffer, frame->arg1, frame->arg2);
+            debug_print("%.*s", (int)frame->arg2, buffer);
         } break;
 
         case SYSCALL_HEAP_ALLOC: {
             vmar_lock();
-            vmar_t* region = vmar_allocate(&g_user_memory, frame->rdi, nullptr);
+            vmar_t* region = vmar_allocate(&g_user_memory, frame->arg1, nullptr);
             vmar_unlock();
 
             if (region == NULL) {
-                frame->rax = 0;
+                frame->result = 0;
             } else {
-                frame->rax = (uintptr_t)region->base;
+                frame->result = (uintptr_t)region->base;
             }
         } break;
 
+        case SYSCALL_TIMER_SET_DEADLINE: {
+            tsc_timer_set_deadline(frame->arg1);
+        } break;
+
+        case SYSCALL_TIMER_CLEAR: {
+            // TODO: lapic timer
+            tsc_timer_clear();
+        } break;
+
+        case SYSCALL_INTERRUPT_ACK: {
+            lapic_eoi();
+        } break;
+
+        case SYSCALL_EARLY_INTERRUPT_SET_HANDLER: {
+            CHECK(!m_early_done);
+            intr_set_user_handler(frame->arg1, (interrupt_handler_t)frame->arg2);
+        } break;
+
+        case SYSCALL_EARLY_TIMER_GET_VECTOR: {
+            CHECK(!m_early_done);
+            frame->result = INTR_VECTOR_TIMER;
+        } break;
+
+        case SYSCALL_EARLY_TIMER_GET_FREQ: {
+            CHECK(!m_early_done);
+            frame->result = g_tsc_freq_hz;
+        } break;
+
+        case SYSCALL_EARLY_DONE: {
+            // ensure we are not done yet
+            CHECK(!m_early_done);
+            m_early_done = true;
+
+            // TODO: reprotect data that should be read-only
+
+            // we don't need the bootloader memory anymore
+            RETHROW(reclaim_bootloader_memory());
+
+            // TODO: reclaim init only sections
+        } break;
+
         default:
-            ASSERT(!"Unknown syscall");
+            ASSERT(false, "syscall: Unknown syscall: %ld", frame->syscall);
     }
+
+cleanup:
+    ASSERT(!IS_ERROR(err), "syscall: error while performing syscall");
 }
 
 void syscall_entry(void);

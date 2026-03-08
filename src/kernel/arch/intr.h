@@ -2,6 +2,7 @@
 
 #include "regs.h"
 #include "lib/defs.h"
+#include "uapi/syscall.h"
 
 #define EXCEPT_IA32_DIVIDE_ERROR     0
 #define EXCEPT_IA32_DEBUG            1
@@ -31,6 +32,10 @@
 #define IA32_PF_EC_SGX      BIT15
 #define IA32_PF_EC_RMP      BIT31
 
-#define INTR_VECTOR_IPI     0x20
+#define INTR_VECTOR_IPI         0x20
+#define INTR_VECTOR_SPURIOUS    0x21
+#define INTR_VECTOR_TIMER       0x22
 
 void init_idt(void);
+
+void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler);

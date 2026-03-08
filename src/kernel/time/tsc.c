@@ -1,4 +1,5 @@
 #include "tsc.h"
+#include "lib/tsc.h"
 
 #include <cpuid.h>
 

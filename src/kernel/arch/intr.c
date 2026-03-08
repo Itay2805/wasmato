@@ -343,6 +343,11 @@ static void ipi_interrupt_handler(interrupt_frame_t* frame) {
     lapic_eoi();
 }
 
+__attribute__((interrupt))
+static void spurious_interrupt_handler(interrupt_frame_t* frame) {
+    ASSERT(!"Got spurious interrupt?");
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////but it
 // IDT setup
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -356,7 +361,7 @@ static idt_entry_t m_idt_entries[256];
 /**
  * Set a single idt entry
  */
-static void set_idt_entry(int vector, void* func, int ist) {
+static void intr_set_kernel_handler(uint8_t vector, void* func, int ist) {
     m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)func & 0xFFFF);
     m_idt_entries[vector].handler_high = (uint64_t) ((uintptr_t)func >> 16);
     m_idt_entries[vector].gate_type = IDT_TYPE_INTERRUPT_32;
@@ -366,40 +371,53 @@ static void set_idt_entry(int vector, void* func, int ist) {
     m_idt_entries[vector].ist = ist + 1;
 }
 
+void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler) {
+    ASSERT(vector >= INTR_VECTOR_TIMER);
+    ASSERT(!m_idt_entries[vector].present);
+    m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)handler & 0xFFFF);
+    m_idt_entries[vector].handler_high = (uint64_t) ((uintptr_t)handler >> 16);
+    m_idt_entries[vector].gate_type = IDT_TYPE_INTERRUPT_32;
+    m_idt_entries[vector].selector = GDT_USER_CODE;
+    m_idt_entries[vector].present = 1;
+    m_idt_entries[vector].ring = 0;
+    m_idt_entries[vector].ist = 0;
+}
+
 void init_idt(void) {
-    set_idt_entry(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, -1);
-    set_idt_entry(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_DB);
-    set_idt_entry(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI);
-    set_idt_entry(EXCEPT_IA32_BREAKPOINT, exception_handler_0x03, TSS_IST_DB);
-    set_idt_entry(EXCEPT_IA32_OVERFLOW, exception_handler_0x04, -1);
-    set_idt_entry(EXCEPT_IA32_BOUND, exception_handler_0x05, -1);
-    set_idt_entry(EXCEPT_IA32_INVALID_OPCODE, exception_handler_0x06, -1);
-    set_idt_entry(0x07, exception_handler_0x07, -1);
-    set_idt_entry(EXCEPT_IA32_DOUBLE_FAULT, exception_handler_0x08, TSS_IST_DF);
-    set_idt_entry(0x09, exception_handler_0x09, -1);
-    set_idt_entry(EXCEPT_IA32_INVALID_TSS, exception_handler_0x0A, -1);
-    set_idt_entry(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, -1);
-    set_idt_entry(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, -1);
-    set_idt_entry(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, -1);
-    set_idt_entry(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, -1);
-    set_idt_entry(0x0F, exception_handler_0x0F, -1);
-    set_idt_entry(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, -1);
-    set_idt_entry(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, -1);
-    set_idt_entry(EXCEPT_IA32_MACHINE_CHECK, exception_handler_0x12, TSS_IST_MCE);
-    set_idt_entry(EXCEPT_IA32_SIMD, exception_handler_0x13, -1);
-    set_idt_entry(0x14, exception_handler_0x14, -1);
-    set_idt_entry(0x15, exception_handler_0x15, -1);
-    set_idt_entry(0x16, exception_handler_0x16, -1);
-    set_idt_entry(0x17, exception_handler_0x17, -1);
-    set_idt_entry(0x18, exception_handler_0x18, -1);
-    set_idt_entry(0x19, exception_handler_0x19, -1);
-    set_idt_entry(0x1A, exception_handler_0x1A, -1);
-    set_idt_entry(0x1B, exception_handler_0x1B, -1);
-    set_idt_entry(0x1C, exception_handler_0x1C, -1);
-    set_idt_entry(0x1D, exception_handler_0x1D, -1);
-    set_idt_entry(0x1E, exception_handler_0x1E, -1);
-    set_idt_entry(0x1F, exception_handler_0x1F, -1);
-    set_idt_entry(INTR_VECTOR_IPI, ipi_interrupt_handler, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_DB);
+    intr_set_kernel_handler(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI);
+    intr_set_kernel_handler(EXCEPT_IA32_BREAKPOINT, exception_handler_0x03, TSS_IST_DB);
+    intr_set_kernel_handler(EXCEPT_IA32_OVERFLOW, exception_handler_0x04, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_BOUND, exception_handler_0x05, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_INVALID_OPCODE, exception_handler_0x06, -1);
+    intr_set_kernel_handler(0x07, exception_handler_0x07, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_DOUBLE_FAULT, exception_handler_0x08, TSS_IST_DF);
+    intr_set_kernel_handler(0x09, exception_handler_0x09, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_INVALID_TSS, exception_handler_0x0A, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, -1);
+    intr_set_kernel_handler(0x0F, exception_handler_0x0F, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, -1);
+    intr_set_kernel_handler(EXCEPT_IA32_MACHINE_CHECK, exception_handler_0x12, TSS_IST_MCE);
+    intr_set_kernel_handler(EXCEPT_IA32_SIMD, exception_handler_0x13, -1);
+    intr_set_kernel_handler(0x14, exception_handler_0x14, -1);
+    intr_set_kernel_handler(0x15, exception_handler_0x15, -1);
+    intr_set_kernel_handler(0x16, exception_handler_0x16, -1);
+    intr_set_kernel_handler(0x17, exception_handler_0x17, -1);
+    intr_set_kernel_handler(0x18, exception_handler_0x18, -1);
+    intr_set_kernel_handler(0x19, exception_handler_0x19, -1);
+    intr_set_kernel_handler(0x1A, exception_handler_0x1A, -1);
+    intr_set_kernel_handler(0x1B, exception_handler_0x1B, -1);
+    intr_set_kernel_handler(0x1C, exception_handler_0x1C, -1);
+    intr_set_kernel_handler(0x1D, exception_handler_0x1D, -1);
+    intr_set_kernel_handler(0x1E, exception_handler_0x1E, -1);
+    intr_set_kernel_handler(0x1F, exception_handler_0x1F, -1);
+    intr_set_kernel_handler(INTR_VECTOR_IPI, ipi_interrupt_handler, -1);
+    intr_set_kernel_handler(INTR_VECTOR_SPURIOUS, spurious_interrupt_handler, -1);
 
     idt_t idt = {
         .limit = sizeof(m_idt_entries) - 1,

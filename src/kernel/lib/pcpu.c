@@ -21,6 +21,11 @@ static CPU_LOCAL int m_cpu_id;
 static CPU_LOCAL char m_pcpu_mapping_name[sizeof("pcpu-") + 11];
 
 /**
+ * The local cpu base, for ease of access
+ */
+static CPU_LOCAL uintptr_t m_pcpu_base;
+
+/**
  * All the fs-bases of all the cores
  * TODO: support for more cores or something, this should be good enough for now
  */
@@ -30,7 +35,7 @@ void init_early_pcpu(void) {
     // the BSP uses offset zero, because the per-cpu variables are
     // allocated inside of the kernel, it means that the BSP can
     // just use that allocation without worrying
-    __wrmsr(MSR_IA32_FS_BASE, 0);
+    __wrmsr(MSR_IA32_GS_BASE, 0);
     m_cpu_id = 0;
 }
 
@@ -41,6 +46,7 @@ err_t init_pcpu(int cpu_count) {
 
     // the BSP is always at offset zero
     m_all_pcpu_bases[0] = 0;
+    m_pcpu_base = 0;
 
     // setup the rest of the cores
     size_t pcpu_size = __stop_pcpu_data - __start_pcpu_data;
@@ -73,7 +79,8 @@ err_t pcpu_init_per_core(int cpu_id) {
 
     // set the offset
     size_t offset = m_all_pcpu_bases[cpu_id];
-    __wrmsr(MSR_IA32_FS_BASE, offset);
+    __wrmsr(MSR_IA32_GS_BASE, offset);
+    m_pcpu_base = offset;
 
     // setup the cpu id and fs base of the current cpu
     m_cpu_id = cpu_id;
@@ -87,7 +94,7 @@ int get_cpu_id() {
 }
 
 void* pcpu_get_pointer(__seg_gs void* ptr) {
-    return (void*)(_readgsbase_u64() + (uintptr_t)ptr);
+    return (void*)(m_pcpu_base + (uintptr_t)ptr);
 }
 
 void* pcpu_get_pointer_of(__seg_gs void* ptr, int cpu_id) {

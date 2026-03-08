@@ -1,3 +1,4 @@
+#include "lib/tsc.h"
 #include "lib/log.h"
 #include "lib/printf.h"
 #include "uapi/syscall.h"
@@ -16,15 +17,25 @@ static void spidir_log_callback(spidir_log_level_t level, const char* module, si
     }
 }
 
+__attribute__((interrupt))
+static void timer_handler(interrupt_frame_t* frame) {
+    syscall2(SYSCALL_DEBUG_PRINT, "TIMER!\n", sizeof("TIMER!\n") - 1);
+}
+
+uint64_t g_tsc_freq_hz;
+
 __attribute__((force_align_arg_pointer))
-int _start() {
-    spidir_log_init(spidir_log_callback);
-    spidir_log_set_max_level(SPIDIR_LOG_LEVEL_INFO);
+int _start(int cpu) {
+    TRACE("\tUsermode entered on CPU #%d", cpu);
+    if (cpu != 0) {
+        while (1);
+    }
 
-    spidir_module_handle_t module = spidir_module_create();
+    g_tsc_freq_hz = sys_early_timer_get_freq();
+    uint8_t vector = sys_early_timer_get_vector();
+    sys_early_interrupt_set_handler(vector, timer_handler);
 
-    spidir_module_destroy(module);
-
-    TRACE("Finished runtime init");
+    sys_timer_set_deadline(tsc_ms_deadline(1000));
+    asm("sti");
     while (1);
 }

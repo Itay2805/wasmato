@@ -180,7 +180,7 @@ static void smp_entry(struct limine_mp_info* info) {
     m_smp_count++;
 
     // we can trigger the scheduler,
-    // TODO: just to usermode entry point
+    runtime_start();
 
 cleanup:
     // if we got an error mark it
@@ -236,6 +236,9 @@ void _start() {
     RETHROW(init_tsc());
     RETHROW(init_lapic());
 
+    // load the runtime elf, before starting the cores
+    RETHROW(load_runtime());
+
     // perform cpu startup
     CHECK(g_limine_mp_request.response != NULL);
     struct limine_mp_response* response = g_limine_mp_request.response;
@@ -272,7 +275,8 @@ void _start() {
     }
     TRACE("smp: Finished SMP startup");
 
-    // TODO: jump to runtime
+    // jump to the runtime
+    runtime_start();
 
 cleanup:
     halt();

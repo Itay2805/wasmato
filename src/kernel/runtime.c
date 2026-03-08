@@ -4,8 +4,11 @@
 
 #include "lib/elf64.h"
 #include "lib/elf_common.h"
+#include "lib/pcpu.h"
 #include "lib/string.h"
+#include "user/user.h"
 #include "mem/mappings.h"
+#include "mem/stack.h"
 
 /**
  * The elf of the usermode runtime
@@ -34,6 +37,8 @@ static char m_runtime_elf[] = {
         CHECK(ARRAY_LENGTH(m_runtime_elf) >= top_address__); \
         (type*)&m_runtime_elf[offset__]; \
     })
+
+static void* m_runtime_entry_point = NULL;
 
 err_t load_runtime(void) {
     err_t err = NO_ERROR;
@@ -152,6 +157,15 @@ err_t load_runtime(void) {
         vmar_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
     }
 
+    // save the entry point so we can jump to it
+    m_runtime_entry_point = (void*)ehdr->e_entry;
+
 cleanup:
     return err;
+}
+
+void runtime_start(void) {
+    void* ptr = user_stack_alloc("test", SIZE_4KB);
+    ASSERT(ptr != NULL);
+    usermode_jump((void*)(uintptr_t)get_cpu_id(), m_runtime_entry_point, ptr);
 }

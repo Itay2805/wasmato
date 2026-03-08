@@ -21,11 +21,6 @@ err_t init_lapic_per_core(void);
 void lapic_eoi(void);
 
 /**
- * Recalibrate the lapic timer
- */
-void lapic_timer_recalibrate(void);
-
-/**
  * Set the lapic deadline to the given deadline
  */
 void lapic_timer_set_deadline(uint64_t tsc_deadline);

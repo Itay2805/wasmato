@@ -3,6 +3,7 @@
 #include <cpuid.h>
 
 #include "intrin.h"
+#include "lib/tsc.h"
 #include "mem/direct.h"
 #include "mem/phys_map.h"
 #include "mem/virt.h"
@@ -154,6 +155,10 @@ static void lapic_write(size_t offset, uint32_t value) {
 //     }
 // }
 
+static void lapic_timer_calibrate(void) {
+    ASSERT(!"TODO: lapic_timer_calibrate");
+}
+
 err_t init_lapic(void) {
     err_t err = NO_ERROR;
 
@@ -200,7 +205,7 @@ err_t init_lapic(void) {
     if (!tsc_deadline_is_supported()) {
         // we are using the lapic timer
         m_tsc_deadline = false;
-        lapic_timer_recalibrate();
+        lapic_timer_calibrate();
     } else {
         // we are using tsc deadline
         m_tsc_deadline = true;
@@ -231,7 +236,7 @@ err_t init_lapic_per_core(void) {
 
     // set the spurious vector
     LOCAL_APIC_SVR svr = {
-        .SpuriousVector = 0xFF,
+        .SpuriousVector = INTR_VECTOR_SPURIOUS,
         .SoftwareEnable = 1
     };
     lapic_write(XAPIC_SPURIOUS_VECTOR_OFFSET, svr.packed);
@@ -242,7 +247,7 @@ err_t init_lapic_per_core(void) {
 
         // enable the tsc deadline timer properly
         LOCAL_APIC_LVT_TIMER timer = {
-            .vector = 0x20,
+            .vector = INTR_VECTOR_TIMER,
             .mask = 0,
             .timer_mode = 2
         };
@@ -270,7 +275,7 @@ err_t init_lapic_per_core(void) {
 
         // enable the lapic timer properly
         LOCAL_APIC_LVT_TIMER timer = {
-            .vector = 0x20,
+            .vector = INTR_VECTOR_TIMER,
             .mask = 0,
             .timer_mode = 0
         };
@@ -283,11 +288,6 @@ cleanup:
 
 void lapic_eoi(void) {
     lapic_write(XAPIC_EOI_OFFSET, 0);
-}
-
-void lapic_timer_recalibrate(void) {
-    if (m_tsc_deadline) return;
-    ASSERT(!"TODO: calibrate lapic timer");
 }
 
 void lapic_timer_set_deadline(uint64_t tsc_deadline) {
@@ -309,22 +309,6 @@ void lapic_timer_set_deadline(uint64_t tsc_deadline) {
 
 void lapic_timer_clear(void) {
     lapic_write(XAPIC_TIMER_INIT_COUNT_OFFSET, 0);
-}
-
-void lapic_timer_mask(bool masked) {
-    // enable the lapic timer properly
-    LOCAL_APIC_LVT_TIMER timer = {
-        .vector = 0x20,
-        .mask = masked ? 1 : 0,
-        .timer_mode = m_tsc_deadline ? 2 : 0
-    };
-    lapic_write(XAPIC_LVT_TIMER_OFFSET, timer.packed);
-
-    // as above, we need an mfence to ensure that the next deadline
-    // access will not do a funny
-    if (m_tsc_deadline && !m_x2apic_mode) {
-        asm("mfence");
-    }
 }
 
 static void lapic_send_ipi(uint32_t icr_low, uint32_t apic_id) {
