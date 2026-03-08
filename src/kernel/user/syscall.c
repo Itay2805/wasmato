@@ -91,9 +91,3 @@ void init_syscall() {
     };
     __wrmsr(MSR_IA32_CSTAR, flags.packed);
 }
-
-uintptr_t switch_syscall_stack(uintptr_t value) {
-    uintptr_t old = g_syscall_stack;
-    g_syscall_stack = value;
-    return old;
-}

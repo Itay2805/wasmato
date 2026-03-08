@@ -2,6 +2,7 @@
 
 #include "sync/spinlock.h"
 #include "lib/pcpu.h"
+#include "user/syscall.h"
 
 typedef struct tss64 {
     uint32_t reserved_1;
@@ -128,7 +129,10 @@ void init_tss(void) {
         tss->ist[ist] = (uintptr_t)pcpu_get_pointer(&m_stacks[ist]) + SIZE_4KB - 16;
     }
 
-    // set the stack for normal exceptions
+    // set the stack for normal exceptions, we also use the same stack
+    // for syscalls, because it stays in the same ring the stack won't
+    // switch so we should be fine to re-use it
+    g_syscall_stack = (uintptr_t)m_exception_stack + SIZE_4KB - 16;
     tss->rsp0 = (uintptr_t)m_exception_stack + SIZE_4KB - 16;
 
     spinlock_acquire(&m_tss_lock);

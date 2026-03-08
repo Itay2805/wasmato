@@ -3,14 +3,6 @@
 #include "regs.h"
 #include "lib/defs.h"
 
-typedef struct interrupt_frame {
-    uint64_t rip;
-    uint64_t cs;
-    rflags_t rflags;
-    uint64_t rsp;
-    uint64_t ss;
-} interrupt_frame_t;
-
 #define EXCEPT_IA32_DIVIDE_ERROR     0
 #define EXCEPT_IA32_DEBUG            1
 #define EXCEPT_IA32_NMI              2

@@ -2,6 +2,12 @@
 
 .global syscall_entry
 syscall_entry:
+
+    /**
+     * Ensure we have the kernel GS base now
+     */
+    swapgs
+
     /**
      * Save the stack pointer in memory
      * and switch to the kernel stack
@@ -56,6 +62,11 @@ syscall_entry:
      * Restore the stack pointer
      */
     xchg %rsp, %gs:g_syscall_stack
+
+    /**
+     * Restore the user gsbase
+     */
+    swapgs
 
     /**
      * And finally return to usermode

@@ -8,6 +8,12 @@ common_exception_stub:
     .cfi_def_cfa %rsp, 0
     .cfi_offset %rip, 16
     .cfi_offset %rsp, 40
+
+    testl $3, 32(%rsp)
+    jz 1f
+    swapgs
+    1:
+
     cld
     pushq %rax
     .cfi_adjust_cfa_offset 8
@@ -101,6 +107,12 @@ common_exception_stub:
     popq %rax
     .cfi_adjust_cfa_offset -8
     .cfi_restore %rax
+
+    testl $3, 32(%rsp)
+    jz 1f
+    swapgs
+    1:
+
     addq $16, %rsp
     .cfi_adjust_cfa_offset -16
     iretq

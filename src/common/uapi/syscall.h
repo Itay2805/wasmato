@@ -120,90 +120,38 @@
 	    ); \
 	    _ret; \
     })
-#include "lib/string.h"
 
 typedef enum syscall {
-    /**
-     * Print to the debug console, used for early debugging
-     *  arg1 - string to print
-     *  arg2 - the length of the string to print
-     */
     SYSCALL_DEBUG_PRINT,
-
-    /**
-     * Allocate memory in page granularity, can be anywhere
-     * in the usermode virtual address space, will be locked
-	 * to read-write access
-     *  arg1 - page count
-	 *	ret - pointer to allocated region (rw), NULL if out of memory
-     */
     SYSCALL_HEAP_ALLOC,
-
-	/**
-	 * Free an existing heap allocation, must give the exact
-	 * base address of the allocation
-	 *	arg1 - pointer to allocated region
-	 */
 	SYSCALL_HEAP_FREE,
-
-	/**
-	 * Allocate pages meant for jit allocation
-	 *	arg1 - page count
-	 *	arg2 - name
-	 *	ret - pointer to allocated region (rw), NULL if out of memory
-	 */
 	SYSCALL_JIT_ALLOC,
-
-	/**
-	 * Lock pages into a specific protection, once locked
-	 * the protection can't be changed again
-	 *	arg1 - pointer to allocated region
-	 *	arg2 - allow write
-	 * 	arg3 - allow execute
-	 */
 	SYSCALL_JIT_LOCK_PROTECTION,
-
-	/**
-	 * Free jit pages
-	 *	arg1 - pointer to allocated region
-	 */
 	SYSCALL_JIT_FREE,
-
-	/**
-	 * Reserve a memory region
-	 *	arg1 - page count
-	 *	arg2 - name
-	 *	ret - pointer to reserved region, NULL if out of memory
-	 */
 	SYSCALL_MEM_RESERVE,
-
-	/**
-	 * Map physical memory into a reserved region
-	 *	arg1 - pointer to reserved region
-	 *	arg2 - physical address
-	 * 	arg3 - page count
-	 *	ret - pointer to mapped region, NULL if out of memory
-	 */
 	SYSCALL_MEM_MAP_PHYS,
-
-	/**
-	 * Bump the memory region inside of a reserved region
-	 * into the given address
-	 *	arg1 - pointer to new bump address
-	 *	ret - true if success, false if out of memory
-	 */
 	SYSCALL_MEM_BUMP,
-
-	/**
-	 * Release reserved region
-	 * 	arg1 - pointer to reserved region
-	 */
 	SYSCALL_MEM_RELEASE,
+	SYSCALL_TIMER_SET_DEADLINE,
+	SYSCALL_TIMER_CLEAR,
+	SYSCALL_INTERRUPT_ACK,
+    SYSCALL_EARLY_INTERRUPT_SET_HANDLER,
+    SYSCALL_EARLY_TIMER_SET_VECTOR,
+	SYSCALL_EARLY_TSC_GET_FREQ,
+    SYSCALL_EARLY_DONE,
 } syscall_t;
+
+//----------------------------------------------------------------------------------------------------------------------
+// Debug
+//----------------------------------------------------------------------------------------------------------------------
 
 static inline void sys_debug_print(const char* message, size_t message_len) {
     syscall2(SYSCALL_DEBUG_PRINT, message, message_len);
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+// Heap management
+//----------------------------------------------------------------------------------------------------------------------
 
 static inline void* sys_heap_alloc(size_t page_count) {
     return (void*)syscall1(SYSCALL_HEAP_ALLOC, page_count);
@@ -211,4 +159,55 @@ static inline void* sys_heap_alloc(size_t page_count) {
 
 static inline void sys_heap_free(void* base) {
     (void)syscall1(SYSCALL_HEAP_FREE, base);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Timer management
+//----------------------------------------------------------------------------------------------------------------------
+
+static void sys_timer_set_deadline(uintptr_t tsc_deadline) {
+	(void)syscall1(SYSCALL_TIMER_SET_DEADLINE, tsc_deadline);
+}
+
+static void sys_timer_clear(void) {
+	(void)syscall0(SYSCALL_TIMER_CLEAR);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Timer management
+//----------------------------------------------------------------------------------------------------------------------
+
+static void sys_interrupt_ack(void) {
+	(void)syscall0(SYSCALL_INTERRUPT_ACK);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Early syscalls for configuring stuff from the runtime
+//----------------------------------------------------------------------------------------------------------------------
+
+typedef struct interrupt_frame {
+	uint64_t rip;
+	uint64_t cs;
+	uint64_t rflags;
+	uint64_t rsp;
+	uint64_t ss;
+} interrupt_frame_t;
+
+__attribute__((interrupt))
+typedef void (*interrupt_handler_t)(interrupt_frame_t* frame);
+
+static inline void sys_early_interrupt_set_handler(interrupt_handler_t handler) {
+	(void)syscall1(SYSCALL_EARLY_INTERRUPT_SET_HANDLER, handler);
+}
+
+static inline void sys_early_timer_set_vector(uint8_t vector) {
+	(void)syscall1(SYSCALL_EARLY_TIMER_SET_VECTOR, vector);
+}
+
+static inline uint64_t sys_early_tsc_freq(void) {
+	return syscall0(SYSCALL_EARLY_TSC_GET_FREQ);
+}
+
+static inline void sys_early_done(void) {
+	(void)syscall0(SYSCALL_EARLY_DONE);
 }
