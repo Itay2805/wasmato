@@ -196,7 +196,7 @@ void phys_free(void* ptr, size_t size) {
 // Buddy initialization
 //----------------------------------------------------------------------------------------------------------------------
 
-static int get_best_level_for_block(void* start, void* end) {
+INIT_CODE static int get_best_level_for_block(void* start, void* end) {
     uintptr_t addr = (uintptr_t)start;
     uintptr_t addr_end = (uintptr_t)end;
 
@@ -216,7 +216,7 @@ static int get_best_level_for_block(void* start, void* end) {
     return -1;
 }
 
-static err_t phys_add_memory(void* start, void* end) {
+INIT_CODE static err_t phys_add_memory(void* start, void* end) {
     err_t err = NO_ERROR;
 
     while (start < end) {
@@ -248,7 +248,7 @@ static const char* m_limine_type_str[] = {
     [LIMINE_MEMMAP_ACPI_TABLES] = "ACPI Tables",
 };
 
-err_t init_phys(void) {
+INIT_CODE err_t init_phys(void) {
     err_t err = NO_ERROR;
 
     // initialize the freelists
@@ -300,7 +300,7 @@ cleanup:
     return err;
 }
 
-err_t reclaim_bootloader_memory(void) {
+INIT_CODE err_t reclaim_bootloader_memory(void) {
     err_t err = NO_ERROR;
 
     spinlock_acquire(&g_phys_map_lock);

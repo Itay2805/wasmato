@@ -14,6 +14,7 @@
 #include "mem/phys.h"
 #include "mem/phys_map.h"
 #include "mem/virt.h"
+#include "mem/vmar.h"
 #include "lib/pcpu.h"
 #include "time/tsc.h"
 #include "user/syscall.h"
@@ -60,7 +61,7 @@ static const xcr0_feature_t m_xcr0_features[] = {
     [19] = { "APX", false, false },
 };
 
-static void set_extended_state_features(void) {
+static void INIT_CODE set_extended_state_features(void) {
     static bool first = true;
     static uint32_t first_xcr0 = 0;
     uint32_t a, b, c, d;
@@ -104,7 +105,7 @@ static void set_extended_state_features(void) {
     first = false;
 }
 
-static void string_verify_features(void) {
+static void INIT_CODE string_verify_features(void) {
     uint32_t eax, ebx, ecx, edx;
 
     __cpuid_count(7, 0, eax, ebx, ecx, edx);
@@ -117,7 +118,7 @@ static void string_verify_features(void) {
     // if ((eax & BIT12) == 0) LOG_WARN("string: Missing fast short REP CMPSB/CSASB");
 }
 
-static void set_cpu_features(void) {
+static void INIT_CODE set_cpu_features(void) {
     // PG/PE - required for long mode
     // MP - required for SSE
     // WP - write protections

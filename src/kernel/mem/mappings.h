@@ -18,6 +18,8 @@ extern vmar_t g_runtime_region;
  */
 extern vmar_t g_kernel_region;
 extern vmar_t g_kernel_limine_requests_region;
+extern vmar_t g_kernel_init_text_region;
+extern vmar_t g_kernel_init_data_region;
 extern vmar_t g_kernel_text_region;
 extern vmar_t g_kernel_rodata_region;
 extern vmar_t g_kernel_data_region;

@@ -17,7 +17,7 @@ uint64_t g_tsc_freq_hz = 0;
  * Quick calibration using the ACPI timer, this is enough to get started with timers
  * and anything that requires delays, but it can be quite off from the real thing
  */
-static uint64_t quick_acpi_timer_calibrate(void) {
+INIT_CODE static uint64_t quick_acpi_timer_calibrate(void) {
     uint32_t ticks = acpi_get_timer_tick() + 363;
     uint64_t start_tsc = get_tsc();
     while (((ticks - acpi_get_timer_tick()) & BIT23) == 0) {
@@ -32,7 +32,7 @@ static uint64_t quick_acpi_timer_calibrate(void) {
  * deviation that is too big which could come from an interrupt or
  * nmi or god knows what
  */
-static uint64_t tsc_read_refs(uint64_t* p) {
+INIT_CODE static uint64_t tsc_read_refs(uint64_t* p) {
     uint64_t thresh = (g_tsc_freq_hz / 1000) >> 5;
     for (int i = 0; i < 5; i++) {
         uint64_t t1 = get_tsc();
@@ -49,7 +49,7 @@ static uint64_t tsc_read_refs(uint64_t* p) {
  * Given two ACPI timer refs, and the delta between the tsc from the reading
  * of the first and second ref, calculate the tsc frequency
  */
-static uint64_t tsc_calc_acpi_timer_ref(uint64_t deltatsc, uint64_t pm1, uint64_t pm2) {
+INIT_CODE static uint64_t tsc_calc_acpi_timer_ref(uint64_t deltatsc, uint64_t pm1, uint64_t pm2) {
     if (pm1 == 0 || pm2 == 0) {
         return UINT64_MAX;
     }
@@ -61,7 +61,7 @@ static uint64_t tsc_calc_acpi_timer_ref(uint64_t deltatsc, uint64_t pm1, uint64_
     return deltatsc / ((pm2 * 1000000000LL) / 3579545);
 }
 
-err_t init_tsc(void) {
+INIT_CODE err_t init_tsc(void) {
     err_t err = NO_ERROR;
 
     g_tsc_freq_hz = quick_acpi_timer_calibrate();
@@ -75,7 +75,7 @@ cleanup:
     return err;
 }
 
-bool tsc_deadline_is_supported(void) {
+INIT_CODE bool tsc_deadline_is_supported(void) {
     uint32_t a, b, c, d;
     __cpuid(1, a, b, c, d);
     return c & bit_TSCDeadline;

@@ -52,7 +52,7 @@ extern spinlock_t g_phys_map_lock;
  * The physical memory map is used to track
  * what areas of memory are used by what
  */
-err_t init_phys_map(void);
+INIT_CODE err_t init_phys_map(void);
 
 /**
  * Convert the given range into another type

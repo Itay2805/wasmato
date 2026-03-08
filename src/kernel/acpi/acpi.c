@@ -11,14 +11,14 @@
  */
 #define ACPI_TIMER_FREQUENCY  3579545
 
-static size_t m_rsdp_size;
+INIT_DATA static size_t m_rsdp_size;
 
 /**
  * The timer port
  */
-static uint16_t m_acpi_timer_port;
+INIT_DATA static uint16_t m_acpi_timer_port;
 
-static err_t validate_acpi_table(acpi_description_header_t* header) {
+INIT_CODE static err_t validate_acpi_table(acpi_description_header_t* header) {
     err_t err = NO_ERROR;
 
     // validate the header length
@@ -43,7 +43,7 @@ typedef struct address32 {
     uint32_t value;
 } PACKED address32_t;
 
-err_t init_acpi_tables() {
+INIT_CODE err_t init_acpi_tables() {
     err_t err = NO_ERROR;
 
     CHECK(g_limine_rsdp_request.response != NULL);
@@ -113,11 +113,11 @@ cleanup:
     return err;
 }
 
-uint32_t acpi_get_timer_tick() {
+INIT_CODE uint32_t acpi_get_timer_tick() {
     return __indword(m_acpi_timer_port);
 }
 
-void acpi_stall(uint64_t microseconds) {
+INIT_CODE void acpi_stall(uint64_t microseconds) {
     uint32_t delay = (microseconds * ACPI_TIMER_FREQUENCY) / 1000000u;
     uint32_t times = delay >> 22;
     delay &= BIT22 - 1;

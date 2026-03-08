@@ -5,6 +5,8 @@ ENTRY(_start)
 PHDRS
 {
     limine_requests PT_LOAD FLAGS(4);
+    init_text PT_LOAD FLAGS(5);
+    init_data PT_LOAD FLAGS(6);
     text PT_LOAD FLAGS(5);
     rodata PT_LOAD FLAGS(4);
     data PT_LOAD FLAGS(6);
@@ -23,6 +25,24 @@ SECTIONS
 
     . = ALIGN(4096);
     __kernel_limine_requests_page_count = ABSOLUTE(. - __kernel_limine_requests_base) / 4096;
+
+    /* Init-only code: freed after boot via reclaim_init_mem() */
+    .text.init : ALIGN(4096) {
+        __kernel_init_text_base = .;
+        *(.text.init)
+    } :init_text
+
+    . = ALIGN(4096);
+    __kernel_init_text_page_count = ABSOLUTE(. - __kernel_init_text_base) / 4096;
+
+    /* Init-only data: freed after boot via reclaim_init_mem() */
+    .data.init : ALIGN(4096) {
+        __kernel_init_data_base = .;
+        *(.data.init)
+    } :init_data
+
+    . = ALIGN(4096);
+    __kernel_init_data_page_count = ABSOLUTE(. - __kernel_init_data_base) / 4096;
 
     .text : ALIGN(4096) {
         __kernel_text_base = .;

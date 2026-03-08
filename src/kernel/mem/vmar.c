@@ -10,7 +10,7 @@ static mem_alloc_t m_vmar_alloc;
 
 static spinlock_t m_vmar_lock = SPINLOCK_INIT;
 
-void init_vmar_alloc(void) {
+INIT_CODE void init_vmar_alloc(void) {
     mem_alloc_init(&m_vmar_alloc, sizeof(vmar_t), alignof(vmar_t));
 }
 

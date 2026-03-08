@@ -2,4 +2,4 @@
 
 #include <stdnoreturn.h>
 
-noreturn void usermode_jump(void* arg, void* rip, void* rsp);
+INIT_CODE noreturn void usermode_jump(void* arg, void* rip, void* rsp);

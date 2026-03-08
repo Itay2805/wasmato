@@ -24,13 +24,13 @@
 /**
  * Initialize the physical memory allocator
  */
-err_t init_phys(void);
+INIT_CODE err_t init_phys(void);
 
 /**
  * Free the bootloader reserved memory, returning it to
  * the physical memory allocator
  */
-err_t reclaim_bootloader_memory(void);
+INIT_CODE err_t reclaim_bootloader_memory(void);
 
 /**
  * Allocate physical memory

@@ -8,12 +8,12 @@
 /**
  * Initialize the APIC globally
  */
-err_t init_lapic(void);
+INIT_CODE err_t init_lapic(void);
 
 /**
  * Initialize the APIC per core
  */
-err_t init_lapic_per_core(void);
+INIT_CODE err_t init_lapic_per_core(void);
 
 /**
  * Request an EOI signal to be sent

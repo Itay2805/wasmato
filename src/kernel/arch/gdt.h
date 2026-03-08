@@ -57,6 +57,6 @@ typedef enum tss_ist {
 } tss_ist_t;
 STATIC_ASSERT(TSS_IST_MAX < 7);
 
-void init_gdt(void);
+INIT_CODE void init_gdt(void);
 
-void init_tss(void);
+INIT_CODE void init_tss(void);

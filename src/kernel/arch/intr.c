@@ -361,7 +361,7 @@ static idt_entry_t m_idt_entries[256];
 /**
  * Set a single idt entry
  */
-static void intr_set_kernel_handler(uint8_t vector, void* func, int ist) {
+INIT_CODE static void intr_set_kernel_handler(uint8_t vector, void* func, int ist) {
     m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)func & 0xFFFF);
     m_idt_entries[vector].handler_high = (uint64_t) ((uintptr_t)func >> 16);
     m_idt_entries[vector].gate_type = IDT_TYPE_INTERRUPT_32;
@@ -371,7 +371,7 @@ static void intr_set_kernel_handler(uint8_t vector, void* func, int ist) {
     m_idt_entries[vector].ist = ist + 1;
 }
 
-void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler) {
+INIT_CODE void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler) {
     ASSERT(vector >= INTR_VECTOR_TIMER);
     ASSERT(!m_idt_entries[vector].present);
     m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)handler & 0xFFFF);
@@ -383,7 +383,7 @@ void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler) {
     m_idt_entries[vector].ist = 0;
 }
 
-void init_idt(void) {
+INIT_CODE void init_idt(void) {
     intr_set_kernel_handler(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, -1);
     intr_set_kernel_handler(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_DB);
     intr_set_kernel_handler(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI);

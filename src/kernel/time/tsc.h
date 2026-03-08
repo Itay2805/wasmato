@@ -8,7 +8,7 @@
 /**
  * Initialize the timer subsystem, calculating the frequency of the TSC so it can be used for time keeping
  */
-err_t init_tsc(void);
+err_t INIT_CODE init_tsc(void);
 
 /**
  * Returns true if the CPU supports TSC deadline

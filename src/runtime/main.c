@@ -35,6 +35,8 @@ int _start(int cpu) {
     uint8_t vector = sys_early_timer_get_vector();
     sys_early_interrupt_set_handler(vector, timer_handler);
 
+    sys_early_done();
+
     sys_timer_set_deadline(tsc_ms_deadline(1000));
     asm("sti");
     while (1);

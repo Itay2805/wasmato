@@ -10,12 +10,12 @@
 /**
  * Normal init, setting up the page tables before we can switch to them
  */
-err_t init_virt(void);
+INIT_CODE err_t init_virt(void);
 
 /**
  * Switch to the kernel's page table
  */
-void switch_page_table(void);
+INIT_CODE void switch_page_table(void);
 
 /**
  * Check if an address is mapped currently, using the actual
@@ -42,3 +42,10 @@ void virt_handle_tlb_flush_ipi(void);
  * Attempt to handle a page fault for lazy-memory allocation
  */
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code);
+
+/**
+ * Unmap and free all pages in the .text.init section, reclaiming them to the
+ * physical allocator. Must be called exactly once, after all CPUs have
+ * finished executing init code.
+ */
+void reclaim_init_mem(void);

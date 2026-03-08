@@ -7,6 +7,14 @@
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(*x))
 
+/**
+ * Mark a function as init-only: it will be placed in .text.init and freed
+ * after early boot completes. Such functions must not be called after
+ * reclaim_init_mem() is invoked.
+ */
+#define INIT_CODE		__attribute__((section(".text.init")))
+#define INIT_DATA		__attribute__((section(".data.init")))
+
 #define SIGNATURE_16(A, B)  ((A) | (B << 8))
 #define SIGNATURE_32(A, B, C, D)  (SIGNATURE_16 (A, B) | (SIGNATURE_16 (C, D) << 16))
 #define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32 (A, B, C, D) | ((uint64_t) (SIGNATURE_32 (E, F, G, H)) << 32))

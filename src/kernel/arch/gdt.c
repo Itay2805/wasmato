@@ -68,7 +68,7 @@ static gdt_entries_t m_entries = {
     }
 };
 
-void init_gdt() {
+INIT_CODE void init_gdt() {
     gdt_t gdt = {
         .size = sizeof(gdt_entries_t) - 1,
         .entries = &m_entries
@@ -101,7 +101,7 @@ void init_gdt() {
  * We are using the same gdt entry for each core, so we can't
  * have two cores loading it at the same time
  */
-static spinlock_t m_tss_lock = SPINLOCK_INIT;
+INIT_DATA static spinlock_t m_tss_lock = SPINLOCK_INIT;
 
 /**
  * The tss of the core
@@ -121,7 +121,7 @@ static CPU_LOCAL char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
 __attribute__((aligned(16)))
 static CPU_LOCAL char m_exception_stack[SIZE_4KB] = {};
 
-void init_tss(void) {
+INIT_CODE void init_tss(void) {
     tss64_t* tss = pcpu_get_pointer(&m_tss);
 
     // the ists

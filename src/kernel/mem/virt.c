@@ -46,7 +46,7 @@ bool virt_is_mapped(uintptr_t virt) {
 // Initialization
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-err_t init_virt(void) {
+INIT_CODE err_t init_virt(void) {
     // just save the pml4 from the early virt init so we can
     // switch on other cores nicely
     m_pml4 = phys_to_direct(__readcr3() & PAGING_4K_ADDRESS_MASK);
@@ -54,7 +54,7 @@ err_t init_virt(void) {
     return NO_ERROR;
 }
 
-void switch_page_table(void) {
+INIT_CODE void switch_page_table(void) {
     // switch to the page table
     __writecr3(direct_to_phys(m_pml4));
 }
@@ -159,6 +159,43 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
         *pte = new_pte;
 
         tlb_invl_queue(virt);
+    }
+
+    tlb_invl_commit();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Init memory reclamation
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void reclaim_init_mem(void) {
+    TRACE("virt: Reclaiming init code/data");
+
+    // NOTE: we explicitly don't remove the vmars because we are going to use them
+    //       to ensure nothing ever maps back, so even if we accidently call init
+    //       code it will never map to anything valid and will fault instead
+
+    vmar_t* vmar[] = {
+        &g_kernel_limine_requests_region,
+        &g_kernel_init_text_region,
+        &g_kernel_init_data_region,
+    };
+    for (int i = 0; i < ARRAY_LENGTH(vmar); i++) {
+        TRACE("virt: \t%p-%p", vmar[i]->base, vmar[i]->base + PAGES_TO_SIZE(vmar[i]->page_count) - 1);
+
+        for (size_t j = 0; j < vmar[i]->page_count; j++) {
+            void* virt = vmar[i]->base + j * PAGE_SIZE;
+
+            uint64_t* pte = virt_get_pte(virt, false, true);
+            ASSERT(pte != NULL && (*pte & IA32_PG_P) != 0);
+
+            uint64_t phys = *pte & PAGING_4K_ADDRESS_MASK;
+            *pte = 0;
+            tlb_invl_queue(virt);
+
+            // Return physical page to buddy allocator
+            phys_free(phys_to_direct(phys), PAGE_SIZE);
+        }
     }
 
     tlb_invl_commit();

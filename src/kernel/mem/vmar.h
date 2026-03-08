@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 
+#include "lib/defs.h"
 #include "lib/string.h"
 #include "lib/rbtree/rbtree_types.h"
 #include "uapi/page.h"
@@ -110,7 +111,7 @@ static inline void* vmar_end(const vmar_t* vmar) {
 /**
  * Initialize the VMAR object cache
  */
-void init_vmar_alloc(void);
+INIT_CODE void init_vmar_alloc(void);
 
 /**
  * Take the VMAR lock
@@ -200,6 +201,8 @@ vmar_t* vmar_find_mapping(vmar_t* root, void* addr);
  * @param base          [IN] Free
  */
 void vmar_free(vmar_t* vmar);
+
+INIT_CODE void vmar_remove(vmar_t* vmar);
 
 /**
  * Dump the given vmar, lock must be taken

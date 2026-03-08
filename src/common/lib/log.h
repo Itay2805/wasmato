@@ -2,6 +2,8 @@
 
 #include <stdarg.h>
 
+#include "lib/defs.h"
+
 // log levels
 #define DEBUG(fmt, ...)     debug_print("[?] " fmt "\n", ##__VA_ARGS__)
 #define TRACE(fmt, ...)     debug_print("[*] " fmt "\n", ##__VA_ARGS__)

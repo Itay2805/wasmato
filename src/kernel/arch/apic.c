@@ -155,11 +155,11 @@ static void lapic_write(size_t offset, uint32_t value) {
 //     }
 // }
 
-static void lapic_timer_calibrate(void) {
+INIT_CODE static void lapic_timer_calibrate(void) {
     ASSERT(!"TODO: lapic_timer_calibrate");
 }
 
-err_t init_lapic(void) {
+INIT_CODE err_t init_lapic(void) {
     err_t err = NO_ERROR;
 
     // we are going to use 0xFF as the spurious interrupt vector
@@ -218,7 +218,7 @@ cleanup:
     return err;
 }
 
-err_t init_lapic_per_core(void) {
+INIT_CODE err_t init_lapic_per_core(void) {
     err_t err = NO_ERROR;
 
     MSR_IA32_APIC_BASE_REGISTER apic_base = { .packed = __rdmsr(MSR_IA32_APIC_BASE) };

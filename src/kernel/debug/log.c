@@ -11,7 +11,7 @@ static spinlock_t m_debug_lock = SPINLOCK_INIT;
 
 static bool m_e9_enabled = false;
 
-void init_early_logging() {
+INIT_CODE void init_early_logging() {
     // detect e9 support
     m_e9_enabled = __inbyte(0xE9) == 0xE9;
 }

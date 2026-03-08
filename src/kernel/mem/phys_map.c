@@ -193,7 +193,7 @@ cleanup:
     return err;
 }
 
-static const phys_map_type_t m_limine_memmap_type[] = {
+INIT_DATA static const phys_map_type_t m_limine_memmap_type[] = {
     [LIMINE_MEMMAP_USABLE] = PHYS_MAP_RAM,
     [LIMINE_MEMMAP_RESERVED] = PHYS_MAP_FIRMWARE_RESERVED,
     [LIMINE_MEMMAP_ACPI_RECLAIMABLE] = PHYS_MAP_ACPI_RECLAIMABLE,
@@ -205,7 +205,7 @@ static const phys_map_type_t m_limine_memmap_type[] = {
     [LIMINE_MEMMAP_ACPI_TABLES] = PHYS_MAP_ACPI_RESERVED,
 };
 
-err_t init_phys_map(void) {
+INIT_CODE err_t init_phys_map(void) {
     err_t err = NO_ERROR;
 
     // setup the allocator

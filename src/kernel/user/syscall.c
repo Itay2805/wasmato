@@ -11,6 +11,7 @@
 #include "lib/tsc.h"
 #include "mem/mappings.h"
 #include "mem/phys.h"
+#include "mem/virt.h"
 #include "time/tsc.h"
 
 /**
@@ -110,7 +111,8 @@ void syscall_handler(syscall_frame_t* frame) {
             // we don't need the bootloader memory anymore
             RETHROW(reclaim_bootloader_memory());
 
-            // TODO: reclaim init only sections
+            // All CPUs have completed init. Unmap and reclaim .text.init pages.
+            reclaim_init_mem();
         } break;
 
         default:
@@ -123,7 +125,7 @@ cleanup:
 
 void syscall_entry(void);
 
-void init_syscall() {
+INIT_CODE void init_syscall() {
     // setup the main descriptors
     __wrmsr(MSR_IA32_STAR, (GDT_KERNEL_CODE << 32) | ((GDT_USER_CODE - 16) << 48));
 

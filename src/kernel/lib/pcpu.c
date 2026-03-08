@@ -31,7 +31,7 @@ static CPU_LOCAL uintptr_t m_pcpu_base;
  */
 static uintptr_t m_all_pcpu_bases[256];
 
-void init_early_pcpu(void) {
+INIT_CODE void init_early_pcpu(void) {
     // the BSP uses offset zero, because the per-cpu variables are
     // allocated inside of the kernel, it means that the BSP can
     // just use that allocation without worrying
@@ -39,7 +39,7 @@ void init_early_pcpu(void) {
     m_cpu_id = 0;
 }
 
-err_t init_pcpu(int cpu_count) {
+INIT_CODE err_t init_pcpu(int cpu_count) {
     err_t err = NO_ERROR;
 
     CHECK(cpu_count <= ARRAY_LENGTH(m_all_pcpu_bases));
@@ -74,7 +74,7 @@ cleanup:
     return err;
 }
 
-err_t pcpu_init_per_core(int cpu_id) {
+INIT_CODE err_t pcpu_init_per_core(int cpu_id) {
     err_t err = NO_ERROR;
 
     // set the offset

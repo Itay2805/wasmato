@@ -1,4 +1,4 @@
-.section .text
+.section .text.init
 
 .global usermode_jump
 usermode_jump:

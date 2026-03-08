@@ -48,11 +48,15 @@ vmar_t g_runtime_region = {
 };
 
 extern char __kernel_limine_requests_base[];
+extern char __kernel_init_text_base[];
+extern char __kernel_init_data_base[];
 extern char __kernel_text_base[];
 extern char __kernel_rodata_base[];
 extern char __kernel_data_base[];
 
 extern char __kernel_limine_requests_page_count[];
+extern char __kernel_init_text_page_count[];
+extern char __kernel_init_data_page_count[];
 extern char __kernel_text_page_count[];
 extern char __kernel_rodata_page_count[];
 extern char __kernel_data_page_count[];
@@ -63,7 +67,31 @@ vmar_t g_kernel_limine_requests_region = {
     .page_count = (size_t)__kernel_limine_requests_page_count,
     .type = VMAR_TYPE_SPECIAL,
     .locked = true,
-    .pinned = true,
+    .alloc = {
+        .protection = MAPPING_PROTECTION_RO
+    }
+};
+
+vmar_t g_kernel_init_text_region = {
+    .name = "init_text",
+    .base = __kernel_init_text_base,
+    .page_count = (size_t)__kernel_init_text_page_count,
+    .type = VMAR_TYPE_SPECIAL,
+    .locked = true,
+    .alloc = {
+        .protection = MAPPING_PROTECTION_RX
+    }
+};
+
+vmar_t g_kernel_init_data_region = {
+    .name = "init_data",
+    .base = __kernel_init_data_base,
+    .page_count = (size_t)__kernel_init_data_page_count,
+    .type = VMAR_TYPE_SPECIAL,
+    .locked = true,
+    .alloc = {
+        .protection = MAPPING_PROTECTION_RW
+    }
 };
 
 vmar_t g_kernel_text_region = {

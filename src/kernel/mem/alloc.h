@@ -60,7 +60,7 @@ typedef struct mem_alloc {
     uint16_t objet_align;
 } mem_alloc_t;
 
-void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align);
+INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align);
 
 void* mem_alloc(mem_alloc_t* alloc);
 

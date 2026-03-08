@@ -75,7 +75,7 @@ static slab_t* slab_create(mem_alloc_t* alloc) {
  */
 static list_t m_allocators = LIST_INIT(&m_allocators);
 
-void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align) {
+INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align) {
     ASSERT(size != 0);
     ASSERT(align != 0);
 

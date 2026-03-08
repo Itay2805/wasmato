@@ -4,9 +4,9 @@
 /**
  * Initialize early allocator
  */
-err_t init_early_mem(void);
+INIT_CODE err_t init_early_mem(void);
 
 /**
  * Get the top memory pointer from the early allocator
  */
-void* early_alloc_get_top(void);
+INIT_CODE void* early_alloc_get_top(void);

@@ -16,10 +16,10 @@
 // Early page allocator
 //----------------------------------------------------------------------------------------------------------------------
 
-static int m_early_alloc_current_index = -1;
-static void* m_early_alloc_top = NULL;
+INIT_DATA static int m_early_alloc_current_index = -1;
+INIT_DATA static void* m_early_alloc_top = NULL;
 
-static void early_alloc_next_region(void) {
+INIT_CODE static void early_alloc_next_region(void) {
     // go over an entry to skip the current one, we start
     // as -1 which is going to start from zero
     m_early_alloc_current_index++;
@@ -42,7 +42,7 @@ static void early_alloc_next_region(void) {
     m_early_alloc_top = phys_to_direct(response->entries[m_early_alloc_current_index]->base);
 }
 
-static void* early_alloc_page(void) {
+INIT_CODE static void* early_alloc_page(void) {
     if (m_early_alloc_current_index < 0) {
         // no more pages to give out
         return NULL;
@@ -73,7 +73,7 @@ static void* early_alloc_page(void) {
  */
 #define KERNEL_PTE_BITS (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_PS | IA32_PG_G)
 
-static uint64_t* early_virt_get_next_level(uint64_t* entry) {
+INIT_CODE static uint64_t* early_virt_get_next_level(uint64_t* entry) {
     // ensure we don't have a large page in the way
     ASSERT((*entry & IA32_PG_PS) == 0);
 
@@ -90,7 +90,7 @@ static uint64_t* early_virt_get_next_level(uint64_t* entry) {
     return phys_to_direct(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
-static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt) {
+INIT_CODE static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt) {
     size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
     size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
     size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
@@ -114,7 +114,7 @@ static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt) {
     return &pml1[index1];
 }
 
-static err_t early_virt_map(
+INIT_CODE static err_t early_virt_map(
     uint64_t* pml4,
     void* virt, uint64_t phys, size_t num_pages,
     mapping_protection_t protection
@@ -143,7 +143,7 @@ cleanup:
 // Initialization of all the mappings
 //----------------------------------------------------------------------------------------------------------------------
 
-static err_t early_map_kernel(uint64_t* pml4) {
+INIT_CODE static err_t early_map_kernel(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     // The kernel region is at the -2gb, its used only for kernel stuff
@@ -157,6 +157,8 @@ static err_t early_map_kernel(uint64_t* pml4) {
 
     vmar_t* kernel_regions[] = {
         &g_kernel_limine_requests_region,
+        &g_kernel_init_text_region,
+        &g_kernel_init_data_region,
         &g_kernel_text_region,
         &g_kernel_rodata_region,
         &g_kernel_data_region,
@@ -179,7 +181,7 @@ cleanup:
     return err;
 }
 
-static err_t early_init_direct_map(void) {
+INIT_CODE static err_t early_init_direct_map(void) {
     err_t err = NO_ERROR;
 
     // get the direct map base if the request was fulfilled
@@ -200,7 +202,7 @@ cleanup:
     return err;
 }
 
-static err_t early_map_direct_map(uint64_t* pml4) {
+INIT_CODE static err_t early_map_direct_map(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     struct limine_memmap_response* response = g_limine_memmap_request.response;
@@ -250,7 +252,7 @@ cleanup:
     return err;
 }
 
-static err_t early_map_buddy_bitmap(uint64_t* pml4) {
+INIT_CODE static err_t early_map_buddy_bitmap(uint64_t* pml4) {
     err_t err = NO_ERROR;
 
     struct limine_memmap_response* response = g_limine_memmap_request.response;
@@ -299,7 +301,7 @@ cleanup:
     return err;
 }
 
-err_t init_early_mem(void) {
+INIT_CODE err_t init_early_mem(void) {
     err_t err = NO_ERROR;
 
     // start by setting up the direct map, this is needed to make
@@ -325,6 +327,6 @@ cleanup:
     return err;
 }
 
-void* early_alloc_get_top(void) {
+INIT_CODE void* early_alloc_get_top(void) {
     return m_early_alloc_top;
 }
