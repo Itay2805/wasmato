@@ -2,6 +2,6 @@
 
 #include "lib/except.h"
 
-err_t INIT_CODE load_runtime(void);
+INIT_CODE err_t load_runtime(void);
 
-void runtime_start(void);
+INIT_CODE void runtime_start(void);

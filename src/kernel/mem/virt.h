@@ -44,6 +44,11 @@ void virt_handle_tlb_flush_ipi(void);
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code);
 
 /**
+ * Reprotect pages in .rodata.late as readonly, so they can't change anymore
+ */
+void protect_ro_data(void);
+
+/**
  * Unmap and free all pages in the .text.init section, reclaiming them to the
  * physical allocator. Must be called exactly once, after all CPUs have
  * finished executing init code.

@@ -73,7 +73,7 @@ static slab_t* slab_create(mem_alloc_t* alloc) {
 /**
  * Linked list of all the allocators, to be used in case of OOM
  */
-static list_t m_allocators = LIST_INIT(&m_allocators);
+LATE_RO static list_t m_allocators = LIST_INIT(&m_allocators);
 
 INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align) {
     ASSERT(size != 0);

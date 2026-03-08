@@ -21,8 +21,7 @@ typedef struct gdt {
     gdt_entries_t* entries;
 } PACKED gdt_t;
 
-// TODO: make readonly after boot
-static gdt_entries_t m_entries = {
+LATE_RO static gdt_entries_t m_entries = {
     .kernel_code = {   // kernel code
         .limit          = 0x0000,
         .base_low       = 0x0000,

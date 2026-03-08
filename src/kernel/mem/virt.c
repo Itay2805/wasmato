@@ -12,7 +12,7 @@
 /**
  * The kernel top level cr3
  */
-static uint64_t* m_pml4 = 0;
+LATE_RO static uint64_t* m_pml4 = 0;
 
 bool virt_is_mapped(uintptr_t virt) {
     size_t index4 = (virt >> 39) & PAGING_INDEX_MASK;
@@ -167,6 +167,12 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Init memory reclamation
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+INIT_CODE void protect_ro_data(void) {
+    TRACE("virt: reprotecting late rodata");
+    g_kernel_late_rodata_region.alloc.protection = MAPPING_PROTECTION_RO;
+    virt_protect(g_kernel_late_rodata_region.base, g_kernel_late_rodata_region.page_count, MAPPING_PROTECTION_RO);
+}
 
 void reclaim_init_mem(void) {
     TRACE("virt: Reclaiming init code/data");

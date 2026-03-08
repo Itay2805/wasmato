@@ -43,7 +43,7 @@ typedef struct syscall_frame {
 /**
  * are we done with early memory
  */
-static bool m_early_done = false;
+LATE_RO static bool m_early_done = false;
 
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     asm("stac");
@@ -106,10 +106,11 @@ void syscall_handler(syscall_frame_t* frame) {
             CHECK(!m_early_done);
             m_early_done = true;
 
-            // TODO: reprotect data that should be read-only
-
             // we don't need the bootloader memory anymore
             RETHROW(reclaim_bootloader_memory());
+
+            // reprotect data that should be read-only
+            protect_ro_data();
 
             // All CPUs have completed init. Unmap and reclaim .text.init pages.
             reclaim_init_mem();

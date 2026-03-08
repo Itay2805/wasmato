@@ -12,8 +12,11 @@
 
 /**
  * The elf of the usermode runtime
+ *
+ * TODO: map directly from this, so we can use the VT-d PMRs
+ *       to protect it from DMA more easily
  */
-static char m_runtime_elf[] = {
+INIT_DATA static char m_runtime_elf[] = {
     #embed "build/runtime"
 };
 
@@ -38,9 +41,9 @@ static char m_runtime_elf[] = {
         (type*)&m_runtime_elf[offset__]; \
     })
 
-static void* m_runtime_entry_point = NULL;
+INIT_DATA static void* m_runtime_entry_point = NULL;
 
-err_t load_runtime(void) {
+INIT_CODE err_t load_runtime(void) {
     err_t err = NO_ERROR;
 
     // NOTE: we are running all this code without the vmar lock
@@ -164,7 +167,7 @@ cleanup:
     return err;
 }
 
-void runtime_start(void) {
+INIT_CODE void runtime_start(void) {
     void* ptr = user_stack_alloc("test", SIZE_4KB);
     ASSERT(ptr != NULL);
     usermode_jump((void*)(uintptr_t)get_cpu_id(), m_runtime_entry_point, ptr);

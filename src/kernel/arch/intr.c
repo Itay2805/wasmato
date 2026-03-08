@@ -354,9 +354,8 @@ static void spurious_interrupt_handler(interrupt_frame_t* frame) {
 
 /**
  * All interrupt handler entries
- * TODO: make readonly after boot
  */
-static idt_entry_t m_idt_entries[256];
+LATE_RO static idt_entry_t m_idt_entries[256];
 
 /**
  * Set a single idt entry

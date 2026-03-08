@@ -160,6 +160,7 @@ INIT_CODE static err_t early_map_kernel(uint64_t* pml4) {
         &g_kernel_init_text_region,
         &g_kernel_init_data_region,
         &g_kernel_text_region,
+        &g_kernel_late_rodata_region,
         &g_kernel_rodata_region,
         &g_kernel_data_region,
     };

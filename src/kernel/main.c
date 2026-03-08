@@ -22,12 +22,12 @@
 /**
  * For waiting until all cpus are finished initializing
  */
-static atomic_size_t m_smp_count = 0;
+INIT_DATA static atomic_size_t m_smp_count = 0;
 
 /**
  * If we get any failure then we will mark it
  */
-static atomic_bool m_smp_fail = false;
+INIT_DATA static atomic_bool m_smp_fail = false;
 
 typedef struct xcr0_feature {
     const char* name;
@@ -61,7 +61,7 @@ static const xcr0_feature_t m_xcr0_features[] = {
     [19] = { "APX", false, false },
 };
 
-static void INIT_CODE set_extended_state_features(void) {
+INIT_CODE static void set_extended_state_features(void) {
     static bool first = true;
     static uint32_t first_xcr0 = 0;
     uint32_t a, b, c, d;
@@ -105,7 +105,7 @@ static void INIT_CODE set_extended_state_features(void) {
     first = false;
 }
 
-static void INIT_CODE string_verify_features(void) {
+INIT_CODE static void string_verify_features(void) {
     uint32_t eax, ebx, ecx, edx;
 
     __cpuid_count(7, 0, eax, ebx, ecx, edx);
@@ -118,7 +118,7 @@ static void INIT_CODE string_verify_features(void) {
     // if ((eax & BIT12) == 0) LOG_WARN("string: Missing fast short REP CMPSB/CSASB");
 }
 
-static void INIT_CODE set_cpu_features(void) {
+INIT_CODE static void set_cpu_features(void) {
     // PG/PE - required for long mode
     // MP - required for SSE
     // WP - write protections
@@ -153,13 +153,13 @@ static void INIT_CODE set_cpu_features(void) {
     set_extended_state_features();
 }
 
-static void halt() {
+INIT_CODE static void halt() {
     for (;;) {
         asm("hlt");
     }
 }
 
-static void smp_entry(struct limine_mp_info* info) {
+INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     err_t err = NO_ERROR;
 
     //
@@ -192,7 +192,7 @@ cleanup:
     halt();
 }
 
-void _start() {
+INIT_CODE void _start() {
     err_t err = NO_ERROR;
 
     // make early logging work

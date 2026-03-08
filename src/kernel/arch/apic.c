@@ -121,17 +121,17 @@ typedef union {
 /**
  * Are we using x2APIC mode
  */
-static bool m_x2apic_mode = false;
+LATE_RO static bool m_x2apic_mode = false;
 
 /**
  * Are we using TSC deadline mode
  */
-static bool m_tsc_deadline = false;
+LATE_RO static bool m_tsc_deadline = false;
 
 /**
  * The xAPIC base, when using xAPIC mode
  */
-static uint8_t* m_xapic_base = NULL;
+LATE_RO static uint8_t* m_xapic_base = NULL;
 
 /**
  * The frequency of the lapic timer

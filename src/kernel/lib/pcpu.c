@@ -29,7 +29,7 @@ static CPU_LOCAL uintptr_t m_pcpu_base;
  * All the fs-bases of all the cores
  * TODO: support for more cores or something, this should be good enough for now
  */
-static uintptr_t m_all_pcpu_bases[256];
+LATE_RO static uintptr_t m_all_pcpu_bases[256];
 
 INIT_CODE void init_early_pcpu(void) {
     // the BSP uses offset zero, because the per-cpu variables are
