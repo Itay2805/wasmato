@@ -6,8 +6,6 @@
 #include "lib/elf_common.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
-#include "thread/scheduler.h"
-#include "thread/thread.h"
 
 /**
  * The elf of the usermode runtime
@@ -37,7 +35,7 @@ static char m_runtime_elf[] = {
         (type*)&m_runtime_elf[offset__]; \
     })
 
-err_t load_and_start_runtime(void) {
+err_t load_runtime(void) {
     err_t err = NO_ERROR;
 
     // NOTE: we are running all this code without the vmar lock
@@ -153,11 +151,6 @@ err_t load_and_start_runtime(void) {
         // set the correct protections now, this will also lock the region
         vmar_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
     }
-
-    // and finally create the usermode thread and start it
-    thread_t* runtime_init_thread = nullptr;
-    RETHROW(user_thread_create(&runtime_init_thread, (void*)ehdr->e_entry, NULL, "runtime-init"));
-    scheduler_wakeup_thread(runtime_init_thread);
 
 cleanup:
     return err;

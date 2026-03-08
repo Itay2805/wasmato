@@ -60,5 +60,3 @@ STATIC_ASSERT(TSS_IST_MAX < 7);
 void init_gdt(void);
 
 void init_tss(void);
-
-void tss_set_irq_stack(void* rsp);

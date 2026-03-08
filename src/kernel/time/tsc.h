@@ -20,12 +20,6 @@ extern uint64_t g_tsc_freq_hz;
 err_t init_tsc(void);
 
 /**
- * Should be called once timers are initialized, performs a refinement
- * of the cpu clock source
- */
-err_t tsc_refine(void);
-
-/**
  * Returns true if the CPU supports TSC deadline
  */
 bool tsc_deadline_is_supported(void);

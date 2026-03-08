@@ -7,11 +7,11 @@
 /**
  * We are going to use the FS segment for cpu-local storage
  */
-#define CPU_LOCAL __attribute__((section("pcpu_data"), address_space(257)))
+#define CPU_LOCAL __attribute__((section("pcpu_data"), address_space(256)))
 
-void* pcpu_get_pointer(__seg_fs void* ptr);
+void* pcpu_get_pointer(__seg_gs void* ptr);
 
-void* pcpu_get_pointer_of(__seg_fs void* ptr, int cpu_id);
+void* pcpu_get_pointer_of(__seg_gs void* ptr, int cpu_id);
 
 /**
  * Early init pcpu data on the BSP, to allow us

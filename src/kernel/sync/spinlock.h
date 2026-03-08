@@ -8,6 +8,8 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Simple spinlock
+//
+// The kernel never runs with interrupts enabled, so IRQ locks are not needed
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 typedef struct spinlock {
@@ -18,53 +20,13 @@ typedef struct spinlock {
 
 static inline void spinlock_acquire(spinlock_t* lock) {
     while (atomic_flag_test_and_set_explicit(&lock->lock, memory_order_acquire)) {
+        // TODO: check if an ipi needs to run right now,
+        //       if it does run it, because we don't run
+        //       with interrupts in kernel
         cpu_relax();
     }
 }
 
 static inline void spinlock_release(spinlock_t* lock) {
     atomic_flag_clear_explicit(&lock->lock, memory_order_release);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// IRQ enable/disable helpers
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-static inline void irq_enable() { asm("sti"); }
-static inline void irq_disable() { asm("cli"); }
-static inline bool is_irq_enabled() { return __builtin_ia32_readeflags_u64() & BIT9; }
-
-static inline bool irq_save() {
-    bool status = is_irq_enabled();
-    irq_disable();
-    return status;
-}
-
-static inline void irq_restore(bool irq_status) {
-    if (irq_status) {
-        irq_enable();
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Spinlock shared between in-irq and out-of-irq code
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-typedef struct irq_spinlock {
-    atomic_flag lock;
-} irq_spinlock_t;
-
-#define IRQ_SPINLOCK_INIT ((irq_spinlock_t){ .lock = ATOMIC_FLAG_INIT })
-
-static inline bool irq_spinlock_acquire(irq_spinlock_t* lock) {
-    bool irq_state = irq_save();
-    while (atomic_flag_test_and_set_explicit(&lock->lock, memory_order_acquire)) {
-        cpu_relax();
-    }
-    return irq_state;
-}
-
-static inline void irq_spinlock_release(irq_spinlock_t* lock, bool irq_state) {
-    atomic_flag_clear_explicit(&lock->lock, memory_order_release);
-    irq_restore(irq_state);
 }

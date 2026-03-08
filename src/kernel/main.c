@@ -14,41 +14,9 @@
 #include "mem/phys.h"
 #include "mem/phys_map.h"
 #include "mem/virt.h"
-#include "thread/pcpu.h"
-#include "thread/scheduler.h"
-#include "thread/syscall.h"
-#include "thread/thread.h"
-#include "time/timer.h"
+#include "lib/pcpu.h"
 #include "time/tsc.h"
-/**
- * The init thread
- */
-static thread_t* m_init_thread;
-
-static void init_thread_entry(void* arg) {
-    err_t err = NO_ERROR;
-
-    TRACE("Init thread started");
-
-    // no longer need any of the bootloader memory
-    // at this point
-    RETHROW(reclaim_bootloader_memory());
-
-    // load and start the runtime
-    RETHROW(load_and_start_runtime());
-
-    // TODO: reclaim init code
-
-    vmar_dump(&g_user_memory);
-    vmar_dump(&g_kernel_memory);
-
-cleanup:
-    ASSERT(!IS_ERROR(err));
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Early startup
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include "user/syscall.h"
 
 /**
  * For waiting until all cpus are finished initializing
@@ -133,13 +101,6 @@ static void set_extended_state_features(void) {
     }
     __builtin_ia32_xsetbv(0, xcr0);
 
-    if (first) {
-        __cpuid_count(0xD, 0, a, b, c, d);
-        TRACE("cpu: extended state size is %d bytes", b);
-        g_extended_state_size = b;
-        ASSERT((g_extended_state_size + sizeof(thread_t)) <= PAGE_SIZE);
-    }
-
     first = false;
 }
 
@@ -173,7 +134,8 @@ static void set_cpu_features(void) {
     // XSAVE - using xsave
     // SMAP/SMEP - prevent kernel from accessing usermode memory
     // UMIP - prevent usermode from leaking kernel memory
-    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP);
+    // FSGSBASE - allow to use {rd,wr}{gs,fs}base
+    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP | CR4_FSGSBASE);
 
     // setup the efer
     // NXE - Enable NX bit
@@ -213,13 +175,12 @@ static void smp_entry(struct limine_mp_info* info) {
 
     // and now we can init
     init_lapic_per_core();
-    RETHROW(scheduler_init_per_core());
 
     // we are done
     m_smp_count++;
 
     // we can trigger the scheduler,
-    scheduler_start_per_core();
+    // TODO: just to usermode entry point
 
 cleanup:
     // if we got an error mark it
@@ -238,9 +199,9 @@ void _start() {
     init_early_logging();
 
     // Welcome!
-    TRACE("------------------------------------------------------------------------------------------------------------");
+    TRACE("-------------------------------------------------------------------------------");
     TRACE("TomatOS");
-    TRACE("------------------------------------------------------------------------------------------------------------");
+    TRACE("-------------------------------------------------------------------------------");
     limine_check_revision();
 
     //
@@ -274,11 +235,6 @@ void _start() {
     // followed by actually setting the timers properly
     RETHROW(init_tsc());
     RETHROW(init_lapic());
-    init_timers();
-    RETHROW(tsc_refine());
-
-    // setup the scheduler structures
-    RETHROW(init_scheduler());
 
     // perform cpu startup
     CHECK(g_limine_mp_request.response != NULL);
@@ -296,7 +252,6 @@ void _start() {
 
             // allocate the per-cpu storage now that we know our id
             init_lapic_per_core();
-            RETHROW(scheduler_init_per_core());
 
             m_smp_count++;
         } else {
@@ -317,12 +272,7 @@ void _start() {
     }
     TRACE("smp: Finished SMP startup");
 
-    // we are about done, create the init thread and queue it
-    RETHROW(thread_create(&m_init_thread, init_thread_entry, NULL, "init thread"));
-    scheduler_wakeup_thread(m_init_thread);
-
-    // and we are ready to start the scheduler
-    scheduler_start_per_core();
+    // TODO: jump to runtime
 
 cleanup:
     halt();

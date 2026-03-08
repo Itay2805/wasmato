@@ -2,4 +2,4 @@
 
 #include "lib/except.h"
 
-err_t load_and_start_runtime(void);
+err_t load_runtime(void);

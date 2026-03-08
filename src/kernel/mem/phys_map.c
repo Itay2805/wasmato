@@ -9,7 +9,7 @@
 
 
 list_t g_phys_map = LIST_INIT(&g_phys_map);
-irq_spinlock_t g_phys_map_lock = IRQ_SPINLOCK_INIT;
+spinlock_t g_phys_map_lock = SPINLOCK_INIT;
 
 /**
  * Allocator for phys map entries
@@ -164,15 +164,15 @@ void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length
 }
 
 void phys_map_convert(phys_map_type_t type, uint64_t start, size_t length) {
-    bool irq_lock = irq_spinlock_acquire(&g_phys_map_lock);
+    spinlock_acquire(&g_phys_map_lock);
     phys_map_convert_locked(type, start, length);
-    irq_spinlock_release(&g_phys_map_lock, irq_lock);
+    spinlock_release(&g_phys_map_lock);
 }
 
 err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
     err_t err = NO_ERROR;
 
-    bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
+    spinlock_acquire(&g_phys_map_lock);
 
     uint64_t top_address = 0;
     CHECK(!__builtin_add_overflow(start, length, &top_address));
@@ -188,7 +188,7 @@ err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
     CHECK_FAIL_ERROR(ERROR_NOT_FOUND);
 
 cleanup:
-    irq_spinlock_release(&g_phys_map_lock, irq_state);
+    spinlock_release(&g_phys_map_lock);
 
     return err;
 }
@@ -238,7 +238,7 @@ cleanup:
 err_t phys_map_iterate(phys_map_cb_t cb, void* ctx) {
     err_t err = NO_ERROR;
 
-    bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
+    spinlock_acquire(&g_phys_map_lock);
 
     phys_map_entry_t* entry;
     list_for_each_entry(entry, &g_phys_map, link) {
@@ -250,7 +250,7 @@ err_t phys_map_iterate(phys_map_cb_t cb, void* ctx) {
     }
 
 cleanup:
-    irq_spinlock_release(&g_phys_map_lock, irq_state);
+    spinlock_release(&g_phys_map_lock);
 
     return err;
 }

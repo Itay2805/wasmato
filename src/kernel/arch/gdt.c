@@ -1,8 +1,7 @@
 #include "gdt.h"
 
 #include "sync/spinlock.h"
-#include "thread/pcpu.h"
-
+#include "lib/pcpu.h"
 
 typedef struct tss64 {
     uint32_t reserved_1;
@@ -115,6 +114,12 @@ static CPU_LOCAL tss64_t m_tss = {};
 __attribute__((aligned(16)))
 static CPU_LOCAL char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
 
+/**
+ * per-cpu stacks to use, for any other exception
+ */
+__attribute__((aligned(16)))
+static CPU_LOCAL char m_exception_stack[SIZE_4KB] = {};
+
 void init_tss(void) {
     tss64_t* tss = pcpu_get_pointer(&m_tss);
 
@@ -122,6 +127,9 @@ void init_tss(void) {
     for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
         tss->ist[ist] = (uintptr_t)pcpu_get_pointer(&m_stacks[ist]) + SIZE_4KB - 16;
     }
+
+    // set the stack for normal exceptions
+    tss->rsp0 = (uintptr_t)m_exception_stack + SIZE_4KB - 16;
 
     spinlock_acquire(&m_tss_lock);
 
@@ -138,8 +146,4 @@ void init_tss(void) {
     asm volatile ("ltr %%ax" : : "a"(GDT_TSS) : "memory");
 
     spinlock_release(&m_tss_lock);
-}
-
-void tss_set_irq_stack(void* rsp) {
-    m_tss.rsp0 = (uintptr_t)rsp;
 }

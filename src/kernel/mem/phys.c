@@ -35,7 +35,7 @@ static buddy_level_t m_phys_buddy_levels[PHYS_BUDDY_MAX_LEVEL] = {};
 /**
  * Lock to protect the buddy list
  */
-static irq_spinlock_t m_phys_buddy_lock = IRQ_SPINLOCK_INIT;
+static spinlock_t m_phys_buddy_lock = SPINLOCK_INIT;
 
 static int get_level_by_size(size_t size) {
     // allocation is too big, return invalid
@@ -89,7 +89,7 @@ void* phys_alloc(size_t size) {
         return NULL;
     }
 
-    bool irq_state = irq_spinlock_acquire(&m_phys_buddy_lock);
+    spinlock_acquire(&m_phys_buddy_lock);
 
     // search for a free page in the freelists that has the closest level to what we want
     int block_at_level = 0;
@@ -124,7 +124,7 @@ void* phys_alloc(size_t size) {
         buddy_set_block_allocated(block);
     }
 
-    irq_spinlock_release(&m_phys_buddy_lock, irq_state);
+    spinlock_release(&m_phys_buddy_lock);
 
     return block;
 }
@@ -133,7 +133,7 @@ static void phys_free_internal(void* ptr, int level, bool check_allocated) {
     // sanity check
     ASSERT(((uintptr_t)ptr % (1UL << level)) == 0);
 
-    bool irq_state = irq_spinlock_acquire(&m_phys_buddy_lock);
+    spinlock_acquire(&m_phys_buddy_lock);
 
     // mark the block as free right away
     if (check_allocated) {
@@ -178,7 +178,7 @@ static void phys_free_internal(void* ptr, int level, bool check_allocated) {
     list_add(&m_phys_buddy_levels[level].freelist, &block->entry);
     buddy_set_block_free(block);
 
-    irq_spinlock_release(&m_phys_buddy_lock, irq_state);
+    spinlock_release(&m_phys_buddy_lock);
 }
 
 void phys_free(void* ptr, size_t size) {
@@ -303,7 +303,7 @@ cleanup:
 err_t reclaim_bootloader_memory(void) {
     err_t err = NO_ERROR;
 
-    bool irq_state = irq_spinlock_acquire(&g_phys_map_lock);
+    spinlock_acquire(&g_phys_map_lock);
 
     TRACE("memory: Reclaiming bootloader memory");
     while (true) {
@@ -334,7 +334,7 @@ err_t reclaim_bootloader_memory(void) {
     }
 
 cleanup:
-    irq_spinlock_release(&g_phys_map_lock, irq_state);
+    spinlock_release(&g_phys_map_lock);
 
     return err;
 }

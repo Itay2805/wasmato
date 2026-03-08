@@ -6,9 +6,7 @@
 #include "lib/log.h"
 #include "mem/virt.h"
 #include "sync/spinlock.h"
-#include "thread/pcpu.h"
-#include "thread/scheduler.h"
-#include "time/timer.h"
+#include "lib/pcpu.h"
 
 
 #define IDT_TYPE_TASK           0x5
@@ -225,14 +223,6 @@ static void default_exception_handler(exception_frame_t* ctx) {
     }
 
     // check if we have threading_old already
-    thread_t* thread = scheduler_get_current_thread();
-    if (thread != NULL) {
-        if (thread != NULL) {
-            ERROR("Thread: `%.*s`", (int)sizeof(thread->name), thread->name);
-        } else {
-            ERROR("Thread: <none>");
-        }
-    }
     ERROR("CPU: #%d", get_cpu_id());
     ERROR("");
 
@@ -352,18 +342,6 @@ static void ipi_interrupt_handler(interrupt_frame_t* frame) {
     lapic_eoi();
 }
 
-__attribute__((interrupt))
-static void timer_interrupt_handler(interrupt_frame_t* frame) {
-    lapic_eoi();
-
-    // dispatch the timers, don't allow them to preempt
-    // while we are doing so, if they did request it
-    // then the preempt enable will handle it
-    scheduler_preempt_disable();
-    timer_dispatch();
-    scheduler_preempt_enable();
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////but it
 // IDT setup
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -420,7 +398,6 @@ void init_idt(void) {
     set_idt_entry(0x1D, exception_handler_0x1D, -1);
     set_idt_entry(0x1E, exception_handler_0x1E, -1);
     set_idt_entry(0x1F, exception_handler_0x1F, -1);
-    set_idt_entry(INTR_VECTOR_TIMER, timer_interrupt_handler, -1);
     set_idt_entry(INTR_VECTOR_IPI, ipi_interrupt_handler, -1);
 
     idt_t idt = {

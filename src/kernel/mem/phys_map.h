@@ -46,7 +46,7 @@ extern list_t g_phys_map;
 /**
  * Lock to protect the physical memory map
  */
-extern irq_spinlock_t g_phys_map_lock;
+extern spinlock_t g_phys_map_lock;
 
 /**
  * The physical memory map is used to track

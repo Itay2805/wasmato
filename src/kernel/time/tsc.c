@@ -1,25 +1,11 @@
 #include "tsc.h"
 
-#include <stdbool.h>
-#include <stddef.h>
-
 #include <cpuid.h>
 
-#include "timer.h"
 #include "acpi/acpi.h"
-#include "arch/apic.h"
 #include "arch/intrin.h"
 #include "lib/defs.h"
 #include "lib/list.h"
-#include "mem/alloc.h"
-#include "mem/phys.h"
-#include "sync/spinlock.h"
-
-typedef struct tsc_refine_ctx {
-    timer_t timer;
-    uint64_t ref_start;
-    uint64_t tsc_start;
-} tsc_refine_ctx_t;
 
 /**
  * The calculated TSC resolution
@@ -31,14 +17,12 @@ uint64_t g_tsc_freq_hz = 0;
  * and anything that requires delays, but it can be quite off from the real thing
  */
 static uint64_t quick_acpi_timer_calibrate(void) {
-    bool irq = irq_save();
     uint32_t ticks = acpi_get_timer_tick() + 363;
     uint64_t start_tsc = get_tsc();
     while (((ticks - acpi_get_timer_tick()) & BIT23) == 0) {
         cpu_relax();
     }
     uint64_t end_tsc = get_tsc();
-    irq_restore(irq);
     return (end_tsc - start_tsc) * 9861;
 }
 
@@ -76,39 +60,6 @@ static uint64_t tsc_calc_acpi_timer_ref(uint64_t deltatsc, uint64_t pm1, uint64_
     return deltatsc / ((pm2 * 1000000000LL) / 3579545);
 }
 
-/**
- * Runs after a second from reading the first refs, used to have a more accurate
- * tsc frequency value which we can use for time keeping in the long run
- */
-static void tsc_refine_callback(timer_t* timer) {
-    // read the stop tsc and reference
-    uint64_t ref_stop;
-    uint64_t tsc_stop = tsc_read_refs(&ref_stop);
-
-    tsc_refine_ctx_t* ctx = containerof(timer, tsc_refine_ctx_t, timer);
-    ASSERT(ctx->ref_start != ref_stop);
-
-    if (tsc_stop == UINT64_MAX) {
-        // sampling was disturbed, try again
-        WARN("tsc: refinement was disturbed");
-        ctx->tsc_start = tsc_read_refs(&ctx->ref_start);
-        timer_set(&ctx->timer, tsc_refine_callback, tsc_ms_deadline(1000));
-        return;
-    }
-
-    // update the frequency
-    uint64_t delta = tsc_stop - ctx->tsc_start;
-    delta *= 1000000LL;
-    uint64_t freq = tsc_calc_acpi_timer_ref(delta, ctx->ref_start, ref_stop);
-    TRACE("tsc: Refined TSC %lu.%03lu MHz", freq / 1000, freq % 1000);
-    g_tsc_freq_hz = freq * 1000;
-
-    // recalibrate the lapic timer
-    lapic_timer_recalibrate();
-
-    phys_free(ctx, sizeof(*ctx));
-}
-
 err_t init_tsc(void) {
     err_t err = NO_ERROR;
 
@@ -117,18 +68,7 @@ err_t init_tsc(void) {
     TRACE("timer: Fast TSC calibration using ACPI Timer %lu.%03lu MHz",
         g_tsc_freq_hz / 1000000, (g_tsc_freq_hz / 1000) % 1000);
 
-cleanup:
-    return err;
-}
-
-err_t tsc_refine(void) {
-    err_t err = NO_ERROR;
-
-    // setup
-    tsc_refine_ctx_t* ctx = phys_alloc(sizeof(tsc_refine_ctx_t));
-    CHECK_ERROR(ctx != NULL, ERROR_OUT_OF_MEMORY);
-    ctx->tsc_start = tsc_read_refs(&ctx->ref_start);
-    timer_set(&ctx->timer, tsc_refine_callback, tsc_ms_deadline(1000));
+    // TODO: what should we do about refinement
 
 cleanup:
     return err;

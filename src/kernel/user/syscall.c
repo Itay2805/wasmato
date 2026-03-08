@@ -4,7 +4,7 @@
 #include "arch/gdt.h"
 #include "arch/intrin.h"
 #include "arch/regs.h"
-#include "pcpu.h"
+#include "lib/pcpu.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
 

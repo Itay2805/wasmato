@@ -7,7 +7,7 @@
 #include "lib/defs.h"
 #include "lib/printf.h"
 
-static irq_spinlock_t m_debug_lock = IRQ_SPINLOCK_INIT;
+static spinlock_t m_debug_lock = SPINLOCK_INIT;
 
 static bool m_e9_enabled = false;
 
@@ -23,8 +23,8 @@ void putchar_(char c) {
 void debug_print(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    bool irq_state = irq_spinlock_acquire(&m_debug_lock);
+    spinlock_acquire(&m_debug_lock);
     vprintf_(fmt, args);
-    irq_spinlock_release(&m_debug_lock, irq_state);
+    spinlock_release(&m_debug_lock);
     va_end(args);
 }

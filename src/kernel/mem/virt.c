@@ -8,7 +8,6 @@
 #include "lib/ipi.h"
 #include "lib/string.h"
 #include "sync/spinlock.h"
-#include "thread/pcpu.h"
 
 /**
  * The kernel top level cr3

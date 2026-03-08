@@ -111,8 +111,7 @@ void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align) {
 }
 
 void* mem_alloc(mem_alloc_t* alloc) {
-
-    bool irq_state = irq_spinlock_acquire(&alloc->lock);
+    spinlock_acquire(&alloc->lock);
 
     // choose a slab to use, prefer partial slabs
     slab_t* slab = NULL;
@@ -130,7 +129,7 @@ void* mem_alloc(mem_alloc_t* alloc) {
         // create new slab
         slab = slab_create(alloc);
         if (slab == NULL) {
-            irq_spinlock_release(&alloc->lock, irq_state);
+            spinlock_release(&alloc->lock);
             return NULL;
         }
         list_add(&alloc->partial, &slab->link);
@@ -148,7 +147,7 @@ void* mem_alloc(mem_alloc_t* alloc) {
         list_add(&alloc->full, &slab->link);
     }
 
-    irq_spinlock_release(&alloc->lock, irq_state);
+    spinlock_release(&alloc->lock);
 
     return node;
 }
@@ -158,7 +157,7 @@ void mem_free(mem_alloc_t* alloc, void* p) {
         return;
     }
 
-    bool irq_state = irq_spinlock_acquire(&alloc->lock);
+    spinlock_acquire(&alloc->lock);
 
     // get the slab, and ensure it matches
     slab_t* slab = object_to_slab(p);
@@ -186,7 +185,7 @@ void mem_free(mem_alloc_t* alloc, void* p) {
         list_add(&alloc->empty, &slab->link);
     }
 
-    irq_spinlock_release(&alloc->lock, irq_state);
+    spinlock_release(&alloc->lock);
 }
 
 void* mem_calloc(mem_alloc_t* alloc) {

@@ -8,19 +8,18 @@
 
 static mem_alloc_t m_vmar_alloc;
 
-static irq_spinlock_t m_vmar_lock = IRQ_SPINLOCK_INIT;
-static bool m_vmar_lock_irq_state = false;
+static spinlock_t m_vmar_lock = SPINLOCK_INIT;
 
 void init_vmar_alloc(void) {
     mem_alloc_init(&m_vmar_alloc, sizeof(vmar_t), alignof(vmar_t));
 }
 
 void vmar_lock(void) {
-    m_vmar_lock_irq_state = irq_spinlock_acquire(&m_vmar_lock);
+    spinlock_acquire(&m_vmar_lock);
 }
 
 void vmar_unlock(void) {
-    irq_spinlock_release(&m_vmar_lock, m_vmar_lock_irq_state);
+    spinlock_release(&m_vmar_lock);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

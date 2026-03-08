@@ -32,7 +32,7 @@ typedef struct mem_alloc {
     /**
      * Lock to protect the allocator
      */
-    irq_spinlock_t lock;
+    spinlock_t lock;
 
     /**
      * Size of a single slab
