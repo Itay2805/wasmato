@@ -142,6 +142,7 @@ typedef union {
     };
     uint64_t packed;
 } MSR_IA32_APIC_BASE_REGISTER;
+
 #define MSR_IA32_EFER  0xC0000080
 
 typedef union {

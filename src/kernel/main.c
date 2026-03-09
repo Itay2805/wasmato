@@ -126,8 +126,16 @@ INIT_CODE static void validate_cpu_features(void) {
         &a, &b, &c,
         &extended_cpu_sig_edx.raw
     ));
-    ASSERT(extended_cpu_sig_edx.NX, "Missing NX support");
-    ASSERT(extended_cpu_sig_edx.SYSCALL_SYSRET, "Missing SYSCALL/SYSRET support");
+    ASSERT(extended_cpu_sig_edx.EXECUTE_DIS, "Missing EXECUTE_DIS support");
+    ASSERT(extended_cpu_sig_edx.SYSCALL_SYSRET_64, "Missing SYSCALL/SYSRET support");
+
+    CPUID_EXTENDED_TIME_STAMP_COUNTER_EDX extended_time_stamp_counter_edx = {};
+    ASSERT(__get_cpuid(
+        CPUID_EXTENDED_TIME_STAMP_COUNTER,
+        &a, &b, &c,
+        &extended_time_stamp_counter_edx.raw
+    ));
+    ASSERT(extended_time_stamp_counter_edx.TSC_INVARIANT, "Missing TSC_INVARIANT support");
 }
 
 INIT_CODE static void set_cpu_features(void) {
@@ -145,7 +153,8 @@ INIT_CODE static void set_cpu_features(void) {
     // SMAP/SMEP - prevent kernel from accessing usermode memory
     // UMIP - prevent usermode from leaking kernel memory
     // FSGSBASE - allow to use {rd,wr}{gs,fs}base
-    __writecr4(CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP | CR4_FSGSBASE);
+    uint32_t cr4 = CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP | CR4_FSGSBASE;
+    __writecr4(cr4);
 
     // setup the efer
     // NXE - Enable NX bit

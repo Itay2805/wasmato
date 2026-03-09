@@ -287,7 +287,7 @@ uint8_t get_physical_address_bits(void) {
     CPUID_VIR_PHY_ADDRESS_SIZE_EAX eax = {};
     uint32_t b, c, d;
     if (__get_cpuid(CPUID_VIR_PHY_ADDRESS_SIZE, &eax.raw, &b, &c, &d)) {
-        return eax.PhysicalAddressBits;
+        return eax.PHYS_ADDR_SIZE;
     }
     return 0;
 }
