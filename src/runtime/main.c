@@ -26,7 +26,7 @@ uint64_t g_tsc_freq_hz;
 
 __attribute__((force_align_arg_pointer))
 int _start(int cpu) {
-    TRACE("\tUsermode entered on CPU #%d", cpu);
+    TRACE("runtime: Usermode entered on CPU #%d", cpu);
     if (cpu != 0) {
         while (1);
     }

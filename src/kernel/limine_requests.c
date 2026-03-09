@@ -12,7 +12,7 @@
 //
 
 __attribute__((used, section(".limine_requests")))
-static volatile uint64_t g_limine_base_revision[] = LIMINE_BASE_REVISION(4);
+static volatile uint64_t g_limine_base_revision[] = LIMINE_BASE_REVISION(5);
 
 __attribute__((used, section(".limine_requests_start")))
 static uint64_t g_limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
@@ -27,26 +27,26 @@ static uint64_t g_limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 __attribute__((section(".limine_requests")))
 volatile struct limine_framebuffer_request g_limine_framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
-    .revision = 0, .response = NULL
+    .revision = 0, .response = nullptr
 };
 
 __attribute__((section(".limine_requests")))
 volatile struct limine_bootloader_info_request g_limine_bootloader_info_request = {
     .id = LIMINE_BOOTLOADER_INFO_REQUEST_ID,
-    .revision = 0, .response = NULL
+    .revision = 0, .response = nullptr
 };
 
 __attribute__((section(".limine_requests")))
 volatile struct limine_hhdm_request g_limine_hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID,
-    .revision = 0, .response = NULL
+    .revision = 0, .response = nullptr
 };
 
 
 __attribute__((section(".limine_requests")))
 volatile struct limine_memmap_request g_limine_memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST_ID,
-    .revision = 0, .response = NULL
+    .revision = 0, .response = nullptr
 };
 
 static struct limine_internal_module* m_internal_modules[] = {
@@ -56,7 +56,7 @@ static struct limine_internal_module* m_internal_modules[] = {
 __attribute__((section(".limine_requests")))
 volatile struct limine_module_request g_limine_module_request = {
     .id = LIMINE_MODULE_REQUEST_ID,
-    .revision = 1, .response = NULL,
+    .revision = 1, .response = nullptr,
     .internal_modules = m_internal_modules,
     .internal_module_count = ARRAY_LENGTH(m_internal_modules)
 };
@@ -64,20 +64,36 @@ volatile struct limine_module_request g_limine_module_request = {
 __attribute__((section(".limine_requests")))
 volatile struct limine_rsdp_request g_limine_rsdp_request = {
     .id = LIMINE_RSDP_REQUEST_ID,
-    .revision = 0, .response = NULL
+    .revision = 0, .response = nullptr
 };
 
 __attribute__((section(".limine_requests")))
 volatile struct limine_executable_address_request g_limine_executable_address_request = {
     .id = LIMINE_EXECUTABLE_ADDRESS_REQUEST_ID,
-    .revision = 0, .response = NULL
+    .revision = 0, .response = nullptr
 };
 
 __attribute__((section(".limine_requests")))
 volatile struct limine_mp_request g_limine_mp_request = {
     .id = LIMINE_MP_REQUEST_ID,
-    .revision = 0, .response = NULL,
+    .revision = 0, .response = nullptr,
     .flags = LIMINE_MP_RESPONSE_X86_64_X2APIC
+};
+
+__attribute__((section(".limine_requests")))
+volatile struct limine_paging_mode_request g_limine_page_mode_request = {
+    .id = LIMINE_PAGING_MODE_REQUEST_ID,
+    .revision = 1, .response = nullptr,
+    .mode = LIMINE_PAGING_MODE_X86_64_4LVL,
+    .min_mode = LIMINE_PAGING_MODE_X86_64_4LVL,
+    // TODO: support for 5lvl paging
+    .max_mode = LIMINE_PAGING_MODE_X86_64_4LVL,
+};
+
+__attribute__((section(".limine_requests")))
+volatile struct limine_x86_64_keep_iommu_request g_limine_x86_64_keep_iommu_request = {
+    .id = LIMINE_X86_64_KEEP_IOMMU_REQUEST_ID,
+    .revision = 0, .response = nullptr,
 };
 
 void limine_check_revision() {

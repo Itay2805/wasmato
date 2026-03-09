@@ -202,7 +202,7 @@ INIT_DATA static const phys_map_type_t m_limine_memmap_type[] = {
     [LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE] = PHYS_MAP_BOOTLOADER_RECLAIMABLE,
     [LIMINE_MEMMAP_EXECUTABLE_AND_MODULES] = PHYS_MAP_KERNEL_RESERVED,
     [LIMINE_MEMMAP_FRAMEBUFFER] = PHYS_MAP_MMIO_FRAMEBUFFER,
-    [LIMINE_MEMMAP_ACPI_TABLES] = PHYS_MAP_ACPI_RESERVED,
+    [LIMINE_MEMMAP_RESERVED_MAPPED] = PHYS_MAP_FIRMWARE_RESERVED,
 };
 
 INIT_CODE err_t init_phys_map(void) {
@@ -267,7 +267,6 @@ static const char* m_phys_map_type_str[] = {
     [PHYS_MAP_FIRMWARE_RESERVED] = "Reserved (Firmware)",
 
     [PHYS_MAP_ACPI_RECLAIMABLE] = "Reclaimable (ACPI)",
-    [PHYS_MAP_ACPI_RESERVED] = "Reserved (ACPI)",
     [PHYS_MAP_ACPI_NVS] = "Reserved (ACPI NVS)",
 
     [PHYS_MAP_BOOTLOADER_RECLAIMABLE] = "Reclaimable (Bootloader)",

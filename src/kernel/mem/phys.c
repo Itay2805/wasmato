@@ -245,7 +245,7 @@ static const char* m_limine_type_str[] = {
     [LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE] = "Bootloader Reclaimable",
     [LIMINE_MEMMAP_EXECUTABLE_AND_MODULES] = "Kernel and modules",
     [LIMINE_MEMMAP_FRAMEBUFFER] = "Framebuffer",
-    [LIMINE_MEMMAP_ACPI_TABLES] = "ACPI Tables",
+    [LIMINE_MEMMAP_RESERVED_MAPPED] = "Reserved",
 };
 
 INIT_CODE err_t init_phys(void) {
