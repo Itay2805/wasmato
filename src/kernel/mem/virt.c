@@ -141,7 +141,12 @@ static uint64_t* virt_get_pte(void* virt, bool allocate, bool kernel) {
         return nullptr;
     }
 
-    return &pml1[index1];
+    uint64_t* entry = &pml1[index1];
+    if (!allocate && (*entry & IA32_PG_P) == 0) {
+        return nullptr;
+    }
+
+    return entry;
 }
 
 void virt_protect(void* virt, size_t page_count, mapping_protection_t protection) {
@@ -153,9 +158,9 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
         }
 
         // change the protections
-        uint64_t new_pte = *pte & ~((uint64_t)(IA32_PG_RW | IA32_PG_NX));
+        uint64_t new_pte = *pte & ~((uint64_t)(IA32_PG_RW | IA32_PG_NX | IA32_PG_D));
         if (protection != MAPPING_PROTECTION_RX) new_pte |= IA32_PG_NX;
-        if (protection == MAPPING_PROTECTION_RW) new_pte |= IA32_PG_RW;
+        if (protection == MAPPING_PROTECTION_RW) new_pte |= IA32_PG_RW | IA32_PG_D;
         *pte = new_pte;
 
         tlb_invl_queue(virt);
@@ -298,7 +303,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     }
 
     // setup the pte, we assume it can't be executable so mark as NX right away
-    uint64_t new_pte = phys | IA32_PG_P | IA32_PG_NX | IA32_PG_A | IA32_PG_D;
+    uint64_t new_pte = phys | IA32_PG_P | IA32_PG_NX | IA32_PG_A;
 
     // if the mapping is not in kernel then mark as user, otherwise
     // mark as global (assuming we never free kernel addresses)
@@ -312,7 +317,10 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         (mapping->type == VMAR_TYPE_ALLOC && mapping->alloc.protection == MAPPING_PROTECTION_RW) ||
         mapping->type == VMAR_TYPE_PHYS || mapping->type == VMAR_TYPE_STACK
     ) {
-        new_pte |= IA32_PG_RW;
+        // we don't need the dirty bit, so set it right away, we don't
+        // always set it because for shadow stacks we need it to be on
+        // on a non-writable page
+        new_pte |= IA32_PG_RW | IA32_PG_D;
     }
 
     // TODO: figure caching

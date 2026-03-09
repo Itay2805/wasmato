@@ -126,9 +126,9 @@ INIT_CODE static err_t early_virt_map(
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
-        uint64_t entry = phys | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_G;
+        uint64_t entry = phys | IA32_PG_P | IA32_PG_A | IA32_PG_G;
         if (protection != MAPPING_PROTECTION_RX) entry |= IA32_PG_NX;
-        if (protection == MAPPING_PROTECTION_RW) entry |= IA32_PG_RW;
+        if (protection == MAPPING_PROTECTION_RW) entry |= IA32_PG_RW | IA32_PG_D;
 
         // and set it
         CHECK(*pte == 0);
