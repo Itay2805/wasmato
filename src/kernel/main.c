@@ -5,7 +5,7 @@
 #include "runtime.h"
 #include "acpi/acpi.h"
 #include "arch/apic.h"
-#include "arch/cpuid.h"
+#include "../common/arch/cpuid.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/smp.h"

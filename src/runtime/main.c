@@ -1,3 +1,6 @@
+#include <stdatomic.h>
+
+#include "arch/intrin.h"
 #include "lib/tsc.h"
 #include "lib/log.h"
 #include "lib/printf.h"
@@ -5,6 +8,9 @@
 
 #include "spidir/log.h"
 #include "spidir/module.h"
+
+// This is used by the tsc header, initialize it in here
+uint64_t g_tsc_freq_hz;
 
 static void spidir_log_callback(spidir_log_level_t level, const char* module, size_t module_len, const char* message, size_t message_len) {
     switch (level) {
@@ -22,22 +28,40 @@ static void timer_handler(interrupt_frame_t* frame) {
     syscall2(SYSCALL_DEBUG_PRINT, "TIMER!\n", sizeof("TIMER!\n") - 1);
 }
 
-uint64_t g_tsc_freq_hz;
-
 __attribute__((force_align_arg_pointer))
 int _start(int cpu) {
-    TRACE("runtime: Usermode entered on CPU #%d", cpu);
+    static atomic_bool sched_ready = false;
+
+    TRACE("runtime: Entered on CPU #%d", cpu);
     if (cpu != 0) {
-        while (1);
+        // for secondary cpus just wait until we are done the init
+        // and the scheduler is ready so we can start scheduling
+        while (!sched_ready) {
+            cpu_relax();
+        }
+
+        TRACE("TODO: startup scheduler on core %d", cpu);
+
+    } else {
+        // setup the tsc freq so we can access it
+        g_tsc_freq_hz = sys_early_timer_get_freq();
+
+        // TODO: setup the scheduler
+
+        // TODO: setup interrupt handling
+
+        // we are done, let the kernel know we won't
+        // need anything else
+        sys_early_done();
+
+        // let the other cores know that we are
+        // ready to run
+        sched_ready = true;
+
+        // TODO: startup scheduler
+        TRACE("TODO: startup scheduler on core %d", cpu);
     }
 
-    g_tsc_freq_hz = sys_early_timer_get_freq();
-    uint8_t vector = sys_early_timer_get_vector();
-    sys_early_interrupt_set_handler(vector, timer_handler);
-
-    sys_early_done();
-
-    sys_timer_set_deadline(tsc_ms_deadline(1000));
-    asm("sti");
+    ERROR("TODO: panic");
     while (1);
 }

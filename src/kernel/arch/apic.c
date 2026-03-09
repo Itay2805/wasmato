@@ -2,7 +2,7 @@
 
 #include <cpuid.h>
 
-#include "intrin.h"
+#include "arch/intrin.h"
 #include "lib/tsc.h"
 #include "mem/direct.h"
 #include "mem/phys_map.h"

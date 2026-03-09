@@ -5,6 +5,7 @@
 #include "lib/elf64.h"
 #include "lib/elf_common.h"
 #include "lib/pcpu.h"
+#include "lib/printf.h"
 #include "lib/string.h"
 #include "user/user.h"
 #include "mem/mappings.h"
@@ -167,8 +168,17 @@ cleanup:
     return err;
 }
 
+static CPU_LOCAL char m_runtime_stack_name[sizeof("runtime-stack-") + 11];
+
 INIT_CODE void runtime_start(void) {
-    void* ptr = user_stack_alloc("test", SIZE_4KB);
-    ASSERT(ptr != NULL);
-    usermode_jump((void*)(uintptr_t)get_cpu_id(), m_runtime_entry_point, ptr);
+    // set the name of the stack
+    char* name = pcpu_get_pointer(m_runtime_stack_name);
+    snprintf_(name, sizeof(m_runtime_stack_name), "runtime-stack-%d", get_cpu_id());
+
+    // allocate a stack, it will be used as the scheduler stack for the runtime
+    void* stack = user_stack_alloc(name, SIZE_4KB);
+    ASSERT(stack != NULL);
+
+    // and jump to it
+    usermode_jump((void*)(uintptr_t)get_cpu_id(), m_runtime_entry_point, stack);
 }

@@ -114,6 +114,9 @@ void syscall_handler(syscall_frame_t* frame) {
 
             // All CPUs have completed init. Unmap and reclaim .text.init pages.
             reclaim_init_mem();
+
+            vmar_dump(&g_kernel_memory);
+            vmar_dump(&g_user_memory);
         } break;
 
         default:

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "regs.h"
+#include "arch/regs.h"
 #include "lib/defs.h"
 #include "uapi/syscall.h"
 
