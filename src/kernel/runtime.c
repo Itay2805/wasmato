@@ -2,11 +2,13 @@
 
 #include <stdint.h>
 
+#include "arch/intr.h"
 #include "lib/elf64.h"
-#include "lib/elf_common.h"
 #include "lib/pcpu.h"
 #include "lib/printf.h"
 #include "lib/string.h"
+#include "lib/tsc.h"
+#include "uapi/entry.h"
 #include "user/user.h"
 #include "mem/mappings.h"
 #include "mem/stack.h"
@@ -42,17 +44,22 @@ INIT_DATA static char m_runtime_elf[] = {
         (type*)&m_runtime_elf[offset__]; \
     })
 
+/**
+ * the runtime entry point, called on all cores with the first argument
+ * being the cpu index
+ */
 INIT_DATA static void* m_runtime_entry_point = NULL;
 
-INIT_CODE err_t load_runtime(void) {
+/**
+ * The TLS data, null if not found
+ */
+INIT_DATA static Elf64_Phdr* m_runtime_tls_phdr = nullptr;
+
+INIT_CODE static err_t runtime_elf_verify_header(void) {
     err_t err = NO_ERROR;
 
-    // NOTE: we are running all this code without the vmar lock
-    //       with the assumption it is done before anything that
-    //       can race with the code exists.
-
-    // validate the elf header
     Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
+
     CHECK(ehdr->e_ident[EI_MAG0] == ELFMAG0);
     CHECK(ehdr->e_ident[EI_MAG1] == ELFMAG1);
     CHECK(ehdr->e_ident[EI_MAG2] == ELFMAG2);
@@ -64,12 +71,18 @@ INIT_CODE err_t load_runtime(void) {
     CHECK(ehdr->e_machine == EM_X86_64);
     CHECK(ehdr->e_type == ET_EXEC);
 
-    // get the load address and top address of the elf, so
-    // we can reserve the top region
-    uintptr_t elf_load_address = -1;
-    size_t elf_top_address = 0;
     CHECK(ehdr->e_phentsize == sizeof(Elf64_Phdr));
+
+cleanup:
+    return err;
+}
+
+INIT_CODE static err_t runtime_elf_get_range(uintptr_t* load_address, size_t* top_address) {
+    err_t err = NO_ERROR;
+
+    Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
     Elf64_Phdr* phdrs = ELF_ARR(Elf64_Phdr, ehdr->e_phnum, ehdr->e_phoff);
+
     for (int i = 0; i < ehdr->e_phnum; i++) {
         Elf64_Phdr* phdr = &phdrs[i];
         if (phdr->p_type != PT_LOAD)
@@ -79,21 +92,23 @@ INIT_CODE err_t load_runtime(void) {
         uintptr_t vaddr = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
 
         // align to page
-        size_t top_address;
-        CHECK(!__builtin_add_overflow(vaddr, phdr->p_memsz, &top_address));
-        top_address = ALIGN_UP(top_address, PAGE_SIZE);
+        size_t tmp_top_address;
+        CHECK(!__builtin_add_overflow(vaddr, phdr->p_memsz, &tmp_top_address));
+        tmp_top_address = ALIGN_UP(tmp_top_address, PAGE_SIZE);
 
-        elf_load_address = MIN(vaddr, elf_load_address);
-        elf_top_address = MAX(top_address, elf_top_address);
+        *load_address = MIN(vaddr, *load_address);
+        *top_address = MAX(tmp_top_address, *top_address);
     }
 
-    // ensure we have at least 4kb before the load address
-    CHECK(elf_load_address >= BASE_4KB);
+cleanup:
+    return err;
+}
 
-    // setup the runtime region, this should have the entire elf inside of it
-    g_runtime_region.base = (void*)elf_load_address;
-    g_runtime_region.page_count = SIZE_TO_PAGES(elf_top_address - elf_load_address);
-    CHECK(vmar_reserve_static(&g_user_memory, &g_runtime_region));
+INIT_CODE static err_t runtime_elf_map(void) {
+    err_t err = NO_ERROR;
+
+    Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
+    Elf64_Phdr* phdrs = ELF_ARR(Elf64_Phdr, ehdr->e_phnum, ehdr->e_phoff);
 
     // now actually map it
     for (int i = 0; i < ehdr->e_phnum; i++) {
@@ -161,7 +176,66 @@ INIT_CODE err_t load_runtime(void) {
         vmar_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
     }
 
+cleanup:
+    return err;
+}
+
+INIT_CODE static err_t runtime_elf_parse_tls(void) {
+    err_t err = NO_ERROR;
+
+    Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
+    Elf64_Phdr* phdrs = ELF_ARR(Elf64_Phdr, ehdr->e_phnum, ehdr->e_phoff);
+
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        Elf64_Phdr* phdr = &phdrs[i];
+        if (phdr->p_type != PT_TLS)
+            continue;
+
+        CHECK(m_runtime_tls_phdr == nullptr);
+        m_runtime_tls_phdr = phdr;
+    }
+
+    if (m_runtime_tls_phdr != nullptr) {
+        // TODO: support for init data
+        CHECK(m_runtime_tls_phdr->p_filesz == 0);
+    }
+
+cleanup:
+    return err;
+}
+
+INIT_CODE err_t load_runtime(void) {
+    err_t err = NO_ERROR;
+
+    // NOTE: we are running all this code without the vmar lock
+    //       with the assumption it is done before anything that
+    //       can race with the code exists.
+
+    // validate the elf header
+    RETHROW(runtime_elf_verify_header());
+
+    // get the load address and top address of the elf, so
+    // we can reserve the top region
+    uintptr_t elf_load_address = -1;
+    size_t elf_top_address = 0;
+    RETHROW(runtime_elf_get_range(&elf_load_address, &elf_top_address));
+
+    // ensure we have at least 4kb before the load address
+    CHECK(elf_load_address >= BASE_4KB);
+
+    // setup the runtime region, this should have the entire elf inside of it
+    g_runtime_region.base = (void*)elf_load_address;
+    g_runtime_region.page_count = SIZE_TO_PAGES(elf_top_address - elf_load_address);
+    CHECK(vmar_reserve_static(&g_user_memory, &g_runtime_region));
+
+    // actually map the elf
+    RETHROW(runtime_elf_map());
+
+    // parse the tls so we can map it
+    RETHROW(runtime_elf_parse_tls());
+
     // save the entry point so we can jump to it
+    Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
     m_runtime_entry_point = (void*)ehdr->e_entry;
 
 cleanup:
@@ -179,6 +253,35 @@ INIT_CODE void runtime_start(void) {
     void* stack = user_stack_alloc(name, SIZE_4KB);
     ASSERT(stack != NULL);
 
+    // setup the runtime params
+    void* user_stack = stack;
+    user_stack -= sizeof(runtime_params_t);
+    user_stack = ALIGN_DOWN(user_stack, 16);
+
+    // we need to write to the usermode stack, lock for write
+    asm("stac");
+
+    // the cpu metadata
+    runtime_params_t* params = user_stack;
+    params->cpu_id = get_cpu_id();
+    params->tsc_freq = g_tsc_freq_hz;
+
+    // pointer to the stack for reuse
+    params->stack = stack;
+
+    // tls info
+    // TODO: somehow pass the init data
+    params->tls_size = m_runtime_tls_phdr != nullptr ? m_runtime_tls_phdr->p_memsz : 0;
+
+    // setup the vector info
+    params->timer_vector = INTR_VECTOR_TIMER;
+    params->first_vector = INTR_VECTOR_TIMER + 1;
+    params->last_vector = 0xFF;
+
+    // lock usermode again
+    asm("clac");
+
     // and jump to it
-    usermode_jump((void*)(uintptr_t)get_cpu_id(), m_runtime_entry_point, stack);
+    user_stack -= 16;
+    usermode_jump(params, m_runtime_entry_point, user_stack);
 }

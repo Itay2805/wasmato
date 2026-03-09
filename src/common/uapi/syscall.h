@@ -136,8 +136,6 @@ typedef enum syscall {
 	SYSCALL_TIMER_CLEAR,
 	SYSCALL_INTERRUPT_ACK,
     SYSCALL_EARLY_INTERRUPT_SET_HANDLER,
-    SYSCALL_EARLY_TIMER_GET_VECTOR,
-	SYSCALL_EARLY_TIMER_GET_FREQ,
     SYSCALL_EARLY_DONE,
 } syscall_t;
 
@@ -198,14 +196,6 @@ typedef void (*interrupt_handler_t)(interrupt_frame_t* frame);
 
 static inline void sys_early_interrupt_set_handler(uint8_t vector, interrupt_handler_t handler) {
 	(void)syscall2(SYSCALL_EARLY_INTERRUPT_SET_HANDLER, vector, handler);
-}
-
-static inline uint8_t sys_early_timer_get_vector(void) {
-	return syscall0(SYSCALL_EARLY_TIMER_GET_VECTOR);
-}
-
-static inline uint64_t sys_early_timer_get_freq(void) {
-	return syscall0(SYSCALL_EARLY_TIMER_GET_FREQ);
 }
 
 static inline void sys_early_done(void) {

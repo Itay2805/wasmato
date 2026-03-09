@@ -8,6 +8,7 @@
 
 #include "spidir/log.h"
 #include "spidir/module.h"
+#include "uapi/entry.h"
 
 // This is used by the tsc header, initialize it in here
 uint64_t g_tsc_freq_hz;
@@ -29,22 +30,22 @@ static void timer_handler(interrupt_frame_t* frame) {
 }
 
 __attribute__((force_align_arg_pointer))
-int _start(int cpu) {
+int _start(runtime_params_t* params) {
     static atomic_bool sched_ready = false;
 
-    TRACE("runtime: Entered on CPU #%d", cpu);
-    if (cpu != 0) {
+    TRACE("runtime: Entered on CPU #%d", params->cpu_id);
+    if (params->cpu_id != 0) {
         // for secondary cpus just wait until we are done the init
         // and the scheduler is ready so we can start scheduling
         while (!sched_ready) {
             cpu_relax();
         }
 
-        TRACE("TODO: startup scheduler on core %d", cpu);
+        TRACE("TODO: startup scheduler on core %d", params->cpu_id);
 
     } else {
         // setup the tsc freq so we can access it
-        g_tsc_freq_hz = sys_early_timer_get_freq();
+        g_tsc_freq_hz = params->tsc_freq;
 
         // TODO: setup the scheduler
 
@@ -59,7 +60,7 @@ int _start(int cpu) {
         sched_ready = true;
 
         // TODO: startup scheduler
-        TRACE("TODO: startup scheduler on core %d", cpu);
+        TRACE("TODO: startup scheduler on core %d", params->cpu_id);
     }
 
     ERROR("TODO: panic");

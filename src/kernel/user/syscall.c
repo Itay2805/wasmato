@@ -8,7 +8,6 @@
 #include "arch/regs.h"
 #include "lib/pcpu.h"
 #include "lib/string.h"
-#include "lib/tsc.h"
 #include "mem/mappings.h"
 #include "mem/phys.h"
 #include "mem/virt.h"
@@ -89,16 +88,6 @@ void syscall_handler(syscall_frame_t* frame) {
         case SYSCALL_EARLY_INTERRUPT_SET_HANDLER: {
             CHECK(!m_early_done);
             intr_set_user_handler(frame->arg1, (interrupt_handler_t)frame->arg2);
-        } break;
-
-        case SYSCALL_EARLY_TIMER_GET_VECTOR: {
-            CHECK(!m_early_done);
-            frame->result = INTR_VECTOR_TIMER;
-        } break;
-
-        case SYSCALL_EARLY_TIMER_GET_FREQ: {
-            CHECK(!m_early_done);
-            frame->result = g_tsc_freq_hz;
         } break;
 
         case SYSCALL_EARLY_DONE: {
