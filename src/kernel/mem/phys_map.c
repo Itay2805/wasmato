@@ -286,8 +286,8 @@ void phys_map_dump(void) {
 uint8_t get_physical_address_bits(void) {
     CPUID_VIR_PHY_ADDRESS_SIZE_EAX eax = {};
     uint32_t b, c, d;
-    if (__get_cpuid(CPUID_VIR_PHY_ADDRESS_SIZE, &eax.packed, &b, &c, &d)) {
-        return eax.physical_address_bits;
+    if (__get_cpuid(CPUID_VIR_PHY_ADDRESS_SIZE, &eax.raw, &b, &c, &d)) {
+        return eax.PhysicalAddressBits;
     }
     return 0;
 }

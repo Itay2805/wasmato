@@ -10,6 +10,13 @@
 #define WARN(fmt, ...)      debug_print("[!] " fmt "\n", ##__VA_ARGS__)
 #define ERROR(fmt, ...)     debug_print("[-] " fmt "\n", ##__VA_ARGS__)
 
+#define WARN_ON(expr, fmt, ...) \
+    do { \
+        if (expr) { \
+            WARN(fmt, ##__VA_ARGS__); \
+        } \
+    } while (0)
+
 /**
  * Early logging initialization
  */

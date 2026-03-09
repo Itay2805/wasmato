@@ -5,6 +5,7 @@
 #include "runtime.h"
 #include "acpi/acpi.h"
 #include "arch/apic.h"
+#include "arch/cpuid.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/smp.h"
@@ -29,69 +30,37 @@ INIT_DATA static atomic_size_t m_smp_count = 0;
  */
 INIT_DATA static atomic_bool m_smp_fail = false;
 
-typedef struct xcr0_feature {
-    const char* name;
-    bool enable;
-    bool required;
-} xcr0_feature_t;
-
-/**
- * The features that we support and want to enable if supported
- */
-static const xcr0_feature_t m_xcr0_features[] = {
-    [0] = { "x87", true, true },
-    [1] = { "SSE", true, true },
-    [2] = { "AVX", true, true },
-    [3] = { "MPX[BNDREG]", false, false },
-    [4] = { "MPX[BNDCSR]", false, false },
-    [5] = { "AVX-512[OPMASK]", false, false },
-    [6] = { "AVX-512[ZMM_Hi256]", false, false },
-    [7] = { "AVX-512[Hi16_ZMM]", false, false },
-    [8] = { "PT", false, false },
-    [9] = { "PKRU", false, false },
-    [10] = { "PASID", false, false },
-    [11] = { "CET[U]", false, false },
-    [12] = { "CET[S]", false, false },
-    [13] = { "HDC", false, false },
-    [14] = { "UINTR", false, false },
-    [15] = { "LBR", false, false },
-    [16] = { "HWP", false, false },
-    [17] = { "AMX[TILECFG]", false, false },
-    [18] = { "AMX[XTILEDATA]", false, false },
-    [19] = { "APX", false, false },
-};
-
 INIT_CODE static void set_extended_state_features(void) {
     static bool first = true;
     static uint32_t first_xcr0 = 0;
     uint32_t a, b, c, d;
 
-    // ensure we have xsave (for the basic support sutff)
-    __cpuid(1, a, b, c, d);
-    ASSERT(c & bit_XSAVE, "Missing support for xsave");
-
-    // we are going to force xsaveopt for now
-    __cpuid_count(0xD, 1, a, b, c, d);
-    ASSERT(a & bit_XSAVEOPT, "Missing support for xsaveopt");
-
     // enable/disable extended features or something
-    if (first) TRACE("cpu: extended state:");
-    __cpuid_count(0xD, 0, a, b, c, d);
+    CPUID_EXTENDED_STATE_MAIN_LEAF_EAX extended_state_main_leaf_eax = {};
+    ASSERT(__get_cpuid_count(
+        CPUID_EXTENDED_STATE,
+        CPUID_EXTENDED_STATE_MAIN_LEAF,
+        &extended_state_main_leaf_eax.raw,
+        &b, &c, &d
+    ));
+
+    // enable the features we support
     uint64_t xcr0 = 0;
-    uint64_t features = a | ((uint64_t)d << 32);
-    for (int i = 0; i < ARRAY_LENGTH(m_xcr0_features); i++) {
-        const xcr0_feature_t* feature = &m_xcr0_features[i];
-        uint64_t bit = 1 << i;
-        if ((features & bit) != 0) {
-            if (feature->enable) {
-                xcr0 |= bit;
-                if (first) TRACE("cpu: \t- %s [enabling]", feature->name);
-            } else {
-                if (first) TRACE("cpu: \t- %s", feature->name);
-            }
-        } else {
-            ASSERT(!feature->required, "Missing required feature %s", feature->name);
-        }
+    if (first) TRACE("cpu: extended state:");
+
+    if (extended_state_main_leaf_eax.x87) {
+        if (first) TRACE("cpu: - x87");
+        xcr0 |= BIT0;
+    }
+
+    if (extended_state_main_leaf_eax.SSE) {
+        if (first) TRACE("cpu: - SSE");
+        xcr0 |= BIT1;
+    }
+
+    if (extended_state_main_leaf_eax.AVX) {
+        if (first) TRACE("cpu: - AVX");
+        xcr0 |= BIT2;
     }
 
     // ensure that we have a consistent feature view
@@ -118,17 +87,57 @@ INIT_CODE static void string_verify_features(void) {
     // if ((eax & BIT12) == 0) LOG_WARN("string: Missing fast short REP CMPSB/CSASB");
 }
 
+INIT_CODE static void validate_cpu_features(void) {
+    uint32_t a, b, c, d;
+
+    CPUID_VERSION_INFO_ECX version_info_ecx = {};
+    ASSERT(__get_cpuid(CPUID_VERSION_INFO, &a, &b, &version_info_ecx.raw, &d));
+    ASSERT(version_info_ecx.XSAVE, "Missing XSAVE support");
+
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_EBX structured_extended_feature_flags_ebx = {};
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
+    ASSERT(__get_cpuid_count(
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
+        &a,
+        &structured_extended_feature_flags_ebx.raw,
+        &structured_extended_feature_flags_ecx.raw,
+        &d
+    ));
+    ASSERT(structured_extended_feature_flags_ebx.SMAP, "Missing SMAP support");
+    ASSERT(structured_extended_feature_flags_ebx.SMEP, "Missing SMEP support");
+    ASSERT(structured_extended_feature_flags_ebx.FSGSBASE, "Missing FSGSBASE support");
+    ASSERT(structured_extended_feature_flags_ecx.UMIP, "Missing UMIP support");
+
+    CPUID_EXTENDED_STATE_SUB_LEAF_EAX extended_state_sub_leaf_eax = {};
+    ASSERT(__get_cpuid_count(
+        CPUID_EXTENDED_STATE,
+        CPUID_EXTENDED_STATE_SUB_LEAF,
+        &extended_state_sub_leaf_eax.raw,
+        &b,
+        &c,
+        &d
+    ));
+    ASSERT(extended_state_sub_leaf_eax.XSAVEOPT, "Missing XSAVEOPT support");
+
+    CPUID_EXTENDED_CPU_SIG_EDX extended_cpu_sig_edx = {};
+    ASSERT(__get_cpuid(
+        CPUID_EXTENDED_CPU_SIG,
+        &a, &b, &c,
+        &extended_cpu_sig_edx.raw
+    ));
+    ASSERT(extended_cpu_sig_edx.NX, "Missing NX support");
+    ASSERT(extended_cpu_sig_edx.SYSCALL_SYSRET, "Missing SYSCALL/SYSRET support");
+}
+
 INIT_CODE static void set_cpu_features(void) {
+    // ensure all required cpu features exist
+    validate_cpu_features();
+
     // PG/PE - required for long mode
     // MP - required for SSE
     // WP - write protections
     __writecr0(CR0_PG | CR0_PE | CR0_MP | CR0_WP);
-
-    // ensure we have support for smap
-    // ensure we have xsave (for the basic support sutff)
-    uint32_t a, b, c, d;
-    __cpuid(1, a, b, c, d);
-    ASSERT(c & bit_XSAVE, "Missing support for xsave");
 
     // PAE - required for long mode
     // OSFXSR/OSXMMEXCPT - required for SSE

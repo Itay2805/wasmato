@@ -213,7 +213,7 @@ INIT_CODE static err_t early_map_direct_map(uint64_t* pml4) {
     bool has_1gb_pages = false;
     uint32_t a, b, c, d;
     if (__get_cpuid(CPUID_EXTENDED_CPU_SIG, &a, &b, &c, &d)) {
-        CPUID_EXTENDED_CPU_SIG_EDX edx = { .packed = d };
+        CPUID_EXTENDED_CPU_SIG_EDX edx = { .raw = d };
         has_1gb_pages = edx.Page1GB;
     }
 
