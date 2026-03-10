@@ -2,6 +2,7 @@
 
 .global syscall_entry
 syscall_entry:
+    endbr64
 
     /**
      * Ensure we have the kernel GS base now

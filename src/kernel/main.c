@@ -31,8 +31,8 @@ INIT_DATA static atomic_size_t m_smp_count = 0;
 INIT_DATA static atomic_bool m_smp_fail = false;
 
 INIT_CODE static void set_extended_state_features(void) {
-    static bool first = true;
-    static uint32_t first_xcr0 = 0;
+    INIT_DATA static bool first = true;
+    INIT_DATA static uint32_t first_xcr0 = 0;
     uint32_t a, b, c, d;
 
     // enable/disable extended features or something
@@ -96,13 +96,14 @@ INIT_CODE static void validate_cpu_features(void) {
 
     CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_EBX structured_extended_feature_flags_ebx = {};
     CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_EDX structured_extended_feature_flags_edx = {};
     ASSERT(__get_cpuid_count(
         CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
         CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
         &a,
         &structured_extended_feature_flags_ebx.raw,
         &structured_extended_feature_flags_ecx.raw,
-        &d
+        &structured_extended_feature_flags_edx.raw
     ));
     ASSERT(structured_extended_feature_flags_ebx.SMAP, "Missing SMAP support");
     ASSERT(structured_extended_feature_flags_ebx.SMEP, "Missing SMEP support");
@@ -138,6 +139,72 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(extended_time_stamp_counter_edx.TSC_INVARIANT, "Missing TSC_INVARIANT support");
 }
 
+INIT_CODE static void configure_cet(void) {
+    INIT_DATA static bool first = true;
+    INIT_DATA static bool supported = false;
+
+    uint32_t a, b;
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_EDX structured_extended_feature_flags_edx = {};
+    ASSERT(__get_cpuid_count(
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
+        &a,
+        &b,
+        &structured_extended_feature_flags_ecx.raw,
+        &structured_extended_feature_flags_edx.raw
+    ));
+
+    // if CET is not supported at all bail
+    if (
+        !structured_extended_feature_flags_ecx.CET_SS &&
+        !structured_extended_feature_flags_edx.CET_IBT
+    ) {
+        if (!first) {
+            ASSERT(!supported);
+        }
+        first = true;
+
+        return;
+    }
+
+    if (!first) {
+        ASSERT(supported);
+    }
+    first = true;
+    supported = true;
+
+    // enable CET in general
+    uint32_t cr4 = __readcr4();
+    cr4 |= CR4_CET;
+    __writecr4(cr4);
+
+    MSR_IA32_CET_REGISTER u_cet = {};
+    MSR_IA32_CET_REGISTER s_cet = {};
+
+    // enable IBT on both usermode and kernel mode
+    if (structured_extended_feature_flags_edx.CET_IBT) {
+        if (first) {
+            TRACE("cpu: enabling IBT");
+        }
+        u_cet.ENDBR_EN = 1;
+        s_cet.ENDBR_EN = 1;
+        u_cet.NO_TRACK_EN = 1;
+        s_cet.NO_TRACK_EN = 1;
+    }
+
+    // enable shadow stack only for usermode for now
+    // TODO: how does bootstrapping of this works
+    if (structured_extended_feature_flags_edx.CET_IBT) {
+        TRACE("cpu: enabling Shadow Stack");
+        // TODO: this
+    }
+
+    // configure both
+    __wrmsr(MSR_IA32_U_CET, u_cet.raw);
+    __wrmsr(MSR_IA32_S_CET, s_cet.raw);
+}
+
 INIT_CODE static void set_cpu_features(void) {
     // ensure all required cpu features exist
     validate_cpu_features();
@@ -169,6 +236,9 @@ INIT_CODE static void set_cpu_features(void) {
 
     // setup extended cpu features
     set_extended_state_features();
+
+    // setup CET
+    configure_cet();
 }
 
 INIT_CODE static void halt() {

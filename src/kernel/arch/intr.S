@@ -9,6 +9,8 @@ common_exception_stub:
     .cfi_offset %rip, 16
     .cfi_offset %rsp, 40
 
+    endbr64
+
     testl $3, 32(%rsp)
     jz 1f
     swapgs

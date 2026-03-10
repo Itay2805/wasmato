@@ -159,7 +159,33 @@ typedef union {
     uint32_t packed;
 } MSR_IA32_EFER_REGISTER;
 
-#define MSR_IA32_TSC_DEADLINE  0x000006E0
+#define MSR_IA32_U_CET 0x6A0
+#define MSR_IA32_S_CET 0x6A2
+
+typedef union {
+    struct {
+        uint64_t SH_STK_EN : 1;
+        uint64_t WR_SHSTK_EN : 1;
+        uint64_t ENDBR_EN : 1;
+        uint64_t LEG_IW_EN : 1;
+        uint64_t NO_TRACK_EN : 1;
+        uint64_t SUPPRESS_DIS : 1;
+        uint64_t : 4;
+        uint64_t SUPPRESS : 1;
+        uint64_t TRACKER : 1;
+        uint64_t EB_LEG_BITMAP_BASE : 52;
+    };
+    uint64_t raw;
+} MSR_IA32_CET_REGISTER;
+
+#define MSR_IA32_PL0_SSP 0x6A4
+#define MSR_IA32_PL1_SSP 0x6A5
+#define MSR_IA32_PL2_SSP 0x6A6
+#define MSR_IA32_PL3_SSP 0x6A7
+
+#define MSR_IA32_INTERRUPT_SSP_TABLE_ADDR 0x6A8
+
+#define MSR_IA32_TSC_DEADLINE 0x6E0
 
 static inline INTRIN_ATTR void __wrmsr(uint32_t index, uint64_t value) {
     uint32_t low_data = value;

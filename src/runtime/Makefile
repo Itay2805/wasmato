@@ -7,6 +7,8 @@ RUNTIME_CFLAGS += -Isrc/common
 RUNTIME_CFLAGS += -fno-omit-frame-pointer -fvisibility=hidden
 RUNTIME_CFLAGS += -Wno-unused-label
 
+RUNTIME_CFLAGS += -fcf-protection=full
+
 RUNTIME_CFLAGS += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
 RUNTIME_CFLAGS += -mcmodel=small
 RUNTIME_CFLAGS += -nostdlib -nostdinc
