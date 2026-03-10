@@ -25,7 +25,7 @@ quiet_cmd_run = QEMU    $<
                     -cpu host,migratable=off \
                     -machine q35 \
                     -m 256M \
-                    -smp 1 \
+                    -smp 4 \
                     -s \
                     -drive format=raw,file=$<,media=disk \
                     -debugcon stdio \

@@ -27,6 +27,11 @@ typedef enum vmar_type : uint8_t {
     VMAR_TYPE_PHYS,
 
     /**
+     * Page allocated for a shadow stack
+     */
+    VMAR_TYPE_SHADOW_STACK,
+
+    /**
      * Contains allocated stack pages
      */
     VMAR_TYPE_STACK,

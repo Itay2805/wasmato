@@ -10,6 +10,7 @@ typedef struct runtime_params {
      * The stack allocated for the cpu, so it can be reused or freed
      */
     void* stack;
+    void* shadow_stack;
 
     /**
      * The size of the TLS data without the TCB

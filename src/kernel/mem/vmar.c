@@ -256,6 +256,8 @@ static void vmar_print_tree_rec(vmar_t* region, char* prefix, size_t plen, bool 
         type_str = "REGION ";
     } else if (region->type == VMAR_TYPE_STACK) {
         type_str = "STACK  ";
+    } else if (region->type == VMAR_TYPE_SHADOW_STACK) {
+        type_str = "SHSTK  ";
     } else {
         ASSERT(false);
     }

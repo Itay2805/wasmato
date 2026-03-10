@@ -120,19 +120,11 @@ static void default_exception_handler(interrupt_frame_t* ctx, uint8_t exception,
         const char* user = (error_code & IA32_PF_EC_USER) ? "user-mode access" : "kernel-mode access";
         ERROR("page fault: %s, %s, %s", prot, access, user);
 
-        if (error_code & IA32_PF_EC_RSVD) {
-            ERROR("\tuse of reserved bit detected");
-        } else if (error_code & IA32_PF_EC_INSTR) {
-            ERROR("\tfault was an instruction fetch");
-        } else if (error_code & IA32_PF_EC_PK) {
-            ERROR("\tprotections keys block access");
-        } else if (error_code & IA32_PF_EC_SHSTK) {
-            ERROR("\tshadow stack access fault");
-        } else if (error_code & IA32_PF_EC_SGX) {
-            ERROR("\tSGX MMU page-fault");
-        } else if (error_code & IA32_PF_EC_RMP) {
-            ERROR("\tfault was due to RMP violation");
-        }
+        if (error_code & IA32_PF_EC_RSVD) ERROR("page fault: use of reserved bit detected");
+        if (error_code & IA32_PF_EC_INSTR) ERROR("page fault: fault was an instruction fetch");
+        if (error_code & IA32_PF_EC_PK) ERROR("page fault: protections keys block access");
+        if (error_code & IA32_PF_EC_SHSTK) ERROR("page fault: shadow stack access fault");
+        if (error_code & IA32_PF_EC_SGX) ERROR("page fault: SGX MMU page-fault");
         ERROR("");
     } else if (exception == EXCEPT_IA32_GP_FAULT && error_code != 0) {
         selector_error_code_t selector = (selector_error_code_t) { .packed = error_code };

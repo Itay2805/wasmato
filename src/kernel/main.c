@@ -5,7 +5,7 @@
 #include "runtime.h"
 #include "acpi/acpi.h"
 #include "arch/apic.h"
-#include "../common/arch/cpuid.h"
+#include "arch/cpuid.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/smp.h"
@@ -18,6 +18,7 @@
 #include "mem/vmar.h"
 #include "lib/pcpu.h"
 #include "time/tsc.h"
+#include "user/stack.h"
 #include "user/syscall.h"
 
 /**
@@ -191,9 +192,17 @@ INIT_CODE static void configure_cet(void) {
     }
 
     // enable shadow stack only for usermode for now
-    // TODO: how does bootstrapping of this works
-    if (structured_extended_feature_flags_edx.CET_IBT) {
-        // TODO: this
+    if (structured_extended_feature_flags_ecx.CET_SS) {
+        if (first) {
+            TRACE("cpu: enabling Shadow Stacks");
+        }
+
+        // mark that shadow stacks are supported
+        g_shadow_stack_supported = true;
+
+        // enable usermode shadow stack
+        // TODO: how to enable kernel mode shadow stacks correctly?
+        u_cet.SH_STK_EN = 1;
     }
 
     // configure both

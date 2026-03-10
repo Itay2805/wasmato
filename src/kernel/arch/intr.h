@@ -30,7 +30,6 @@
 #define IA32_PF_EC_PK       BIT5
 #define IA32_PF_EC_SHSTK    BIT6
 #define IA32_PF_EC_SGX      BIT15
-#define IA32_PF_EC_RMP      BIT31
 
 #define INTR_VECTOR_TIMER       0x20
 #define INTR_VECTOR_IPI         0xF0

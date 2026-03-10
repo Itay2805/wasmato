@@ -8,6 +8,7 @@
 #include "lib/ipi.h"
 #include "lib/string.h"
 #include "sync/spinlock.h"
+#include "user/stack.h"
 
 /**
  * The kernel top level cr3
@@ -244,7 +245,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     vmar_lock();
 
     // these are the only accesses that could make sense for our handler
-    uint32_t allowed_mask = IA32_PF_EC_WRITE | IA32_PF_EC_USER;
+    uint32_t allowed_mask = IA32_PF_EC_WRITE | IA32_PF_EC_USER | IA32_PF_EC_SHSTK;
     CHECK((code & allowed_mask) == code);
 
     // get the region it happened in
@@ -276,6 +277,19 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         if (mapping->alloc.protection == MAPPING_PROTECTION_RO) {
             CHECK((code & IA32_PF_EC_WRITE) == 0);
         }
+
+    }
+
+    if (mapping->type == VMAR_TYPE_SHADOW_STACK) {
+        // ensure we actually enabled shadow stack support
+        CHECK(g_shadow_stack_supported);
+
+        // fault on shadow stack must come from the shadow stack
+        // access itself and not from a normal access
+        CHECK((code & IA32_PF_EC_SHSTK) != 0);
+    } else {
+        // any other region should never have a shadow stack access
+        CHECK((code & IA32_PF_EC_SHSTK) == 0);
     }
 
     // get the pte, we assume it was not allocated yet
@@ -292,7 +306,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         size_t offset = ALIGN_DOWN(addr, PAGE_SIZE) - (uintptr_t)mapping->base;
         phys = mapping->phys.phys + offset;
 
-    } else if (mapping->type == VMAR_TYPE_ALLOC || mapping->type == VMAR_TYPE_STACK) {
+    } else if (mapping->type == VMAR_TYPE_ALLOC || mapping->type == VMAR_TYPE_STACK || mapping->type == VMAR_TYPE_SHADOW_STACK) {
         // allocate the page
         void* page = phys_alloc(PAGE_SIZE);
         CHECK(page != NULL);
@@ -325,6 +339,11 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         // always set it because for shadow stacks we need it to be on
         // on a non-writable page
         new_pte |= IA32_PG_RW | IA32_PG_D;
+    } else if (mapping->type == VMAR_TYPE_SHADOW_STACK) {
+        // if this is a shadow stack then mark it with the dirty bit,
+        // which is basically how you mark a page to be usable as shadow
+        // stack
+        new_pte |= IA32_PG_D;
     }
 
     // TODO: figure caching

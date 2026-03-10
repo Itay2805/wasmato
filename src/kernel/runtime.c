@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "arch/intr.h"
+#include "arch/intrin.h"
 #include "arch/smp.h"
 #include "lib/elf64.h"
 #include "lib/pcpu.h"
@@ -12,7 +13,7 @@
 #include "uapi/entry.h"
 #include "user/user.h"
 #include "mem/mappings.h"
-#include "mem/stack.h"
+#include "user/stack.h"
 
 /**
  * The elf of the usermode runtime
@@ -247,11 +248,11 @@ INIT_CODE void runtime_start(void) {
     snprintf_(name, sizeof(m_runtime_stack_name), "runtime-stack-%d", get_cpu_id());
 
     // allocate a stack, it will be used as the scheduler stack for the runtime
-    void* stack = user_stack_alloc(name, SIZE_4KB);
-    ASSERT(stack != NULL);
+    stack_alloc_t stack_alloc = {};
+    ASSERT(!IS_ERROR(user_stack_alloc(&stack_alloc, name, SIZE_4KB)));
 
     // setup the runtime params
-    void* user_stack = stack;
+    void* user_stack = stack_alloc.stack;
     user_stack -= sizeof(runtime_params_t);
     user_stack = ALIGN_DOWN(user_stack, 16);
 
@@ -265,7 +266,8 @@ INIT_CODE void runtime_start(void) {
     params->tsc_freq = g_tsc_freq_hz;
 
     // pointer to the stack for reuse
-    params->stack = stack;
+    params->stack = stack_alloc.stack;
+    params->shadow_stack = stack_alloc.shadow_stack;
 
     // tls info
     // TODO: somehow pass the init data
@@ -279,7 +281,14 @@ INIT_CODE void runtime_start(void) {
     // lock usermode again
     asm("clac");
 
-    // and jump to it
+    // for dummy region
     user_stack -= 16;
+
+    // if we have a shadow stack set it now
+    if (stack_alloc.shadow_stack) {
+        __wrmsr(MSR_IA32_PL3_SSP, (uint64_t)stack_alloc.shadow_stack);
+    }
+
+    // and jump to it
     usermode_jump(params, m_runtime_entry_point, user_stack);
 }
