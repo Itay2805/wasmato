@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "arch/intr.h"
+#include "arch/smp.h"
 #include "lib/elf64.h"
 #include "lib/pcpu.h"
 #include "lib/printf.h"
@@ -260,6 +261,7 @@ INIT_CODE void runtime_start(void) {
     // the cpu metadata
     runtime_params_t* params = user_stack;
     params->cpu_id = get_cpu_id();
+    params->cpu_count = g_cpu_count;
     params->tsc_freq = g_tsc_freq_hz;
 
     // pointer to the stack for reuse
@@ -272,7 +274,7 @@ INIT_CODE void runtime_start(void) {
     // setup the vector info
     params->timer_vector = INTR_VECTOR_TIMER;
     params->first_vector = INTR_VECTOR_TIMER + 1;
-    params->last_vector = 0xFF;
+    params->last_vector = INTR_VECTOR_SPURIOUS - 16;
 
     // lock usermode again
     asm("clac");

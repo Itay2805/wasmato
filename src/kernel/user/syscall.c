@@ -6,6 +6,7 @@
 #include "arch/intr.h"
 #include "arch/intrin.h"
 #include "arch/regs.h"
+#include "lib/ipi.h"
 #include "lib/pcpu.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
@@ -52,12 +53,15 @@ static void copy_from_user(void* dst, uintptr_t src, size_t size) {
 
 OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     err_t err = NO_ERROR;
+    ipi_enable();
 
     switch (frame->syscall) {
         case SYSCALL_DEBUG_PRINT: {
             char buffer[512];
-            copy_from_user(buffer, frame->arg1, frame->arg2);
-            debug_print("%.*s", (int)frame->arg2, buffer);
+            int len = MIN(frame->arg2, sizeof(buffer) - 1);
+            copy_from_user(buffer, frame->arg1, len);
+            buffer[len] = '\0';
+            debug_print("%.*s", len, buffer);
         } break;
 
         case SYSCALL_HEAP_ALLOC: {
@@ -113,6 +117,7 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     }
 
 cleanup:
+    ipi_disable();
     ASSERT(!IS_ERROR(err), "syscall: error while performing syscall");
 }
 

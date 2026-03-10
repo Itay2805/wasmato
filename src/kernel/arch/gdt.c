@@ -21,12 +21,12 @@ typedef struct gdt {
     gdt_entries_t* entries;
 } PACKED gdt_t;
 
-LATE_RO static gdt_entries_t m_entries = {
+LATE_RO static gdt_entries_t m_gdt_entries = {
     .kernel_code = {   // kernel code
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
-        .access         = 0b10011010,
+        .access         = 0b10011011,
         .granularity    = 0b00100000,
         .base_high      = 0x00
     },
@@ -34,7 +34,7 @@ LATE_RO static gdt_entries_t m_entries = {
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
-        .access         = 0b10010010,
+        .access         = 0b10010011,
         .granularity    = 0b00000000,
         .base_high      = 0x00
     },
@@ -42,7 +42,7 @@ LATE_RO static gdt_entries_t m_entries = {
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
-        .access         = 0b11110010,
+        .access         = 0b11110011,
         .granularity    = 0b00000000,
         .base_high      = 0x00
     },
@@ -50,7 +50,7 @@ LATE_RO static gdt_entries_t m_entries = {
         .limit          = 0x0000,
         .base_low       = 0x0000,
         .base_mid       = 0x00,
-        .access         = 0b11111010,
+        .access         = 0b11111011,
         .granularity    = 0b00100000,
         .base_high      = 0x00
     },
@@ -70,7 +70,7 @@ LATE_RO static gdt_entries_t m_entries = {
 INIT_CODE void init_gdt() {
     gdt_t gdt = {
         .size = sizeof(gdt_entries_t) - 1,
-        .entries = &m_entries
+        .entries = &m_gdt_entries
     };
     asm volatile (
         "lgdt %0\n"
@@ -131,19 +131,19 @@ INIT_CODE void init_tss(void) {
     // set the stack for normal exceptions, we also use the same stack
     // for syscalls, because it stays in the same ring the stack won't
     // switch so we should be fine to re-use it
-    g_syscall_stack = (uintptr_t)m_exception_stack + SIZE_4KB - 16;
-    tss->rsp0 = (uintptr_t)m_exception_stack + SIZE_4KB - 16;
+    g_syscall_stack = (uintptr_t)pcpu_get_pointer(m_exception_stack) + SIZE_4KB - 16;
+    tss->rsp0 = (uintptr_t)pcpu_get_pointer(m_exception_stack) + SIZE_4KB - 16;
 
     spinlock_acquire(&m_tss_lock);
 
     // setup the TSS gdt entry
-    m_entries.tss.length = sizeof(tss64_t);
-    m_entries.tss.low = (uint16_t)(uintptr_t)tss;
-    m_entries.tss.mid = (uint8_t)((uintptr_t)tss >> 16u);
-    m_entries.tss.high = (uint8_t)((uintptr_t)tss >> 24u);
-    m_entries.tss.upper32 = (uint32_t)((uintptr_t)tss >> 32u);
-    m_entries.tss.flags1 = 0b10001001;
-    m_entries.tss.flags2 = 0b00000000;
+    m_gdt_entries.tss.length = sizeof(tss64_t);
+    m_gdt_entries.tss.low = (uint16_t)(uintptr_t)tss;
+    m_gdt_entries.tss.mid = (uint8_t)((uintptr_t)tss >> 16u);
+    m_gdt_entries.tss.high = (uint8_t)((uintptr_t)tss >> 24u);
+    m_gdt_entries.tss.upper32 = (uint32_t)((uintptr_t)tss >> 32u);
+    m_gdt_entries.tss.flags1 = 0b10001001;
+    m_gdt_entries.tss.flags2 = 0b00000000;
 
     // load the TSS into the cache
     asm volatile ("ltr %%ax" : : "a"(GDT_TSS) : "memory");

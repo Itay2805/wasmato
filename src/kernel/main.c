@@ -171,7 +171,7 @@ INIT_CODE static void configure_cet(void) {
     if (!first) {
         ASSERT(supported);
     }
-    first = true;
+    first = false;
     supported = true;
 
     MSR_IA32_CET_REGISTER u_cet = {};
@@ -193,7 +193,6 @@ INIT_CODE static void configure_cet(void) {
     // enable shadow stack only for usermode for now
     // TODO: how does bootstrapping of this works
     if (structured_extended_feature_flags_edx.CET_IBT) {
-        TRACE("cpu: enabling Shadow Stack");
         // TODO: this
     }
 
@@ -270,6 +269,11 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
 
     // we are done
     m_smp_count++;
+
+    // wait for all cores to start
+    while (m_smp_count != g_cpu_count) {
+        cpu_relax();
+    }
 
     // we can trigger the scheduler,
     runtime_start();
@@ -348,25 +352,23 @@ OMIT_ENDBR INIT_CODE void _start() {
 
             // allocate the per-cpu storage now that we know our id
             init_lapic_per_core();
-
-            m_smp_count++;
         } else {
             // start it up
             response->cpus[i]->extra_argument = i;
             response->cpus[i]->goto_address = (void*)smp_entry;
         }
-
-        while (m_smp_count != i + 1) {
-            cpu_relax();
-        }
     }
 
     // wait for smp to finish up
-    // TODO: timeout?
-    while (m_smp_count != g_cpu_count) {
+    while (m_smp_count != g_cpu_count - 1) {
         cpu_relax();
     }
     TRACE("smp: Finished SMP startup");
+    TRACE("smp: Starting usermode");
+
+    // perform the last increment to let the rest of
+    // the cores enter usermode
+    m_smp_count++;
 
     // jump to the runtime
     runtime_start();

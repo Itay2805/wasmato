@@ -38,31 +38,6 @@ typedef struct intr {
 // Exception handling - has a bunch of code to save registers so we can debug more easily
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-typedef struct exception_frame {
-    uint64_t r15;
-    uint64_t r14;
-    uint64_t r13;
-    uint64_t r12;
-    uint64_t r11;
-    uint64_t r10;
-    uint64_t r9;
-    uint64_t r8;
-    uint64_t rbp;
-    uint64_t rdi;
-    uint64_t rsi;
-    uint64_t rdx;
-    uint64_t rcx;
-    uint64_t rbx;
-    uint64_t rax;
-    uint64_t int_num;
-    uint64_t error_code;
-    uint64_t rip;
-    uint64_t cs;
-    rflags_t rflags;
-    uint64_t rsp;
-    uint64_t ss;
-} exception_frame_t;
-
 typedef union selector_error_code {
     struct {
         uint32_t e : 1;
@@ -71,61 +46,6 @@ typedef union selector_error_code {
     };
     uint32_t packed;
 } PACKED selector_error_code_t;
-
-/**
- * Forward declare the exception handler
- */
-void common_exception_handler(exception_frame_t* ctx);
-
-#define EXCEPTION_STUB(num) \
-    __attribute__((naked)) \
-    static void exception_handler_##num() { \
-        __asm__( \
-            "pushq $0\n" \
-            "pushq $" #num "\n" \
-            "jmp common_exception_stub"); \
-    }
-
-#define EXCEPTION_ERROR_STUB(num) \
-    __attribute__((naked)) \
-    static void exception_handler_##num() { \
-        __asm__( \
-            "pushq $" #num "\n" \
-            "jmp common_exception_stub"); \
-    }
-
-EXCEPTION_STUB(0x00);
-EXCEPTION_STUB(0x01);
-EXCEPTION_STUB(0x02);
-EXCEPTION_STUB(0x03);
-EXCEPTION_STUB(0x04);
-EXCEPTION_STUB(0x05);
-EXCEPTION_STUB(0x06);
-EXCEPTION_STUB(0x07);
-EXCEPTION_ERROR_STUB(0x08);
-EXCEPTION_STUB(0x09);
-EXCEPTION_ERROR_STUB(0x0A);
-EXCEPTION_ERROR_STUB(0x0B);
-EXCEPTION_ERROR_STUB(0x0C);
-EXCEPTION_ERROR_STUB(0x0D);
-EXCEPTION_ERROR_STUB(0x0E);
-EXCEPTION_STUB(0x0F);
-EXCEPTION_STUB(0x10);
-EXCEPTION_ERROR_STUB(0x11);
-EXCEPTION_STUB(0x12);
-EXCEPTION_STUB(0x13);
-EXCEPTION_STUB(0x14);
-EXCEPTION_ERROR_STUB(0x15);
-EXCEPTION_STUB(0x16);
-EXCEPTION_STUB(0x17);
-EXCEPTION_STUB(0x18);
-EXCEPTION_STUB(0x19);
-EXCEPTION_STUB(0x1A);
-EXCEPTION_STUB(0x1B);
-EXCEPTION_STUB(0x1C);
-EXCEPTION_ERROR_STUB(0x1D);
-EXCEPTION_ERROR_STUB(0x1E);
-EXCEPTION_STUB(0x1F);
 
 /**
  * Pretty print exception names
@@ -181,38 +101,41 @@ static const char* get_segment_name(uint64_t segment) {
 /**
  * The default exception handler, simply panics...
  */
-static void default_exception_handler(exception_frame_t* ctx) {
+static void default_exception_handler(interrupt_frame_t* ctx, uint8_t exception, uint64_t error_code) {
+    ipi_enable();
     spinlock_acquire(&m_exception_lock);
+    lapic_send_ipi_all_excluding_self(INTR_VECTOR_PANIC);
+    spinlock_release(&m_exception_lock);
 
     // reset the spinlock so we can print
     ERROR("");
     ERROR("****************************************************");
-    ERROR("Exception occurred: %s (%lu)", m_exception_names[ctx->int_num], ctx->error_code);
+    ERROR("Exception occurred: %s (%lu)", m_exception_names[exception], error_code);
     ERROR("****************************************************");
     ERROR("");
 
-    if (ctx->int_num == 0x0E) {
-        const char* prot = (ctx->error_code & IA32_PF_EC_PROT) ? "protection fault" : "no page found";
-        const char* access = (ctx->error_code & IA32_PF_EC_WRITE) ? "write access" : "read access";
-        const char* user = (ctx->error_code & IA32_PF_EC_USER) ? "user-mode access" : "kernel-mode access";
+    if (exception == EXCEPT_IA32_PAGE_FAULT) {
+        const char* prot = (error_code & IA32_PF_EC_PROT) ? "protection fault" : "no page found";
+        const char* access = (error_code & IA32_PF_EC_WRITE) ? "write access" : "read access";
+        const char* user = (error_code & IA32_PF_EC_USER) ? "user-mode access" : "kernel-mode access";
         ERROR("page fault: %s, %s, %s", prot, access, user);
 
-        if (ctx->error_code & IA32_PF_EC_RSVD) {
+        if (error_code & IA32_PF_EC_RSVD) {
             ERROR("\tuse of reserved bit detected");
-        } else if (ctx->error_code & IA32_PF_EC_INSTR) {
+        } else if (error_code & IA32_PF_EC_INSTR) {
             ERROR("\tfault was an instruction fetch");
-        } else if (ctx->error_code & IA32_PF_EC_PK) {
+        } else if (error_code & IA32_PF_EC_PK) {
             ERROR("\tprotections keys block access");
-        } else if (ctx->error_code & IA32_PF_EC_SHSTK) {
+        } else if (error_code & IA32_PF_EC_SHSTK) {
             ERROR("\tshadow stack access fault");
-        } else if (ctx->error_code & IA32_PF_EC_SGX) {
+        } else if (error_code & IA32_PF_EC_SGX) {
             ERROR("\tSGX MMU page-fault");
-        } else if (ctx->error_code & IA32_PF_EC_RMP) {
+        } else if (error_code & IA32_PF_EC_RMP) {
             ERROR("\tfault was due to RMP violation");
         }
         ERROR("");
-    } else if (ctx->int_num == 0x0D && ctx->error_code != 0) {
-        selector_error_code_t selector = (selector_error_code_t) { .packed = ctx->error_code };
+    } else if (exception == EXCEPT_IA32_GP_FAULT && error_code != 0) {
+        selector_error_code_t selector = (selector_error_code_t) { .packed = error_code };
         static const char* table[] = {
             "GDT",
             "IDT",
@@ -228,18 +151,15 @@ static void default_exception_handler(exception_frame_t* ctx) {
     ERROR("");
 
     // registers
-    ERROR("RAX=%016lx RBX=%016lx RCX=%016lx RDX=%016lx", ctx->rax, ctx->rbx, ctx->rcx, ctx->rdx);
-    ERROR("RSI=%016lx RDI=%016lx RBP=%016lx RSP=%016lx", ctx->rsi, ctx->rdi, ctx->rbp, ctx->rsp);
-    ERROR("R8 =%016lx R9 =%016lx R10=%016lx R11=%016lx", ctx->r8 , ctx->r9 , ctx->r10, ctx->r11);
-    ERROR("R12=%016lx R13=%016lx R14=%016lx R15=%016lx", ctx->r12, ctx->r13, ctx->r14, ctx->r15);
-    ERROR("RIP=%016lx RFL=%08lx [%c%c%c%c%c%c%c]", ctx->rip, ctx->rflags.packed,
-            ctx->rflags.DF ? 'D' : '-',
-            ctx->rflags.OF ? 'O' : '-',
-            ctx->rflags.SF ? 'S' : '-',
-            ctx->rflags.ZF ? 'Z' : '-',
-            ctx->rflags.AC ? 'A' : '-',
-            ctx->rflags.PF ? 'P' : '-',
-            ctx->rflags.CF ? 'C' : '-'
+    rflags_t rflags = { .packed = ctx->rflags };
+    ERROR("RIP=%016lx RSP=%016lx RFL=%08lx [%c%c%c%c%c%c%c]", ctx->rip, ctx->rsp, rflags.packed,
+            rflags.DF ? 'D' : '-',
+            rflags.OF ? 'O' : '-',
+            rflags.SF ? 'S' : '-',
+            rflags.ZF ? 'Z' : '-',
+            rflags.AC ? 'A' : '-',
+            rflags.PF ? 'P' : '-',
+            rflags.CF ? 'C' : '-'
     );
     TRACE("CS =%04lx DPL=%ld [%s]", ctx->cs, ctx->cs & 0b111, get_segment_name(ctx->cs));
     TRACE("SS =%04lx DPL=%ld [%s]", ctx->ss, ctx->ss & 0b111, get_segment_name(ctx->ss));
@@ -247,91 +167,80 @@ static void default_exception_handler(exception_frame_t* ctx) {
     TRACE("GS =%016lx", __rdmsr(MSR_IA32_GS_BASE));
     ERROR("CR0=%08lx CR2=%016lx CR3=%016lx CR4=%08lx", __readcr0(), __readcr2(), __readcr3(), __readcr4());
 
-    ERROR("");
-    ERROR("Code: %016lx", ctx->rip);
-    ERROR("");
-
-    // stack trace
-    ERROR("Stack trace:");
-    size_t* base_ptr = (size_t*)ctx->rbp;
-
-    int depth = 0;
-    uintptr_t last_ret = 0;
-
-    // if you want to print the assembly of a specific stack trace entry set this (start from 1)
-    asm("stac");
-    int to_print = 0;
-    while (true) {
-        if (((uintptr_t)base_ptr % alignof(void*)) != 0) {
-            ERROR("\t%p is unaligned!", base_ptr);
-            break;
-        }
-
-        if (!virt_is_mapped((uintptr_t)base_ptr)) {
-            ERROR("\t%p is unmapped!", base_ptr);
-            break;
-        }
-
-        size_t old_bp = base_ptr[0];
-        size_t ret_addr = base_ptr[1];
-        if (ret_addr == 0) {
-            break;
-        }
-
-        if (last_ret == ret_addr) {
-            depth++;
-        } else {
-            if (depth > 1) {
-                ERROR("\t  ... repeating %d times", depth - 1);
-            }
-
-            last_ret = ret_addr;
-            depth = 1;
-
-            ERROR("\t> 0x%016lx", ret_addr);
-
-            to_print--;
-            if (to_print == 0) {
-                // debug_disasm_at((void*)ret_addr, 5);
-            }
-        }
-
-        if (old_bp == 0) {
-            break;
-        } else if (old_bp <= (size_t)base_ptr) {
-            ERROR("\tGoes back to %p", (void*)old_bp);
-            break;
-        }
-        base_ptr = (size_t*)old_bp;
-    }
-
-    ERROR("");
-
     // stop
     ERROR("Halting :(");
-    spinlock_release(&m_exception_lock);
     asm("hlt");
 }
 
-void common_exception_handler(exception_frame_t* ctx) {
-    err_t err = NO_ERROR;
-
-    // special case for page
-    if (ctx->int_num == EXCEPT_IA32_PAGE_FAULT) {
-        RETHROW(virt_handle_page_fault(__readcr2(), ctx->error_code));
-
-    } else {
-        CHECK_FAIL();
+/**
+ * Swap the GS base if coming from usermode, otherwise leave as is
+ */
+static void swapgs(interrupt_frame_t* frame) {
+    if (frame->cs == GDT_USER_CODE) {
+        asm("swapgs");
     }
-
-cleanup:
-    if (IS_ERROR(err)) {
-        // no one handled it, panic
-        default_exception_handler(ctx);
-    }
-
-    (void)err;
 }
+
+__attribute__((interrupt))
+static void page_fault_interrupt_handler(interrupt_frame_t* frame, uint64_t error_code) {
+    swapgs(frame);
+    ipi_enable();
+
+    // handle the interrupt
+    if (IS_ERROR(virt_handle_page_fault(__readcr2(), error_code))) {
+        default_exception_handler(frame, EXCEPT_IA32_PAGE_FAULT, error_code);
+    }
+
+    // and revert back the cr8
+    ipi_disable();
+    swapgs(frame);
+}
+
+#define EXCEPTION_STUB(num) \
+    __attribute__((interrupt)) \
+    static void exception_handler_##num(interrupt_frame_t* frame) { \
+        swapgs(frame); \
+        default_exception_handler(frame, num, 0); \
+    }
+
+#define EXCEPTION_ERROR_STUB(num) \
+    __attribute__((interrupt)) \
+    static void exception_handler_##num(interrupt_frame_t* frame, uint64_t error_code) { \
+        swapgs(frame); \
+        default_exception_handler(frame, num, error_code); \
+    }
+
+EXCEPTION_STUB(0x00);
+EXCEPTION_STUB(0x01);
+EXCEPTION_STUB(0x02);
+EXCEPTION_STUB(0x03);
+EXCEPTION_STUB(0x04);
+EXCEPTION_STUB(0x05);
+EXCEPTION_STUB(0x06);
+EXCEPTION_STUB(0x07);
+EXCEPTION_ERROR_STUB(0x08);
+EXCEPTION_STUB(0x09);
+EXCEPTION_ERROR_STUB(0x0A);
+EXCEPTION_ERROR_STUB(0x0B);
+EXCEPTION_ERROR_STUB(0x0C);
+EXCEPTION_ERROR_STUB(0x0D);
+EXCEPTION_STUB(0x0F);
+EXCEPTION_STUB(0x10);
+EXCEPTION_ERROR_STUB(0x11);
+EXCEPTION_STUB(0x12);
+EXCEPTION_STUB(0x13);
+EXCEPTION_STUB(0x14);
+EXCEPTION_ERROR_STUB(0x15);
+EXCEPTION_STUB(0x16);
+EXCEPTION_STUB(0x17);
+EXCEPTION_STUB(0x18);
+EXCEPTION_STUB(0x19);
+EXCEPTION_STUB(0x1A);
+EXCEPTION_STUB(0x1B);
+EXCEPTION_STUB(0x1C);
+EXCEPTION_ERROR_STUB(0x1D);
+EXCEPTION_ERROR_STUB(0x1E);
+EXCEPTION_STUB(0x1F);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Scheduler interrupt
@@ -341,6 +250,11 @@ __attribute__((interrupt))
 static void ipi_interrupt_handler(interrupt_frame_t* frame) {
     ipi_handle();
     lapic_eoi();
+}
+
+__attribute__((interrupt))
+static void panic_interrupt_handler(interrupt_frame_t* frame) {
+    asm("hlt");
 }
 
 __attribute__((interrupt))
@@ -383,6 +297,7 @@ INIT_CODE void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler
 }
 
 INIT_CODE void init_idt(void) {
+    // generic exception handlers
     intr_set_kernel_handler(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, -1);
     intr_set_kernel_handler(EXCEPT_IA32_DEBUG, exception_handler_0x01, TSS_IST_DB);
     intr_set_kernel_handler(EXCEPT_IA32_NMI, exception_handler_0x02, TSS_IST_NMI);
@@ -397,7 +312,6 @@ INIT_CODE void init_idt(void) {
     intr_set_kernel_handler(EXCEPT_IA32_SEG_NOT_PRESENT, exception_handler_0x0B, -1);
     intr_set_kernel_handler(EXCEPT_IA32_STACK_FAULT, exception_handler_0x0C, -1);
     intr_set_kernel_handler(EXCEPT_IA32_GP_FAULT, exception_handler_0x0D, -1);
-    intr_set_kernel_handler(EXCEPT_IA32_PAGE_FAULT, exception_handler_0x0E, -1);
     intr_set_kernel_handler(0x0F, exception_handler_0x0F, -1);
     intr_set_kernel_handler(EXCEPT_IA32_FP_ERROR, exception_handler_0x10, -1);
     intr_set_kernel_handler(EXCEPT_IA32_ALIGNMENT_CHECK, exception_handler_0x11, -1);
@@ -415,7 +329,11 @@ INIT_CODE void init_idt(void) {
     intr_set_kernel_handler(0x1D, exception_handler_0x1D, -1);
     intr_set_kernel_handler(0x1E, exception_handler_0x1E, -1);
     intr_set_kernel_handler(0x1F, exception_handler_0x1F, -1);
+
+    // handlers with specific behaviour
+    intr_set_kernel_handler(EXCEPT_IA32_PAGE_FAULT, page_fault_interrupt_handler, -1);
     intr_set_kernel_handler(INTR_VECTOR_IPI, ipi_interrupt_handler, -1);
+    intr_set_kernel_handler(INTR_VECTOR_PANIC, panic_interrupt_handler, -1);
     intr_set_kernel_handler(INTR_VECTOR_SPURIOUS, spurious_interrupt_handler, -1);
 
     idt_t idt = {

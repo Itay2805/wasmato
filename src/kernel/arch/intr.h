@@ -32,9 +32,10 @@
 #define IA32_PF_EC_SGX      BIT15
 #define IA32_PF_EC_RMP      BIT31
 
-#define INTR_VECTOR_IPI         0x20
-#define INTR_VECTOR_SPURIOUS    0x21
-#define INTR_VECTOR_TIMER       0x22
+#define INTR_VECTOR_TIMER       0x20
+#define INTR_VECTOR_IPI         0xF0
+#define INTR_VECTOR_PANIC       0xF1
+#define INTR_VECTOR_SPURIOUS    0xFF
 
 INIT_CODE void init_idt(void);
 

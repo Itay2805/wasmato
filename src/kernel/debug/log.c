@@ -6,6 +6,7 @@
 #include "sync/spinlock.h"
 #include "lib/defs.h"
 #include "lib/printf.h"
+#include "sync/irq.h"
 
 static spinlock_t m_debug_lock = SPINLOCK_INIT;
 
@@ -23,8 +24,12 @@ void putchar_(char c) {
 void debug_print(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
+
+    bool state = irq_save();
     spinlock_acquire(&m_debug_lock);
     vprintf_(fmt, args);
     spinlock_release(&m_debug_lock);
+    irq_restore(state);
+
     va_end(args);
 }

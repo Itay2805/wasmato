@@ -32,11 +32,19 @@ static void timer_handler(interrupt_frame_t* frame) {
 __attribute__((force_align_arg_pointer))
 int _start(runtime_params_t* params) {
     static atomic_bool sched_ready = false;
+    static atomic_int cpu_count = 0;
 
+    // wait for all cores to enter the runtime before we continue
     TRACE("runtime: Entered on CPU #%d", params->cpu_id);
+    cpu_count++;
+    while (cpu_count != params->cpu_count) {
+        cpu_relax();
+    }
+
     if (params->cpu_id != 0) {
-        // for secondary cpus just wait until we are done the init
-        // and the scheduler is ready so we can start scheduling
+        // now on secondary cpus wait until we are
+        // done with the init sequence and the scheduler
+        // is ready to be activated
         while (!sched_ready) {
             cpu_relax();
         }
@@ -63,6 +71,6 @@ int _start(runtime_params_t* params) {
         TRACE("TODO: startup scheduler on core %d", params->cpu_id);
     }
 
-    ERROR("TODO: panic");
-    while (1);
+    // should not reach here
+    __builtin_unreachable();
 }

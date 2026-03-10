@@ -22,6 +22,11 @@ typedef struct runtime_params {
     uint32_t cpu_id;
 
     /**
+     * How many cpus we have
+     */
+    uint32_t cpu_count;
+
+    /**
      * The vector of the timer, anything between this vector
      * and 0xFF can be used by the user
      */

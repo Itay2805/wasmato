@@ -4,6 +4,7 @@
 #include "virt.h"
 #include "alloc.h"
 #include "lib/assert.h"
+#include "lib/pcpu.h"
 #include "lib/rbtree/rbtree.h"
 
 static mem_alloc_t m_vmar_alloc;

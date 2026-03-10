@@ -180,6 +180,8 @@ INIT_CODE void protect_ro_data(void) {
 }
 
 void reclaim_init_mem(void) {
+    vmar_lock();
+
     TRACE("virt: Reclaiming init code/data");
 
     // NOTE: we explicitly don't remove the vmars because we are going to use them
@@ -210,6 +212,8 @@ void reclaim_init_mem(void) {
     }
 
     tlb_invl_commit();
+
+    vmar_unlock();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -335,9 +339,12 @@ cleanup:
         } else {
             vmar_dump(&g_user_memory);
         }
+    } else {
+        // don't unlock if we got an error
+        // so we can panic properly
+        vmar_unlock();
     }
 
-    vmar_unlock();
 
     return err;
 }
