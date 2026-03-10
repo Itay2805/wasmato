@@ -7,9 +7,10 @@
 
 //
 // The compiler could call these, so ensure they are interrupt safe
+// IDK why some of these had endbr before
 //
 
-void* memset(void* s, int c, size_t n) {
+OMIT_ENDBR void* memset(void* s, int c, size_t n) {
     // NOTE: we assume that fast short rep stosb is supported, meaning that
     //       0-128 length strings should be fast
     void* d = s;
@@ -32,7 +33,7 @@ static inline void __rep_movsb(void* dest, const void* src, size_t n) {
     );
 }
 
-void* memcpy(void* restrict dest, const void* restrict src, size_t n) {
+OMIT_ENDBR void* memcpy(void* restrict dest, const void* restrict src, size_t n) {
     // fast path for zero length
     // TODO: patch away if we have fast zero-length rep movsb
     if (UNLIKELY(n == 0))
@@ -42,7 +43,7 @@ void* memcpy(void* restrict dest, const void* restrict src, size_t n) {
     return dest;
 }
 
-void* memmove(void* dest, const void* src, size_t n) {
+OMIT_ENDBR void* memmove(void* dest, const void* src, size_t n) {
     // fast path for zero length or the same exact buffer
     if (UNLIKELY(n == 0) || (dest == src)) {
         return dest;

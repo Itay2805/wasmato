@@ -142,7 +142,7 @@ bool vmar_reserve_static(vmar_t* parent, vmar_t* child) {
         // ensure child within bounds of parent, and that
         // the address is page aligned
         ASSERT(parent->base <= child->base);
-        ASSERT(vmar_end(child) <= vmar_end(parent));
+        ASSERT(vmar_end(child) <= vmar_end(parent), "%p - %p", vmar_end(child), vmar_end(parent));
         ASSERT(((uintptr_t)child->base % PAGE_SIZE) == 0);
         ASSERT(vmar_find_overlapping(parent, child) == nullptr);
     }

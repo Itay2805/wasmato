@@ -50,7 +50,7 @@ static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     asm("clac");
 }
 
-void syscall_handler(syscall_frame_t* frame) {
+OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     err_t err = NO_ERROR;
 
     switch (frame->syscall) {
@@ -115,6 +115,8 @@ void syscall_handler(syscall_frame_t* frame) {
 cleanup:
     ASSERT(!IS_ERROR(err), "syscall: error while performing syscall");
 }
+
+// this is called directly by the stub and no-one else
 
 void syscall_entry(void);
 

@@ -36,3 +36,14 @@ quiet_cmd_run = QEMU    $<
 PHONY += run
 run: $(IMAGE_NAME)
 	$(call cmd,run)
+
+ifeq ($(OPTIMIZE),n)
+CHECK_IBT_FLAGS += --debug
+endif
+
+quiet_cmd_check_ibt = CHECK   IBT whitelist
+      cmd_check_ibt = python3 scripts/check-ibt-whitelist.py $(BUILD)/kernel $(CHECK_IBT_FLAGS)
+
+PHONY += check-ibt
+check-ibt: $(BUILD)/kernel
+	$(call cmd,check_ibt)

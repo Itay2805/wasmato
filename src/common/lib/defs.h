@@ -20,6 +20,11 @@
  */
 #define LATE_RO			__attribute__((section(".rodata.late")))
 
+/**
+ * Mark that a function is only called directly
+ */
+#define OMIT_ENDBR		__attribute__((nocf_check))
+
 #define SIGNATURE_16(A, B)  ((A) | (B << 8))
 #define SIGNATURE_32(A, B, C, D)  (SIGNATURE_16 (A, B) | (SIGNATURE_16 (C, D) << 16))
 #define SIGNATURE_64(A, B, C, D, E, F, G, H) (SIGNATURE_32 (A, B, C, D) | ((uint64_t) (SIGNATURE_32 (E, F, G, H)) << 32))

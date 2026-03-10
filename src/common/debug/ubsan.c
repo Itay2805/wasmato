@@ -89,7 +89,7 @@ typedef struct overflow_data {
 
 #define LOG_UBSAN(fmt, ...) WARN("ubsan: " fmt " at %s:%d:%d", ## __VA_ARGS__, data->loc.filename, data->loc.line, data->loc.column);
 
-static void handle_integer_overflow(overflow_data_t* data, size_t lhs, const char* operator, size_t rhs) {
+OMIT_ENDBR static void handle_integer_overflow(overflow_data_t* data, size_t lhs, const char* operator, size_t rhs) {
     bool is_signed = is_signed_integer_ty(data->type);
 
     LOG_UBSAN("%s integer overflow: "
@@ -97,11 +97,11 @@ static void handle_integer_overflow(overflow_data_t* data, size_t lhs, const cha
         is_signed ? "signed" : "unsigned", lhs, operator, rhs, data->type->type_name);
 }
 
-void __ubsan_handle_add_overflow(overflow_data_t* data, size_t lhs, size_t rhs) { handle_integer_overflow(data, lhs, "+", rhs); }
-void __ubsan_handle_sub_overflow(overflow_data_t* data, size_t lhs, size_t rhs) { handle_integer_overflow(data, lhs, "-", rhs); }
-void __ubsan_handle_mul_overflow(overflow_data_t* data, size_t lhs, size_t rhs) { handle_integer_overflow(data, lhs, "*", rhs); }
+OMIT_ENDBR void __ubsan_handle_add_overflow(overflow_data_t* data, size_t lhs, size_t rhs) { handle_integer_overflow(data, lhs, "+", rhs); }
+OMIT_ENDBR void __ubsan_handle_sub_overflow(overflow_data_t* data, size_t lhs, size_t rhs) { handle_integer_overflow(data, lhs, "-", rhs); }
+OMIT_ENDBR void __ubsan_handle_mul_overflow(overflow_data_t* data, size_t lhs, size_t rhs) { handle_integer_overflow(data, lhs, "*", rhs); }
 
-void __ubsan_handle_negate_overflow(overflow_data_t* data, size_t old_val) {
+OMIT_ENDBR void __ubsan_handle_negate_overflow(overflow_data_t* data, size_t old_val) {
     bool is_signed = is_signed_integer_ty(data->type);
 
     if (is_signed) {
@@ -114,7 +114,7 @@ void __ubsan_handle_negate_overflow(overflow_data_t* data, size_t old_val) {
     }
 }
 
-void __ubsan_handle_divrem_overflow(overflow_data_t* data, size_t lhs, size_t rhs) {
+OMIT_ENDBR void __ubsan_handle_divrem_overflow(overflow_data_t* data, size_t lhs, size_t rhs) {
     if (is_minus_one(rhs, data->type)) {
         LOG_UBSAN("division of %zd by -1 cannot be represented in type %s", lhs, data->type->type_name);
     } else {
@@ -128,7 +128,7 @@ typedef struct shift_out_of_bounds_data {
     const type_descriptor_t* rhs_type;
 } shift_out_of_bounds_data_t;
 
-void __ubsan_handle_shift_out_of_bounds(shift_out_of_bounds_data_t* data, size_t lhs, size_t rhs) {
+OMIT_ENDBR void __ubsan_handle_shift_out_of_bounds(shift_out_of_bounds_data_t* data, size_t lhs, size_t rhs) {
     if (is_negative(rhs, data->rhs_type)) {
         LOG_UBSAN("shift exponent %zd is negative", rhs);
     } else if (get_positive_int_value(rhs, data->rhs_type) >= get_integer_bit_width(data->lhs_type)) {
@@ -148,7 +148,7 @@ typedef struct out_of_bounds_data {
     const type_descriptor_t* index_type;
 } out_of_bounds_data_t;
 
-void __ubsan_handle_out_of_bounds(out_of_bounds_data_t* data, size_t index) {
+OMIT_ENDBR void __ubsan_handle_out_of_bounds(out_of_bounds_data_t* data, size_t index) {
     LOG_UBSAN("index %zd out of bounds of type %s", index, data->array_type->type_name);
 }
 
@@ -158,7 +158,7 @@ typedef struct nonnull_arg_data {
     int arg_index;
 } nonnull_arg_data_t;
 
-void __ubsan_handle_nonnull_arg(nonnull_arg_data_t* data) {
+OMIT_ENDBR void __ubsan_handle_nonnull_arg(nonnull_arg_data_t* data) {
     LOG_UBSAN("null pointer passed as argument %d, which is declared to never be null", data->arg_index);
     if (data->attr_loc.filename != NULL) {
         WARN("ubsan: nonnull attribute specified at %s:%d:%d",
@@ -170,7 +170,7 @@ typedef struct pointer_overflow_data {
     source_location_t loc;
 } pointer_overflow_data_t;
 
-void __ubsan_handle_pointer_overflow(pointer_overflow_data_t* data, void* base, void* result) {
+OMIT_ENDBR void __ubsan_handle_pointer_overflow(pointer_overflow_data_t* data, void* base, void* result) {
     if (base == 0 && result == 0) {
         LOG_UBSAN("applying zero offset to null pointer");
     } else if (base == 0 && result != 0) {
@@ -193,7 +193,7 @@ typedef struct invalid_value_data {
     const type_descriptor_t* type;
 } invalid_value_data_t;
 
-void __ubsan_handle_load_invalid_value(invalid_value_data_t* data, size_t val) {
+OMIT_ENDBR void __ubsan_handle_load_invalid_value(invalid_value_data_t* data, size_t val) {
     LOG_UBSAN("load of value %zd, which is not a valid value for type %s", val, data->type->type_name);
 }
 
@@ -207,7 +207,7 @@ typedef struct invalid_builtin_data {
     unsigned char kind;
 } invalid_builtin_data_t;
 
-void __ubsan_handle_invalid_builtin(invalid_builtin_data_t* data) {
+OMIT_ENDBR void __ubsan_handle_invalid_builtin(invalid_builtin_data_t* data) {
     LOG_UBSAN("passing zero to %s, which is not a valid argument", (data->kind == BCK_CTZ_PASSED_ZERO) ? "ctz()" : "clz()");
 }
 
@@ -216,7 +216,7 @@ typedef struct function_type_mismatch_data {
     const type_descriptor_t* type;
 } function_type_mismatch_data_t;
 
-void __ubsan_handle_function_type_mismatch(function_type_mismatch_data_t* data, void* function) {
+OMIT_ENDBR void __ubsan_handle_function_type_mismatch(function_type_mismatch_data_t* data, void* function) {
     LOG_UBSAN("call to function %p through pointer to incorrect function type %s", function, data->type->type_name);
 }
 
@@ -234,7 +234,7 @@ const char* const m_type_check_kinds[] = {
     "dynamic operation on"
 };
 
-void __ubsan_handle_type_mismatch_v1(type_mismatch_data_t* data, void* pointer) {
+OMIT_ENDBR void __ubsan_handle_type_mismatch_v1(type_mismatch_data_t* data, void* pointer) {
     size_t alignment = (size_t)1 << data->log_alignment;
 
     if (pointer == 0) {
@@ -254,6 +254,6 @@ typedef struct unreachable_data {
     source_location_t loc;
 } unreachable_data_t;
 
-void __ubsan_handle_builtin_unreachable(unreachable_data_t* data) {
+OMIT_ENDBR void __ubsan_handle_builtin_unreachable(unreachable_data_t* data) {
     LOG_UBSAN("execution reached a __builtin_unreachable() call");
 }

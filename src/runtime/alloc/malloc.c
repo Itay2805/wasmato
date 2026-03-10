@@ -345,8 +345,8 @@ void __bin_chunk(struct chunk *self) {
 
     /* Replace middle of large chunks with fresh zero pages */
     if (size > RECLAIM && (size ^ (size - osize)) > size - osize) {
-        uintptr_t a = (uintptr_t) self + SIZE_ALIGN + PAGE_SIZE - 1 & -PAGE_SIZE;
-        uintptr_t b = (uintptr_t) next - SIZE_ALIGN & -PAGE_SIZE;
+        // uintptr_t a = (uintptr_t) self + SIZE_ALIGN + PAGE_SIZE - 1 & -PAGE_SIZE;
+        // uintptr_t b = (uintptr_t) next - SIZE_ALIGN & -PAGE_SIZE;
         // TODO: madvice don't need, does it even matter if we won't allow overcommit?
         // __madvise((void *) a, b - a, MADV_DONTNEED);
     }
@@ -357,7 +357,7 @@ void __bin_chunk(struct chunk *self) {
 static void unmap_chunk(struct chunk *self) {
     size_t extra = self->psize;
     char *base = (char *) self - extra;
-    size_t len = CHUNK_SIZE(self) + extra;
+    // size_t len = CHUNK_SIZE(self) + extra;
     /* Crash on double free */
     ASSERT ((extra & 1) == 0);
     sys_heap_free(base);

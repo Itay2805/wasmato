@@ -163,11 +163,11 @@ static inline void sys_heap_free(void* base) {
 // Timer management
 //----------------------------------------------------------------------------------------------------------------------
 
-static void sys_timer_set_deadline(uintptr_t tsc_deadline) {
+static inline void sys_timer_set_deadline(uintptr_t tsc_deadline) {
 	(void)syscall1(SYSCALL_TIMER_SET_DEADLINE, tsc_deadline);
 }
 
-static void sys_timer_clear(void) {
+static inline void sys_timer_clear(void) {
 	(void)syscall0(SYSCALL_TIMER_CLEAR);
 }
 
@@ -175,7 +175,7 @@ static void sys_timer_clear(void) {
 // Timer management
 //----------------------------------------------------------------------------------------------------------------------
 
-static void sys_interrupt_ack(void) {
+static inline void sys_interrupt_ack(void) {
 	(void)syscall0(SYSCALL_INTERRUPT_ACK);
 }
 

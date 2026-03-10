@@ -33,7 +33,7 @@ INIT_DATA static atomic_bool m_smp_fail = false;
 INIT_CODE static void set_extended_state_features(void) {
     INIT_DATA static bool first = true;
     INIT_DATA static uint32_t first_xcr0 = 0;
-    uint32_t a, b, c, d;
+    uint32_t b, c, d;
 
     // enable/disable extended features or something
     CPUID_EXTENDED_STATE_MAIN_LEAF_EAX extended_state_main_leaf_eax = {};
@@ -174,11 +174,6 @@ INIT_CODE static void configure_cet(void) {
     first = true;
     supported = true;
 
-    // enable CET in general
-    uint32_t cr4 = __readcr4();
-    cr4 |= CR4_CET;
-    __writecr4(cr4);
-
     MSR_IA32_CET_REGISTER u_cet = {};
     MSR_IA32_CET_REGISTER s_cet = {};
 
@@ -187,10 +182,12 @@ INIT_CODE static void configure_cet(void) {
         if (first) {
             TRACE("cpu: enabling IBT");
         }
+
+        // enable endbr tracking
+        // specifically don't enable notrack prefix, we disable jump tables
+        // so it won't be used
         u_cet.ENDBR_EN = 1;
         s_cet.ENDBR_EN = 1;
-        u_cet.NO_TRACK_EN = 1;
-        s_cet.NO_TRACK_EN = 1;
     }
 
     // enable shadow stack only for usermode for now
@@ -203,6 +200,11 @@ INIT_CODE static void configure_cet(void) {
     // configure both
     __wrmsr(MSR_IA32_U_CET, u_cet.raw);
     __wrmsr(MSR_IA32_S_CET, s_cet.raw);
+
+    // fully enable CET
+    uint32_t cr4 = __readcr4();
+    cr4 |= CR4_CET;
+    __writecr4(cr4);
 }
 
 INIT_CODE static void set_cpu_features(void) {
@@ -247,7 +249,8 @@ INIT_CODE static void halt() {
     }
 }
 
-INIT_CODE static void smp_entry(struct limine_mp_info* info) {
+// called before CET is initialized
+OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     err_t err = NO_ERROR;
 
     //
@@ -280,7 +283,8 @@ cleanup:
     halt();
 }
 
-INIT_CODE void _start() {
+// called before CET is initialized
+OMIT_ENDBR INIT_CODE void _start() {
     err_t err = NO_ERROR;
 
     // make early logging work
@@ -349,7 +353,7 @@ INIT_CODE void _start() {
         } else {
             // start it up
             response->cpus[i]->extra_argument = i;
-            response->cpus[i]->goto_address = smp_entry;
+            response->cpus[i]->goto_address = (void*)smp_entry;
         }
 
         while (m_smp_count != i + 1) {

@@ -7,13 +7,16 @@ RUNTIME_CFLAGS += -Isrc/common
 RUNTIME_CFLAGS += -fno-omit-frame-pointer -fvisibility=hidden
 RUNTIME_CFLAGS += -Wno-unused-label
 
-RUNTIME_CFLAGS += -fcf-protection=full
+RUNTIME_CFLAGS += -fcf-protection=full -fno-jump-tables
 
 RUNTIME_CFLAGS += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
 RUNTIME_CFLAGS += -mcmodel=small
 RUNTIME_CFLAGS += -nostdlib -nostdinc
 RUNTIME_CFLAGS += -isystem $(shell $(CC) --print-resource-dir)/include
 RUNTIME_CFLAGS += -Isrc/runtime
+
+# eval now
+RUNTIME_CFLAGS := $(RUNTIME_CFLAGS)
 
 # The runtime core is basically all the code that needs to run without
 # general purpose registers enabled, so the scheduler, interrupt handling

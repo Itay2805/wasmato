@@ -89,16 +89,15 @@ INIT_CODE static err_t runtime_elf_get_range(uintptr_t* load_address, size_t* to
             continue;
 
         // align to page
-        uintptr_t vaddr = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
-
-        // align to page
-        size_t tmp_top_address;
-        CHECK(!__builtin_add_overflow(vaddr, phdr->p_memsz, &tmp_top_address));
-        tmp_top_address = ALIGN_UP(tmp_top_address, PAGE_SIZE);
-
-        *load_address = MIN(vaddr, *load_address);
-        *top_address = MAX(tmp_top_address, *top_address);
+        size_t end = 0;
+        CHECK(!__builtin_add_overflow(phdr->p_vaddr, phdr->p_memsz, &end));
+        *load_address = MIN(phdr->p_vaddr, *load_address);
+        *top_address = MAX(end, *top_address);
     }
+
+    // align to page
+    *load_address = ALIGN_DOWN(*load_address, PAGE_SIZE);
+    *top_address = ALIGN_UP(*top_address, PAGE_SIZE);
 
 cleanup:
     return err;
@@ -111,6 +110,7 @@ INIT_CODE static err_t runtime_elf_map(void) {
     Elf64_Phdr* phdrs = ELF_ARR(Elf64_Phdr, ehdr->e_phnum, ehdr->e_phoff);
 
     // now actually map it
+    TRACE("runtime: mapping runtime");
     for (int i = 0; i < ehdr->e_phnum; i++) {
         Elf64_Phdr* phdr = &phdrs[i];
         if (phdr->p_type != PT_LOAD)
@@ -124,26 +124,22 @@ INIT_CODE static err_t runtime_elf_map(void) {
             case PF_R | PF_X: name = "text"; break;
             default: CHECK_FAIL();
         }
-
-        // get the data
-        CHECK(phdr->p_memsz >= phdr->p_filesz);
-        void* data = ELF_ARR(char, phdr->p_filesz, phdr->p_offset);
+        TRACE("runtime: \t%p-%p: %s", (void*)phdr->p_vaddr, (void*)phdr->p_vaddr + phdr->p_memsz, name);
 
         // align to page
-        uintptr_t vaddr = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
-        size_t top_address;
-        CHECK(!__builtin_add_overflow(phdr->p_vaddr, phdr->p_memsz, &top_address));
-        top_address = ALIGN_UP(top_address, PAGE_SIZE);
-        size_t aligned_size = top_address - vaddr;
+        size_t aligned_start = ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE);
+        size_t aligned_end = ALIGN_UP(phdr->p_vaddr + phdr->p_memsz, PAGE_SIZE);
+        size_t aligned_size = aligned_end - aligned_start;
 
         // setup the region
-        vmar_t* region = vmar_allocate(&g_runtime_region, SIZE_TO_PAGES(aligned_size), (void*)vaddr);
+        vmar_t* region = vmar_allocate(&g_runtime_region, SIZE_TO_PAGES(aligned_size), (void*)aligned_start);
         CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
         region->name = name;
         region->pinned = true;
 
         // copy the data, we need to enable accessing user memory while we do that
         asm("stac");
+        void* data = ELF_ARR(char, phdr->p_filesz, phdr->p_offset);
         memset((void*)phdr->p_vaddr, 0, SIZE_TO_PAGES(phdr->p_memsz));
         if (phdr->p_filesz != 0) {
             memcpy((void*)phdr->p_vaddr, data, phdr->p_filesz);

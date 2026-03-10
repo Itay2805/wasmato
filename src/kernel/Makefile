@@ -10,7 +10,7 @@ cflags-kernel-y += -Isrc/common
 cflags-kernel-y += -Wno-unused-label
 
 cflags-kernel-y += -mgeneral-regs-only
-cflags-kernel-y += -fcf-protection=branch
+cflags-kernel-y += -fcf-protection=branch -fno-jump-tables
 cflags-kernel-y += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
 cflags-kernel-y += -mcmodel=kernel -mno-red-zone
 cflags-kernel-y += -nostdlib -nostdinc
