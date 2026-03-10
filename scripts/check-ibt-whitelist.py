@@ -23,13 +23,14 @@ WHITELIST: set[str] = {
     "syscall_entry",
 
     # Exception/interrupt assembly stubs and C handler
-    "common_exception_stub",
-    "common_exception_handler",
+    "page_fault_interrupt_handler",
+    "panic_interrupt_handler",
     "ipi_interrupt_handler",
     "spurious_interrupt_handler",
 
     # Per-vector exception stubs (0x00-0x1F)
-    *(f"exception_handler_0x{i:02X}" for i in range(0x20)),
+    # 0x0E (page fault) has its own function
+    *(f"exception_handler_0x{i:02X}" for i in range(0x20) if i not in [0x0E]),
 
     # printf character callback
     "putchar_wrapper",

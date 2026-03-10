@@ -51,6 +51,23 @@ static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     asm("clac");
 }
 
+INIT_CODE static err_t handle_early_done(void) {
+    err_t err = NO_ERROR;
+
+    // ensure we are not done yet
+    CHECK(!m_early_done);
+    m_early_done = true;
+
+    // we don't need the bootloader memory anymore
+    RETHROW(reclaim_bootloader_memory());
+
+    // reprotect data that should be read-only
+    protect_ro_data();
+
+cleanup:
+    return err;
+}
+
 OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     err_t err = NO_ERROR;
     ipi_enable();
@@ -95,17 +112,8 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
         } break;
 
         case SYSCALL_EARLY_DONE: {
-            // ensure we are not done yet
-            CHECK(!m_early_done);
-            m_early_done = true;
-
-            // we don't need the bootloader memory anymore
-            RETHROW(reclaim_bootloader_memory());
-
-            // reprotect data that should be read-only
-            protect_ro_data();
-
-            // All CPUs have completed init. Unmap and reclaim .text.init pages.
+            // perform last cleanups and reclaim all init code
+            RETHROW(handle_early_done());
             reclaim_init_mem();
 
             vmar_dump(&g_kernel_memory);
