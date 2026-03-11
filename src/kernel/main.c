@@ -215,6 +215,31 @@ INIT_CODE static void configure_cet(void) {
     __writecr4(cr4);
 }
 
+INIT_CODE static void set_cpu_id(void) {
+    uint32_t a, b, c, d;
+
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
+    __get_cpuid_count(
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
+        &a, &b,
+        &structured_extended_feature_flags_ecx.raw,
+        &d
+    );
+
+    CPUID_EXTENDED_CPU_SIG_EDX extended_cpu_sig_edx = {};
+    __get_cpuid(
+        CPUID_EXTENDED_CPU_SIG,
+        &a, &b, &c,
+        &extended_cpu_sig_edx.raw
+    );
+
+    ASSERT(structured_extended_feature_flags_ecx.RDPID || extended_cpu_sig_edx.RDTSCP, "Missing RDPID/RDTSCP support");
+
+    // set the cpuid in the TSC aux for usermode to use
+    __wrmsr(MSR_IA32_TSC_AUX, get_cpu_id());
+}
+
 INIT_CODE static void set_cpu_features(void) {
     // ensure all required cpu features exist
     validate_cpu_features();
@@ -240,6 +265,9 @@ INIT_CODE static void set_cpu_features(void) {
     efer.nxe = 1;
     efer.sce = 1;
     __wrmsr(MSR_IA32_EFER, efer.packed);
+
+    // set the cpuid that usermode can easily access
+    set_cpu_id();
 
     // setup the syscall stuff
     init_syscall();

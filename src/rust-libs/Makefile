@@ -2,7 +2,6 @@
 RUSTUP_TOOLCHAIN := nightly-2025-10-09
 CARGO_TARGET_NAME := x86_64-unknown-linux-none
 CARGO_FLAGS := -Zbuild-std=core,alloc
-RUSTC_FLAGS :=
 
 CRATE_TARGET_DIR := $(BUILD)/cargo-target
 CARGO_LIBS_PATH := $(CRATE_TARGET_DIR)/$(CARGO_TARGET_NAME)/release
@@ -18,7 +17,12 @@ CARGO_CMD += $(CARGO_FLAGS)
 CARGO_CMD += --target-dir $(CRATE_TARGET_DIR)
 CARGO_CMD += --
 CARGO_CMD += -C force-frame-pointers=yes
-CARGO_CMD += $(RUSTC_FLAGS)
+CARGO_CMD += -C embed-bitcode=yes
+CARGO_CMD += -Z no-jump-tables
+CARGO_CMD += -C linker-plugin-lto=yes
+CARGO_CMD += -C relocation-model=static
+CARGO_CMD += -C target-cpu=x86-64-v3
+CARGO_CMD += -Z cf-protection=full
 
 quiet_cmd_cargo = CARGO   $@
 	  cmd_cargo = $(CARGO_CMD)

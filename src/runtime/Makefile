@@ -7,6 +7,10 @@ RUNTIME_CFLAGS += -Isrc/common
 RUNTIME_CFLAGS += -fno-omit-frame-pointer -fvisibility=hidden
 RUNTIME_CFLAGS += -Wno-unused-label
 
+RUNTIME_CFLAGS += -mxsave -mxsaveopt
+RUNTIME_CFLAGS += -mrdpid
+RUNTIME_CFLAGS += -mfsgsbase
+
 RUNTIME_CFLAGS += -fcf-protection=full -fno-jump-tables
 
 RUNTIME_CFLAGS += -fno-pie -fno-pic -ffreestanding -fno-builtin -static

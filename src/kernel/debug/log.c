@@ -6,7 +6,6 @@
 #include "sync/spinlock.h"
 #include "lib/defs.h"
 #include "lib/printf.h"
-#include "sync/irq.h"
 
 static spinlock_t m_debug_lock = SPINLOCK_INIT;
 

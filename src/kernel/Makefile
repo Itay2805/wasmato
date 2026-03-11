@@ -3,7 +3,7 @@ bins-y += kernel
 
 cflags-kernel-y += -target x86_64-pc-none-elf
 cflags-kernel-y += -Wall -Werror -std=gnu23
-cflags-kernel-y += -march=x86-64-v3 -mxsave -mxsaveopt -mfsgsbase
+cflags-kernel-y += -march=x86-64-v3
 cflags-kernel-y += -flto -g
 cflags-kernel-y += -fno-omit-frame-pointer -fvisibility=hidden
 cflags-kernel-y += -Isrc/common

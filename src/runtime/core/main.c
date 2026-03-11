@@ -1,35 +1,23 @@
 #include <stdatomic.h>
 
+#include "sched.h"
+#include "timer.h"
 #include "arch/intrin.h"
 #include "lib/tsc.h"
 #include "lib/log.h"
-#include "lib/printf.h"
 #include "uapi/syscall.h"
-
-#include "spidir/log.h"
-#include "spidir/module.h"
 #include "uapi/entry.h"
 
 // This is used by the tsc header, initialize it in here
 uint64_t g_tsc_freq_hz;
 
-// static void spidir_log_callback(spidir_log_level_t level, const char* module, size_t module_len, const char* message, size_t message_len) {
-//     switch (level) {
-//         case SPIDIR_LOG_LEVEL_ERROR: ERROR("%.*s: %.*s", (int)module_len, module, (int)message_len, message);
-//         case SPIDIR_LOG_LEVEL_WARN: WARN("%.*s: %.*s", (int)module_len, module, (int)message_len, message);
-//         case SPIDIR_LOG_LEVEL_INFO: TRACE("%.*s: %.*s", (int)module_len, module, (int)message_len, message);
-//         case SPIDIR_LOG_LEVEL_DEBUG: DEBUG("%.*s: %.*s", (int)module_len, module, (int)message_len, message);
-//         case SPIDIR_LOG_LEVEL_TRACE: TRACE("%.*s: %.*s", (int)module_len, module, (int)message_len, message);
-//         default: TRACE("%.*s: %.*s", (int)module_len, module, (int)message_len, message);
-//     }
-// }
+static void hello_world(timer_t* timer) {
+    TRACE("TIMER");
 
-__attribute__((interrupt))
-static void timer_handler(interrupt_frame_t* frame) {
-    syscall2(SYSCALL_DEBUG_PRINT, "TIMER!\n", sizeof("TIMER!\n") - 1);
+    timer_set_timeout(timer, 1000);
 }
 
-__attribute__((force_align_arg_pointer))
+__attribute__((force_align_arg_pointer, nocf_check))
 int _start(runtime_params_t* params) {
     static atomic_bool sched_ready = false;
     static atomic_int cpu_count = 0;
@@ -55,6 +43,12 @@ int _start(runtime_params_t* params) {
         // setup the tsc freq so we can access it
         g_tsc_freq_hz = params->tsc_freq;
 
+        // save the cpu count
+        g_cpu_count = params->cpu_count;
+
+        // setup the timer subsystem
+        init_timers(params->timer_vector);
+
         // TODO: setup the scheduler
 
         // TODO: setup interrupt handling
@@ -67,10 +61,18 @@ int _start(runtime_params_t* params) {
         // ready to run
         sched_ready = true;
 
+        static timer_t timer = {
+            .callback = hello_world
+        };
+        timer_set_timeout(&timer, 1000);
+
         // TODO: startup scheduler
         TRACE("TODO: startup scheduler on core %d", params->cpu_id);
     }
 
     // should not reach here
-    __builtin_unreachable();
+    irq_enable();
+    while (1) {
+        cpu_relax();
+    }
 }

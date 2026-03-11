@@ -65,7 +65,7 @@ err_t user_stack_alloc(stack_alloc_t* alloc, void* name, size_t size) {
     // return both stacks
     alloc->stack = vmar_end(stack) + 1;
     if (shadow_stack != nullptr) {
-        alloc->shadow_stack = vmar_end(shadow_stack) + 1;
+        alloc->shadow_stack = vmar_end(shadow_stack) + 1 - 8;
     }
 
 cleanup:

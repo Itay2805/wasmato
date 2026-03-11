@@ -116,6 +116,20 @@ static inline void irq_disable(void) {
     asm("cli");
 }
 
+static inline bool is_irq_enabled() { return __builtin_ia32_readeflags_u64() & (1 << 9); }
+
+static inline bool irq_save() {
+    bool status = is_irq_enabled();
+    irq_disable();
+    return status;
+}
+
+static inline void irq_restore(bool irq_status) {
+    if (irq_status) {
+        irq_enable();
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // gs/fs base
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -140,6 +154,8 @@ static inline unsigned int INTRIN_ATTR _readgsbase_u64(void) {
 #define MSR_IA32_FS_BASE  0xC0000100
 #define MSR_IA32_GS_BASE  0xC0000101
 #define MSR_IA32_KERNEL_GS_BASE  0xC0000102
+
+#define MSR_IA32_TSC_AUX 0xC0000103
 
 #define MSR_IA32_APIC_BASE 0x0000001B
 

@@ -13,5 +13,6 @@ path = "../../lib/spidir/crates/bindings"
 # The latest published version of `hexfloat2` doesn't yet include its `no_std` support; grab a
 # version that does.
 hexfloat2 = { git = "https://github.com/ericseppanen/hexfloat2.git", rev = "42baa1ffaf641163e2bc63a3fccacab2f3957860" }
+
 [dependencies]
 log = "0.4.22"
