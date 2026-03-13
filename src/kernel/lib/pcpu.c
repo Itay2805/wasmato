@@ -16,11 +16,6 @@ extern char __stop_pcpu_data[];
 static CPU_LOCAL int m_cpu_id;
 
 /**
- * The pcpu bases of all cpus
- */
-static CPU_LOCAL char m_pcpu_mapping_name[sizeof("pcpu-") + 11];
-
-/**
  * The local cpu base, for ease of access
  */
 static CPU_LOCAL uintptr_t m_pcpu_base;
@@ -42,6 +37,8 @@ INIT_CODE void init_early_pcpu(void) {
 INIT_CODE err_t init_pcpu(int cpu_count) {
     err_t err = NO_ERROR;
 
+    vmar_lock();
+
     CHECK(cpu_count <= ARRAY_LENGTH(m_all_pcpu_bases));
 
     // the BSP is always at offset zero
@@ -54,6 +51,7 @@ INIT_CODE err_t init_pcpu(int cpu_count) {
         // allocate and map the pcpu data
         vmar_t* region = vmar_allocate(&g_kernel_memory, SIZE_TO_PAGES(pcpu_size), nullptr);
         CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
+        vmar_set_name_format(region, "pcpu-%d", i);
         region->pinned = true;
         region->locked = true;
 
@@ -63,14 +61,11 @@ INIT_CODE err_t init_pcpu(int cpu_count) {
 
         // remember the offset
         m_all_pcpu_bases[i] = region->base - (void*)__start_pcpu_data;
-
-        // and set the name
-        char* name = pcpu_get_pointer_of(&m_pcpu_mapping_name, i);
-        snprintf_(name, sizeof(m_pcpu_mapping_name) - 1, "pcpu-%d", i);
-        region->name = name;
     }
 
 cleanup:
+    vmar_unlock();
+
     return err;
 }
 

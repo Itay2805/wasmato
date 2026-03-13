@@ -11,7 +11,9 @@ static void save_thread_context(thread_t* thread) {
 }
 
 static void restore_thread_context(thread_t* thread) {
+    // restore the tcb
     _writefsbase_u64((uintptr_t)thread->tcb);
+
     // TODO: xrstr
 }
 

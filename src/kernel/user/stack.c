@@ -9,7 +9,7 @@ LATE_RO bool g_shadow_stack_supported;
 
 
 
-err_t user_stack_alloc(stack_alloc_t* alloc, void* name, size_t size) {
+err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     err_t err = NO_ERROR;
 
     vmar_lock();
@@ -42,21 +42,21 @@ err_t user_stack_alloc(stack_alloc_t* alloc, void* name, size_t size) {
 
     // lock both the guard and stack regions
     // so they can't be freed
-    stack->name = "stack";
+    vmar_set_name(stack, "stack");
     stack->type = VMAR_TYPE_STACK;
     stack->locked = true;
 
     // lock the shadow stack and ensure its
     // marked as shadow stack
     if (shadow_stack != nullptr) {
-        shadow_stack->name = "shadow-stack";
+        vmar_set_name(shadow_stack, "shadow-stack");
         shadow_stack->type = VMAR_TYPE_SHADOW_STACK;
         shadow_stack->alloc.protection = MAPPING_PROTECTION_RO;
         shadow_stack->locked = true;
     }
 
     // give the name to the top level entry
-    guard_region->name = name;
+    vmar_set_user_name(guard_region, name);
     guard_region->locked = true;
 
     // return both stacks

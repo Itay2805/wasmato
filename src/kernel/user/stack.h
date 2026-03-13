@@ -14,6 +14,6 @@ typedef struct stack_alloc {
     void* shadow_stack;
 } stack_alloc_t;
 
-err_t user_stack_alloc(stack_alloc_t* alloc, void* name, size_t size);
+err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size);
 
 void user_stack_free(void* ptr);

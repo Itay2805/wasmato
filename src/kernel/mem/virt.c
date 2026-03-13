@@ -296,7 +296,21 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     // TODO: when we support protection faults we should assume its already allocated
     uint64_t* pte = virt_get_pte((void*)addr, true, mapping == &g_user_memory);
     CHECK(pte != NULL);
-    CHECK(*pte == 0);
+
+    // handle race between page faults, if the error is page not found, and the
+    // pte has the present flag, assume it was set already by another core
+    if ((code & IA32_PF_EC_PROT) == 0) {
+        if ((*pte & IA32_PG_P) != 0) {
+            goto cleanup;
+        } else {
+            // ensure we have an empty pte and nothing weird
+            CHECK(*pte == 0);
+        }
+    } else {
+        // ensure the page actually exists, idk what to do
+        // if it does not exist
+        CHECK(*pte & IA32_PG_P);
+    }
 
     // we can now actually do stuff
     uint64_t phys;

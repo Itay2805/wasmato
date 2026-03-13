@@ -28,12 +28,27 @@ typedef struct syscall_frame {
     uint64_t r13;
     uint64_t r12;
     uint64_t r11;
-    uint64_t arg4;
-    uint64_t arg6;
-    uint64_t arg5;
+    union {
+        uint64_t arg4;
+        uint64_t r10;
+    };
+    union {
+        uint64_t arg6;
+        uint64_t r9;
+    };
+    union {
+        uint64_t arg5;
+        uint64_t r8;
+    };
     uint64_t rbp;
-    uint64_t arg1;
-    uint64_t arg2;
+    union {
+        uint64_t arg1;
+        uint64_t rdi;
+    };
+    union {
+        uint64_t arg2;
+        uint64_t rsi;
+    };
     union {
         uint64_t arg3;
         uint64_t result2;
@@ -55,12 +70,17 @@ LATE_RO static bool m_early_done = false;
 
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     asm("stac");
+    ASSERT(src <= (uintptr_t)vmar_end(&g_user_memory));
     memcpy(dst, (void*)src, size);
     asm("clac");
 }
 
 INIT_CODE static err_t handle_early_done(void) {
     err_t err = NO_ERROR;
+
+    // ensure all cores have the scheduler
+    // enabled properly before we start
+    ipi_broadcast(IPI_SYNC_EARLY_DONE);
 
     // ensure we are not done yet
     CHECK(!m_early_done);
@@ -125,7 +145,7 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             vmar_lock();
             vmar_t* region = vmar_allocate(&g_user_memory, frame->arg1, nullptr);
             if (region != nullptr) {
-                region->name = "heap";
+                vmar_set_name(region, "heap");
             }
             vmar_unlock();
 
@@ -138,7 +158,11 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
 
         case SYSCALL_STACK_ALLOC: {
             stack_alloc_t alloc = {};
-            if (IS_ERROR(user_stack_alloc(&alloc, "TODO", frame->arg1))) {
+
+            const char* name = (const char*)frame->arg2;
+            CHECK((void*)name <= vmar_end(&g_user_memory));
+
+            if (IS_ERROR(user_stack_alloc(&alloc, name, frame->arg1))) {
                 frame->result = 0;
                 frame->result2 = 0;
             } else {

@@ -1,7 +1,10 @@
 #pragma once
+#include <stdarg.h>
 #include <stdint.h>
 
 #include "lib/defs.h"
+#include "lib/log.h"
+#include "lib/printf.h"
 #include "lib/string.h"
 #include "lib/rbtree/rbtree_types.h"
 #include "uapi/page.h"
@@ -48,11 +51,6 @@ typedef struct vmar {
      * The node inside the parent region
      */
     rb_node_t node;
-
-    /**
-     * Name to help debug
-     */
-    const char* name;
 
     /**
      * The base address of the region
@@ -106,7 +104,32 @@ typedef struct vmar {
         } phys;
     };
 
+    /**
+     * Name to help debug, doesn't need to be too big
+     */
+    char name[32];
 } vmar_t;
+
+static inline void vmar_set_name_format(vmar_t* vmar, const char* fmt, ...) {
+    va_list ap = {};
+    va_start(ap, fmt);
+    vsnprintf_(vmar->name, sizeof(vmar->name), fmt, ap);
+    va_end(ap);
+}
+
+static inline void vmar_set_name(vmar_t* vmar, const char* name) {
+    size_t len = MIN(strlen(name), sizeof(vmar->name) - 1);
+    memcpy(vmar->name, name, len);
+    vmar->name[len] = '\0';
+}
+
+static inline void vmar_set_user_name(vmar_t* vmar, const char* name) {
+    asm("stac");
+    size_t len = MIN(strlen(name), sizeof(vmar->name) - 1);
+    memcpy(vmar->name, name, len);
+    asm("clac");
+    vmar->name[len] = '\0';
+}
 
 static inline void* vmar_end(const vmar_t* vmar) {
     size_t size = PAGES_TO_SIZE(vmar->page_count) - 1;

@@ -171,7 +171,7 @@ typedef struct sys_stack_alloc {
 	void* shadow_stack;
 } sys_stack_alloc_t;
 
-static inline sys_stack_alloc_t sys_stack_alloc(size_t stack_size) {
+static inline sys_stack_alloc_t sys_stack_alloc(size_t stack_size, const char* name) {
 	// this syscall returns two values, so we need to do this
 	// with a bit of inline asm
 	sys_stack_alloc_t alloc = {};
@@ -180,7 +180,8 @@ static inline sys_stack_alloc_t sys_stack_alloc(size_t stack_size) {
 		 : "=a"(alloc.stack)
 		 , "=d"(alloc.shadow_stack)
 		 : "a"(SYSCALL_STACK_ALLOC),
-		   "D"(stack_size)
+		   "D"(stack_size),
+		   "S"((uintptr_t)name)
 		 : "rcx", "r11", "memory", "cc"
 	);
 	return alloc;

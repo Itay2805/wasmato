@@ -305,6 +305,8 @@ cleanup:
 INIT_CODE err_t init_early_mem(void) {
     err_t err = NO_ERROR;
 
+    vmar_lock();
+
     // start by setting up the direct map, this is needed to make
     // sure we can virt-to-phys and phys-to-virt
     RETHROW(early_init_direct_map());
@@ -325,6 +327,8 @@ INIT_CODE err_t init_early_mem(void) {
     __writecr3(direct_to_phys(pml4));
 
 cleanup:
+    vmar_unlock();
+
     return err;
 }
 

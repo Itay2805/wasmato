@@ -11,16 +11,34 @@ static mem_alloc_t m_vmar_alloc;
 
 static spinlock_t m_vmar_lock = SPINLOCK_INIT;
 
+static size_t m_vmar_lock_cpu = -1;
+
+static size_t m_vmar_lock_depth = 0;
+
 INIT_CODE void init_vmar_alloc(void) {
     mem_alloc_init(&m_vmar_alloc, sizeof(vmar_t), alignof(vmar_t));
 }
 
 void vmar_lock(void) {
+    if (m_vmar_lock_cpu == get_cpu_id()) {
+        m_vmar_lock_depth++;
+        return;
+    }
+
     spinlock_acquire(&m_vmar_lock);
+    m_vmar_lock_cpu = get_cpu_id();
+    m_vmar_lock_depth = 1;
 }
 
 void vmar_unlock(void) {
-    spinlock_release(&m_vmar_lock);
+    if (--m_vmar_lock_depth == 0) {
+        m_vmar_lock_cpu = -1;
+        spinlock_release(&m_vmar_lock);
+    }
+}
+
+static void assert_vmar_locked(void) {
+    ASSERT(m_vmar_lock_cpu == get_cpu_id());
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -73,6 +91,8 @@ static vmar_t* vmar_find_overlapping(vmar_t* parent, vmar_t* child) {
 }
 
 vmar_t* vmar_find_mapping(vmar_t* entry, void* addr) {
+    assert_vmar_locked();
+
     ASSERT(entry->type == VMAR_TYPE_REGION);
     for (;;) {
         // search for an exact match
@@ -93,6 +113,8 @@ vmar_t* vmar_find_mapping(vmar_t* entry, void* addr) {
 //----------------------------------------------------------------------------------------------------------------------
 
 static void* vmar_find_gap(vmar_t* parent, size_t size) {
+    assert_vmar_locked();
+
     void* prev_node_start = vmar_end(parent);
     for (rb_node_t* node = rb_last(&parent->region.root); node != nullptr; node = rb_prev(node)) {
         vmar_t* entry = rb_entry(node, vmar_t, node);
@@ -126,6 +148,7 @@ static __always_inline bool vmar_less(struct rb_node* a, const struct rb_node* b
 }
 
 bool vmar_reserve_static(vmar_t* parent, vmar_t* child) {
+    assert_vmar_locked();
     ASSERT(child->page_count != 0);
     ASSERT(parent->type == VMAR_TYPE_REGION);
     ASSERT(!parent->locked);
@@ -161,6 +184,8 @@ bool vmar_reserve_static(vmar_t* parent, vmar_t* child) {
 //----------------------------------------------------------------------------------------------------------------------
 
 vmar_t* vmar_reserve(vmar_t* parent, size_t page_count, void* addr) {
+    assert_vmar_locked();
+
     // allocate a child object
     vmar_t* child = mem_calloc(&m_vmar_alloc);
     if (child == nullptr)
@@ -182,6 +207,8 @@ vmar_t* vmar_reserve(vmar_t* parent, size_t page_count, void* addr) {
 }
 
 vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr) {
+    assert_vmar_locked();
+
     // allocate a child object
     vmar_t* child = mem_calloc(&m_vmar_alloc);
     if (child == nullptr)
@@ -207,6 +234,8 @@ vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr) {
 //----------------------------------------------------------------------------------------------------------------------
 
 void vmar_protect(void* mapping, mapping_protection_t protection) {
+    assert_vmar_locked();
+
     vmar_t* vmar = vmar_find_mapping(&g_user_memory, mapping);
     ASSERT(vmar != nullptr);
     ASSERT(vmar->base == mapping);
@@ -227,6 +256,8 @@ void vmar_protect(void* mapping, mapping_protection_t protection) {
 //----------------------------------------------------------------------------------------------------------------------
 
 void vmar_free(vmar_t* vmar) {
+    assert_vmar_locked();
+
     ASSERT(!"TODO: vmar_free");
 }
 
@@ -294,6 +325,8 @@ static void vmar_print_tree_rec(vmar_t* region, char* prefix, size_t plen, bool 
 }
 
 void vmar_dump(vmar_t* vmar) {
+    assert_vmar_locked();
+
     char prefix[256] = {0};
     vmar_print_tree_rec(vmar, prefix, 0, true);
 }

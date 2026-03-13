@@ -25,16 +25,6 @@ typedef struct scheduler_context {
      * The idle thread of the core
      */
     thread_t* idle;
-
-    /**
-     * The preempt count of the core
-     */
-    int preempt_count;
-
-    /**
-     * Do we need to preempt
-     */
-    bool want_preempt;
 } scheduler_t;
 
 /**
@@ -46,6 +36,23 @@ static scheduler_t* m_schedulers = nullptr;
  * The current thread
  */
 static thread_local thread_t* m_current = nullptr;
+
+/**
+ * Preemption is disabled if non-zero, this can be used
+ * to quickly pin a thread for a while to do stuff that
+ * should not preempt.
+ *
+ * Its a thread local to make it easier to modify without
+ * needing to disable interrupts or anything alike because
+ * we don't have per-cpu variables that we can access
+ * atomically.
+ */
+static thread_local int32_t m_preempt_count = 0;
+
+/**
+ * Do we need to preempt whe restoring preempt count to zero?
+ */
+static thread_local bool m_want_preempt = false;
 
 thread_t* get_current_thread(void) {
     return m_current;
@@ -82,12 +89,12 @@ static void scheduler_schedule(scheduler_t* scheduler) {
     // if the new thread is not the idle thread then setup
     // a new preemption timer for 10ms
     if (new_thread != scheduler->idle) {
-        timer_set_timeout(&scheduler->timer, tsc_ms_deadline(10));
+        timer_set_timeout(&scheduler->timer, 10);
     }
 
     // switch to the thread, this will return when
     // the curren thread resumes
-    thread_switch(current, new_thread);
+    thread_switch(new_thread, current);
 }
 
 /**
@@ -98,14 +105,29 @@ static void scheduler_schedule(scheduler_t* scheduler) {
 static void scheduler_tick(timer_t* timer) {
     scheduler_t* scheduler = containerof(timer, scheduler_t, timer);
     ASSERT(scheduler == scheduler_get());
-    ASSERT(scheduler->preempt_count > 0);
-    scheduler->want_preempt = true;
+    ASSERT(m_preempt_count > 0);
+    m_want_preempt = true;
 }
 
 static void scheduler_idle_thread(void* arg) {
+    //
+    // The first thing we need to do is to preempt
+    // the current idle thread to actually let the
+    // scheduler start scheduling
+    //
+    sched_yield();
+
+    //
+    // After that first yield we can just while-true
+    // go to sleep
+    //
     while (true) {
         _Atomic(uint32_t) arg = 0;
         sys_monitor_wait(&arg, 0);
+
+        // TODO: if someone woke us up then yield, otherwise
+        //       the interrupt handler did its work and we can
+        //       go back to sleep
     }
 }
 
@@ -139,10 +161,9 @@ void init_sched(void) {
 }
 
 void sched_start_per_core(void) {
-    // find the thread that we need to run and call it
-    scheduler_t* scheduler = &m_schedulers[get_cpu_id()];
-    thread_t* thread = scheduler_select_thread(scheduler);
-    thread_resume(thread);
+    // start by running the idle threads, just to get into a stable
+    // stack, from there we will do the rest
+    thread_resume(m_schedulers[get_cpu_id()].idle);
 }
 
 void sched_queue(thread_t* thread) {
@@ -152,27 +173,34 @@ void sched_queue(thread_t* thread) {
     irq_restore(irq_state);
 }
 
+void sched_yield(void) {
+    if (m_preempt_count == 0) {
+        // we can preempt right now
+        bool irq_state = irq_save();
+        scheduler_schedule(scheduler_get());
+        irq_restore(irq_state);
+    } else {
+        // there is preemption right now
+        m_want_preempt = true;
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Preemption handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void preempt_disable(void) {
-    bool irq_state = irq_save();
-    scheduler_t* sched = scheduler_get();
-    sched->preempt_count++;
-    irq_restore(irq_state);
+    ASSERT(m_preempt_count >= 0);
+    m_preempt_count++;
 }
 
 void preempt_enable(void) {
-    // can't preempt right now because preemption
-    // is disabled, so can't switch cores
-    scheduler_t* sched = scheduler_get();
-    ASSERT(sched->preempt_count > 0);
+    ASSERT(m_preempt_count > 0);
 
-    if (sched->preempt_count > 1) {
+    if (m_preempt_count > 1) {
         // just decrement normally and return, we
         // can't preempt yet
-        --sched->preempt_count;
+        --m_preempt_count;
         return;
     }
 
@@ -184,17 +212,17 @@ void preempt_enable(void) {
     // reduce the preempt count
     // and check if we need to
     // preempt right now
-    sched->preempt_count--;
+    m_preempt_count--;
 
-    if (sched->want_preempt) {
+    if (m_want_preempt) {
         // reschedule, we are already running
         // without interrupts so this can just
         // run
-        scheduler_schedule(sched);
+        scheduler_schedule(scheduler_get());
 
         // we just got back from schedule, we don't
         // need more preemption
-        sched->want_preempt = false;
+        m_want_preempt = false;
     }
 
     irq_restore(irq_state);

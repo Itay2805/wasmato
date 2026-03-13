@@ -136,7 +136,7 @@ INIT_CODE static err_t runtime_elf_map(void) {
         // setup the region
         vmar_t* region = vmar_allocate(&g_runtime_region, SIZE_TO_PAGES(aligned_size), (void*)aligned_start);
         CHECK_ERROR(region != NULL, ERROR_OUT_OF_MEMORY);
-        region->name = name;
+        vmar_set_name(region, name);
         region->pinned = true;
 
         // copy the data, we need to enable accessing user memory while we do that
@@ -205,9 +205,7 @@ cleanup:
 INIT_CODE err_t load_runtime(void) {
     err_t err = NO_ERROR;
 
-    // NOTE: we are running all this code without the vmar lock
-    //       with the assumption it is done before anything that
-    //       can race with the code exists.
+    vmar_lock();
 
     // validate the elf header
     RETHROW(runtime_elf_verify_header());
@@ -237,15 +235,15 @@ INIT_CODE err_t load_runtime(void) {
     m_runtime_entry_point = (void*)ehdr->e_entry;
 
 cleanup:
+    vmar_unlock();
+
     return err;
 }
 
-static CPU_LOCAL char m_runtime_stack_name[sizeof("runtime-stack-") + 11];
-
 INIT_CODE void runtime_start(void) {
     // set the name of the stack
-    char* name = pcpu_get_pointer(m_runtime_stack_name);
-    snprintf_(name, sizeof(m_runtime_stack_name), "runtime-stack-%d", get_cpu_id());
+    char name[32];
+    snprintf_(name, sizeof(name), "early-stack-%d", get_cpu_id());
 
     // allocate a stack, it will be used as the scheduler stack for the runtime
     stack_alloc_t stack_alloc = {};

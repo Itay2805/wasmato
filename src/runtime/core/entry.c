@@ -11,15 +11,21 @@
 // This is used by the tsc header, initialize it in here
 uint64_t g_tsc_freq_hz;
 
+static atomic_bool m_sched_ready = false;
+static atomic_int m_cpu_count = 0;
+
+// the actual main function
+void main(void* arg);
+
 __attribute__((force_align_arg_pointer, nocf_check))
 int _start(runtime_params_t* params) {
-    static atomic_bool sched_ready = false;
-    static atomic_int cpu_count = 0;
+    // must not be enabled at this point
+    ASSERT(!is_irq_enabled());
 
     // wait for all cores to enter the runtime before we continue
     TRACE("runtime: Entered on CPU #%d", params->cpu_id);
-    cpu_count++;
-    while (cpu_count != params->cpu_count) {
+    m_cpu_count++;
+    while (m_cpu_count != params->cpu_count) {
         cpu_relax();
     }
 
@@ -27,7 +33,7 @@ int _start(runtime_params_t* params) {
         // now on secondary cpus wait until we are
         // done with the init sequence and the scheduler
         // is ready to be activated
-        while (!sched_ready) {
+        while (!m_sched_ready) {
             cpu_relax();
         }
 
@@ -47,13 +53,14 @@ int _start(runtime_params_t* params) {
         // setup scheduler
         init_sched();
 
-        // we are done, let the kernel know we won't
-        // need anything else
-        sys_early_done();
+        // create the init thread and start it
+        thread_t* thread = thread_create(main, nullptr, "init");
+        ASSERT(thread != nullptr);
+        sched_queue(thread);
 
         // let the other cores know that we are
         // ready to run
-        sched_ready = true;
+        m_sched_ready = true;
     }
 
     // we can start the scheduler on all cores

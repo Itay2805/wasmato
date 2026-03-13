@@ -50,6 +50,7 @@ void ipi_handle(void) {
     // dispatch the ipi itself
     switch (m_ipi_reason) {
         case IPI_REASON_TLB_FLUSH: virt_handle_tlb_flush_ipi(); break;
+        case IPI_SYNC_EARLY_DONE: break;
         default: ASSERT(!"Invalid IPI reason");
     }
 

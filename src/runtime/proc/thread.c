@@ -53,6 +53,7 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     // allocate the thread itself
     thread_t* thread = mem_alloc_aligned(g_thread_size, 64);
     CHECK_ERROR(thread != nullptr, ERROR_OUT_OF_MEMORY);
+    memset(thread, 0, sizeof(*thread));
 
     // TODO: something simpler? better? just get a pointer and
     //       copy from the user?
@@ -63,14 +64,16 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     thread->name[count] = '\0';
 
     // allocate the stacks
-    sys_stack_alloc_t stack = sys_stack_alloc(SIZE_32KB);
+    sys_stack_alloc_t stack = sys_stack_alloc(SIZE_32KB, thread->name);
     CHECK_ERROR(stack.stack != nullptr, ERROR_OUT_OF_MEMORY);
     thread->stack = stack.stack;
     thread->ssp = stack.shadow_stack;
 
     // allocate the tcb and set it up
-    void* tls = mem_alloc_aligned(g_thread_tls_size + sizeof(tcb_t), 16);
+    size_t tls_size = g_thread_tls_size + sizeof(tcb_t);
+    void* tls = mem_alloc_aligned(tls_size, 16);
     CHECK_ERROR(tls != nullptr, ERROR_OUT_OF_MEMORY);
+    memset(tls, 0, tls_size);
     thread->tcb = tls + g_thread_tls_size;
     thread->tcb->tcb = thread->tcb;
 

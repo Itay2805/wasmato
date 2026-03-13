@@ -22,10 +22,28 @@ void init_sched(void);
 
 noreturn void sched_start_per_core(void);
 
+/**
+ * Queue a new thread to run
+ */
 void sched_queue(thread_t* thread);
 
+/**
+ * Yield to another process
+ */
+void sched_yield(void);
+
+/**
+ * Get the currently running thread
+ */
 thread_t* get_current_thread(void);
 
+/**
+ * Disable preemption, supports nesting
+ */
 void preempt_disable(void);
 
+/**
+ * Enable preemption, needs to be called for every preempt_disable.
+ * This will possibly preempt if required
+ */
 void preempt_enable(void);

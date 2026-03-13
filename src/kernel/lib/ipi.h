@@ -7,6 +7,13 @@ typedef enum ipi_reason {
      * Perform a TLB flush
      */
     IPI_REASON_TLB_FLUSH,
+
+    /**
+     * Ensure all cores have interrupts enabled, and thus
+     * are actually after the scheduler init by ensuring
+     * all of them can get the ipi
+     */
+    IPI_SYNC_EARLY_DONE,
 } ipi_reason_t;
 
 /**

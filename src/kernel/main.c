@@ -226,15 +226,7 @@ INIT_CODE static void set_cpu_id(void) {
         &structured_extended_feature_flags_ecx.raw,
         &d
     );
-
-    CPUID_EXTENDED_CPU_SIG_EDX extended_cpu_sig_edx = {};
-    __get_cpuid(
-        CPUID_EXTENDED_CPU_SIG,
-        &a, &b, &c,
-        &extended_cpu_sig_edx.raw
-    );
-
-    ASSERT(structured_extended_feature_flags_ecx.RDPID || extended_cpu_sig_edx.RDTSCP, "Missing RDPID/RDTSCP support");
+    ASSERT(structured_extended_feature_flags_ecx.RDPID, "Missing RDPID support");
 
     // set the cpuid in the TSC aux for usermode to use
     __wrmsr(MSR_IA32_TSC_AUX, get_cpu_id());
@@ -266,9 +258,6 @@ INIT_CODE static void set_cpu_features(void) {
     efer.sce = 1;
     __wrmsr(MSR_IA32_EFER, efer.packed);
 
-    // set the cpuid that usermode can easily access
-    set_cpu_id();
-
     // setup the syscall stuff
     init_syscall();
 
@@ -296,6 +285,7 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     set_cpu_features();
     switch_page_table();
     pcpu_init_per_core(info->extra_argument);
+    set_cpu_id();
     init_tss();
     init_idt();
 
@@ -351,6 +341,7 @@ OMIT_ENDBR INIT_CODE void _start() {
     //
     string_verify_features();
     set_cpu_features();
+    set_cpu_id();
 
     //
     // setup the basic memory management
