@@ -147,13 +147,13 @@ static void lapic_write(size_t offset, uint32_t value) {
     }
 }
 
-static uint32_t lapic_read(size_t offset) {
-    if (m_x2apic_mode) {
-        return __rdmsr((offset >> 4) + X2APIC_MSR_BASE_ADDRESS);
-    } else {
-        return *((uint32_t*)(m_xapic_base + offset));
-    }
-}
+// static uint32_t lapic_read(size_t offset) {
+//     if (m_x2apic_mode) {
+//         return __rdmsr((offset >> 4) + X2APIC_MSR_BASE_ADDRESS);
+//     } else {
+//         return *((uint32_t*)(m_xapic_base + offset));
+//     }
+// }
 
 INIT_CODE static void lapic_timer_calibrate(void) {
     ASSERT(!"TODO: lapic_timer_calibrate");

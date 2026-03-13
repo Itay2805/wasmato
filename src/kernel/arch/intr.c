@@ -248,7 +248,7 @@ static bool page_fault_handler(exception_frame_t* frame) {
 }
 
 __attribute__((used))
-void exception_common_handler(exception_frame_t* frame) {
+OMIT_ENDBR void exception_common_handler(exception_frame_t* frame) {
     swapgs(frame);
 
     if (frame->exception == EXCEPT_IA32_PAGE_FAULT) {

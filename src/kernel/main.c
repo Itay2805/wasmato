@@ -217,7 +217,7 @@ INIT_CODE static void configure_cet(void) {
 }
 
 INIT_CODE static void set_cpu_id(void) {
-    uint32_t a, b, c, d;
+    uint32_t a, b, d;
 
     CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
     __get_cpuid_count(
