@@ -193,6 +193,14 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             intr_set_user_handler(frame->arg1, (interrupt_handler_t)frame->arg2);
         } break;
 
+        case SYSCALL_EARLY_SET_THREAD_ENTRY_THUNK: {
+            CHECK(!m_early_done);
+            CHECK(g_shadow_stack_thread_entry_thunk == 0);
+            CHECK((uintptr_t)g_runtime_region.base <= frame->arg1);
+            CHECK(frame->arg1 < (uintptr_t)vmar_end(&g_runtime_region));
+            g_shadow_stack_thread_entry_thunk = frame->arg1;
+        } break;
+
         case SYSCALL_EARLY_DONE: {
             // perform last cleanups and reclaim all init code
             RETHROW(handle_early_done());

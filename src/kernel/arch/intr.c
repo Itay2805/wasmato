@@ -77,7 +77,7 @@ typedef struct exception_frame {
 /**
  * Pretty print exception names
  */
-static const char* m_exception_names[] = {
+static const char* const m_exception_names[] = {
     "#DE - Division Error",
     "#DB - Debug",
     "Non-maskable Interrupt",
@@ -129,9 +129,9 @@ static void exception_dump_frame(exception_frame_t* frame) {
 
     // reset the spinlock so we can print
     ERROR("");
-    ERROR("****************************************************");
+    ERROR("**************************************************************");
     ERROR("Exception occurred: %s (%lu)", m_exception_names[frame->exception], frame->exception);
-    ERROR("****************************************************");
+    ERROR("**************************************************************");
     ERROR("");
 
     if (frame->exception == EXCEPT_IA32_PAGE_FAULT) {
@@ -148,13 +148,41 @@ static void exception_dump_frame(exception_frame_t* frame) {
         ERROR("");
     } else if (frame->exception == EXCEPT_IA32_GP_FAULT && frame->error_code != 0) {
         selector_error_code_t selector = (selector_error_code_t) { .packed = frame->error_code };
-        static const char* table[] = {
+        static const char* const table[] = {
             "GDT",
             "IDT",
             "LDT",
             "IDT"
         };
         ERROR("Accessing %s[%d]", table[selector.tbl], selector.index);
+        ERROR("");
+    } else if (frame->exception == EXCEPT_IA32_CONTROL_PROTECTION) {
+        static const char* const table[] = {
+            "NEAR-RET",
+            "FAR-RET/IRET",
+            "ENDBRANCH",
+            "RSTORSSP",
+            "SETSSBSY"
+        };
+        uint32_t cpec = frame->error_code & 0x7fff;
+        if (cpec != 0 && cpec <= ARRAY_LENGTH(table)) {
+            ERROR("From %s", table[cpec - 1]);
+        } else {
+            ERROR("From %x", cpec);
+        }
+        if ((frame->error_code & BIT15) != 0) {
+            ERROR("Inside enclave");
+        }
+
+        if (cpec == 1 || cpec == 2 || cpec == 4 | cpec == 5) {
+            uint64_t* shadow_stack = (uint64_t*)__rdmsr(MSR_IA32_PL3_SSP);
+            uint64_t* stack = (uint64_t*)frame->rsp;
+            ERROR("\tSSP:      %016lx", (uintptr_t)shadow_stack);
+            if (cpec == 1) {
+                ERROR("\tExpected: %016lx", shadow_stack[-1]);
+                ERROR("\tGot:      %016lx", stack[0]);
+            }
+        }
         ERROR("");
     }
 
@@ -193,6 +221,8 @@ noreturn static void panic_exception_handler(exception_frame_t* frame) {
     lapic_send_ipi_all_excluding_self(INTR_VECTOR_PANIC);
     spinlock_release(&m_exception_lock);
 
+    // allow to access usermode for fun and profit
+    asm("stac");
     exception_dump_frame(frame);
 
     // stop
@@ -217,25 +247,19 @@ static bool page_fault_handler(exception_frame_t* frame) {
     return success;
 }
 
-static spinlock_t m_lock;
-
 __attribute__((used))
 void exception_common_handler(exception_frame_t* frame) {
-    spinlock_acquire(&m_lock);
-
     swapgs(frame);
 
     if (frame->exception == EXCEPT_IA32_PAGE_FAULT) {
         // try to handle the page fault first
         if (page_fault_handler(frame)) {
             swapgs(frame);
-            spinlock_release(&m_lock);
             return;
         }
     } else if (frame->exception == EXCEPT_IA32_DEBUG) {
         exception_dump_frame(frame);
         swapgs(frame);
-        spinlock_release(&m_lock);
         return;
     }
 

@@ -9,7 +9,7 @@ void main(void* arg) {
 
     // we can now mark that the early done is over,
     // and we can free the main stacks
-    // sys_early_done();
+    sys_early_done();
 
     while (1);
 }

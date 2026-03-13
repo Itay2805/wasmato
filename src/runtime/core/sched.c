@@ -92,9 +92,10 @@ static void scheduler_schedule(scheduler_t* scheduler) {
         timer_set_timeout(&scheduler->timer, 10);
     }
 
-    // switch to the thread, this will return when
-    // the curren thread resumes
-    thread_switch(new_thread, current);
+    // only perform a switch if we actually have a new thread
+    if (new_thread != current) {
+        thread_switch(new_thread, current);
+    }
 }
 
 /**
@@ -147,6 +148,10 @@ void thread_entry_point(thread_t* thread, thread_entry_t entry, void* arg) {
 void init_sched(void) {
     m_schedulers = mem_alloc(sizeof(*m_schedulers) * g_cpu_count);
     ASSERT(m_schedulers != nullptr);
+
+    // tell the kernel about our entry thunk, it will ensure that
+    // shadow stacks are properly set with this
+    sys_early_set_thread_entry_thunk(thread_entry_thunk);
 
     for (int i = 0; i < g_cpu_count; i++) {
         scheduler_t* scheduler = &m_schedulers[i];

@@ -172,7 +172,6 @@ INIT_CODE static void configure_cet(void) {
     if (!first) {
         ASSERT(supported);
     }
-    first = false;
     supported = true;
 
     MSR_IA32_CET_REGISTER u_cet = {};
@@ -191,19 +190,21 @@ INIT_CODE static void configure_cet(void) {
         s_cet.ENDBR_EN = 1;
     }
 
-    // // enable shadow stack only for usermode for now
-    // if (structured_extended_feature_flags_ecx.CET_SS) {
-    //     if (first) {
-    //         TRACE("cpu: enabling Shadow Stacks");
-    //     }
-    //
-    //     // mark that shadow stacks are supported
-    //     g_shadow_stack_supported = true;
-    //
-    //     // enable usermode shadow stack
-    //     // TODO: how to enable kernel mode shadow stacks correctly?
-    //     u_cet.SH_STK_EN = 1;
-    // }
+    // enable shadow stack only for usermode for now
+    if (structured_extended_feature_flags_ecx.CET_SS) {
+        if (first) {
+            TRACE("cpu: enabling Shadow Stacks");
+        }
+
+        // mark that shadow stacks are supported
+        g_shadow_stack_supported = true;
+
+        // enable usermode shadow stack
+        // TODO: how to enable kernel mode shadow stacks correctly?
+        u_cet.SH_STK_EN = 1;
+    }
+
+    first = false;
 
     // configure both
     __wrmsr(MSR_IA32_U_CET, u_cet.raw);

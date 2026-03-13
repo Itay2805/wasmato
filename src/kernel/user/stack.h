@@ -9,6 +9,12 @@
  */
 extern bool g_shadow_stack_supported;
 
+/**
+ * The entry point of a thread, which is pushed
+ * into the shadow stack so it can be returned to
+ */
+extern uintptr_t g_shadow_stack_thread_entry_thunk;
+
 typedef struct stack_alloc {
     void* stack;
     void* shadow_stack;

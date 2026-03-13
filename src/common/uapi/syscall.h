@@ -139,6 +139,7 @@ typedef enum syscall {
 	SYSCALL_INTERRUPT_ACK,
 	SYSCALL_MONITOR_WAIT,
 	SYSCALL_EARLY_INTERRUPT_SET_HANDLER,
+	SYSCALL_EARLY_SET_THREAD_ENTRY_THUNK,
     SYSCALL_EARLY_DONE,
 } syscall_t;
 
@@ -232,6 +233,10 @@ typedef void (*interrupt_handler_t)(interrupt_frame_t* frame);
 
 static inline void sys_early_interrupt_set_handler(uint8_t vector, interrupt_handler_t handler) {
 	(void)syscall2(SYSCALL_EARLY_INTERRUPT_SET_HANDLER, vector, handler);
+}
+
+static inline void sys_early_set_thread_entry_thunk(void* addr) {
+	(void)syscall1(SYSCALL_EARLY_SET_THREAD_ENTRY_THUNK, addr);
 }
 
 static inline void sys_early_done(void) {

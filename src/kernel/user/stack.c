@@ -1,13 +1,14 @@
 #include "stack.h"
 
+#include "arch/intrin.h"
 #include "mem/mappings.h"
 #include "mem/vmar.h"
 #include "lib/assert.h"
 #include "lib/rbtree/rbtree.h"
 
-LATE_RO bool g_shadow_stack_supported;
+LATE_RO bool g_shadow_stack_supported = false;
 
-
+LATE_RO uintptr_t g_shadow_stack_thread_entry_thunk = 0;
 
 err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     err_t err = NO_ERROR;
@@ -62,7 +63,19 @@ err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     // return both stacks
     alloc->stack = vmar_end(stack) + 1;
     if (shadow_stack != nullptr) {
-        alloc->shadow_stack = vmar_end(shadow_stack) + 1 - 8;
+        void* ssp = vmar_end(shadow_stack) + 1 - 8;
+
+        // push the thread_entry_thunk address, this is so
+        // the scheduler can return into the new thread
+        ssp -= 8;
+        _wrussq(g_shadow_stack_thread_entry_thunk, ssp);
+
+        // push the stack restore token, so we can even switch
+        // to this shadow stack
+        ssp -= 8;
+        _wrussq(((uintptr_t)ssp + 8) | BIT0, ssp);
+
+        alloc->shadow_stack = ssp;
     }
 
 cleanup:
