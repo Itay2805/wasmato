@@ -1,8 +1,11 @@
 #include "sched.h"
 
+#include <cpuid.h>
+
 #include "thread.h"
 #include "timer.h"
 #include "alloc/alloc.h"
+#include "arch/cpuid.h"
 #include "arch/intrin.h"
 #include "lib/except.h"
 #include "proc/thread.h"
@@ -53,6 +56,11 @@ static thread_local int32_t m_preempt_count = 0;
  * Do we need to preempt whe restoring preempt count to zero?
  */
 static thread_local bool m_want_preempt = false;
+
+/**
+ * Should we use umwait or not
+ */
+static bool m_umwait_supported = false;
 
 thread_t* get_current_thread(void) {
     return m_current;
@@ -110,6 +118,28 @@ static void scheduler_tick(timer_t* timer) {
     m_want_preempt = true;
 }
 
+static void umonitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
+    for (;;) {
+        uint32_t value = atomic_load_explicit(addr, memory_order_acquire);
+
+        if (value != expected) {
+            return;
+        }
+
+        _umonitor(addr);
+
+        value = atomic_load_explicit(addr, memory_order_acquire);
+        if (value != expected) {
+            return;
+        }
+
+        // BIT1 == break on interrupt even with IF=0
+        // TODO: disable timer before entering the wait
+        // loop and do it manually?
+        _umwait(0, UINT64_MAX);
+    }
+}
+
 static void scheduler_idle_thread(void* arg) {
     //
     // The first thing we need to do is to preempt
@@ -124,7 +154,12 @@ static void scheduler_idle_thread(void* arg) {
     //
     while (true) {
         _Atomic(uint32_t) arg = 0;
-        sys_monitor_wait(&arg, 0);
+
+        if (m_umwait_supported) {
+            umonitor_wait(&arg, 0);
+        } else {
+            sys_monitor_wait(&arg, 0);
+        }
 
         // TODO: if someone woke us up then yield, otherwise
         //       the interrupt handler did its work and we can
@@ -162,6 +197,25 @@ void init_sched(void) {
         scheduler->idle = thread_create(scheduler_idle_thread, nullptr, "idle-%d", i);
         ASSERT(scheduler->idle != nullptr);
         scheduler->idle->parked = true;
+    }
+
+    // check for umwait support and use that whenever supported
+    // because it offers better perf
+    uint32_t a, b, d;
+    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
+    ASSERT(__get_cpuid_count(
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
+        &a,
+        &b,
+        &structured_extended_feature_flags_ecx.raw,
+        &d
+    ));
+    if (structured_extended_feature_flags_ecx.WAITPKG) {
+        TRACE("sched: using umwait in idle thread");
+        m_umwait_supported = true;
+    } else {
+        TRACE("sched: using kernel monitor in idle thread");
     }
 }
 

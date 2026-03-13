@@ -12,11 +12,13 @@ cflags-kernel-y += -Wno-unused-label
 cflags-kernel-y += -mgeneral-regs-only
 cflags-kernel-y += -fcf-protection=branch -fno-jump-tables
 cflags-kernel-y += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
-cflags-kernel-y += -mcmodel=kernel -mno-red-zone -mshstk
+cflags-kernel-y += -mcmodel=kernel -mno-red-zone
 cflags-kernel-y += -nostdlib -nostdinc
 cflags-kernel-y += -isystem $(CLANG_RESOURCE_DIR)/include
 cflags-kernel-y += -Isrc/kernel
 cflags-kernel-y += -Ilib/limine-protocol/include
+
+cflags-kernel-y += -mshstk
 
 # we need the runtime for the kernel to work
 ccodeps-kernel-y += $(BUILD)/runtime

@@ -7,7 +7,7 @@ RUNTIME_CFLAGS += -Isrc/common
 RUNTIME_CFLAGS += -fno-omit-frame-pointer -fvisibility=hidden
 RUNTIME_CFLAGS += -Wno-unused-label
 
-RUNTIME_CFLAGS += -mxsave -mxsaveopt
+RUNTIME_CFLAGS += -mxsave -mxsaveopt -mwaitpkg
 RUNTIME_CFLAGS += -mrdpid
 RUNTIME_CFLAGS += -mfsgsbase
 

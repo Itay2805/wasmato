@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <x86intrin.h>
 
 #define INTRIN_ATTR __attribute__((always_inline, artificial, target("general-regs-only")))
 
@@ -96,22 +97,22 @@ static inline INTRIN_ATTR void __writecr8(const unsigned long long Data) {
 // MWAIT
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static inline INTRIN_ATTR void __mwait(uintptr_t eax, uintptr_t ecx) {
-    __asm__ __volatile__("mwait" : : "a"(eax), "c"(ecx));
-}
-
-static inline INTRIN_ATTR void __monitor(uintptr_t eax, uintptr_t ecx, uintptr_t edx) {
-    __asm__ __volatile__("monitor" : : "a"(eax), "c"(ecx), "d"(edx));
-}
+// extern inline void INTRIN_ATTR _mm_monitor(void const* __P, unsigned int __E, unsigned int __H) {
+//     __builtin_ia32_monitor(__P, __E, __H);
+// }
+//
+// extern inline void INTRIN_ATTR _mm_mwait(unsigned int __E, unsigned int __H) {
+//     __builtin_ia32_mwait(__E, __H);
+// }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // shadow stacks
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-static inline INTRIN_ATTR void _wrussq(unsigned long long __B, void* __C) {
-    __builtin_ia32_wrussq(__B, __C);
-}
+// static inline INTRIN_ATTR void _wrussq(unsigned long long __B, void* __C) {
+//     __builtin_ia32_wrussq(__B, __C);
+// }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // irq cli/sti
@@ -143,25 +144,27 @@ static inline void irq_restore(bool irq_status) {
 // gs/fs base
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static inline uint64_t INTRIN_ATTR _readfsbase_u64(void) {
-    return __builtin_ia32_rdfsbase64();
-}
-
-static inline uint64_t INTRIN_ATTR _readgsbase_u64(void) {
-    return __builtin_ia32_rdgsbase64();
-}
-
-static inline void INTRIN_ATTR _writefsbase_u64(uint64_t value) {
-    __builtin_ia32_wrfsbase64(value);
-}
-
-static inline void INTRIN_ATTR _writegsbase_u64(uint64_t value) {
-    __builtin_ia32_wrgsbase64(value);
-}
+// static inline uint64_t INTRIN_ATTR _readfsbase_u64(void) {
+//     return __builtin_ia32_rdfsbase64();
+// }
+//
+// static inline uint64_t INTRIN_ATTR _readgsbase_u64(void) {
+//     return __builtin_ia32_rdgsbase64();
+// }
+//
+// static inline void INTRIN_ATTR _writefsbase_u64(uint64_t value) {
+//     __builtin_ia32_wrfsbase64(value);
+// }
+//
+// static inline void INTRIN_ATTR _writegsbase_u64(uint64_t value) {
+//     __builtin_ia32_wrgsbase64(value);
+// }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // MSR access
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#define MSR_IA32_UMWAIT_CONTROL 0xE1
 
 #define MSR_IA32_STAR  0xC0000081
 #define MSR_IA32_LSTAR  0xC0000082

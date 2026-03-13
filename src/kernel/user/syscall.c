@@ -68,6 +68,11 @@ typedef struct syscall_frame {
  */
 LATE_RO static bool m_early_done = false;
 
+/**
+ * Is using monitor supported
+ */
+LATE_RO bool g_monitor_supported = false;
+
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     asm("stac");
     ASSERT(src <= (uintptr_t)vmar_end(&g_user_memory));
@@ -104,7 +109,11 @@ static void user_access_disable(void) {
     asm("clac");
 }
 
+__attribute__((target("sse3")))
 static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
+    // ensure that we even support using the monitor instruction
+    ASSERT(g_monitor_supported);
+
     for (;;) {
         user_access_enable();
         uint32_t value = atomic_load_explicit(addr, memory_order_acquire);
@@ -114,7 +123,7 @@ static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
             return;
         }
 
-        __monitor((uintptr_t)addr, 0, 0);
+        _mm_monitor(addr, 0, 0);
 
         user_access_enable();
         value = atomic_load_explicit(addr, memory_order_acquire);
@@ -124,7 +133,7 @@ static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
         }
 
         // BIT1 == break on interrupt even with IF=0
-        __mwait(BIT1, 0);
+        _mm_mwait(BIT1, 0);
     }
 }
 
