@@ -1,0 +1,94 @@
+#include "thread.h"
+#include "core/thread.h"
+
+#include "alloc/alloc.h"
+#include "arch/intrin.h"
+#include "lib/except.h"
+#include "lib/printf.h"
+#include "uapi/syscall.h"
+
+/**
+ * The saved state when switching between threads
+ */
+typedef struct thread_entry_frame {
+    uint64_t r15;
+    uint64_t r14;
+    uint64_t r13;
+    uint64_t r12;
+    uint64_t rbx;
+    uint64_t rbp;
+    uint64_t rip;
+    uint64_t rsi;
+    uint64_t rdx;
+} PACKED thread_entry_frame_t;
+
+static size_t g_thread_size = 0;
+static size_t g_thread_tls_size = 0;
+
+void init_threads(size_t tls_size) {
+    g_thread_tls_size = ALIGN_UP(tls_size, 16);
+    g_thread_size = sizeof(thread_t);
+
+    // TODO: calculate the FPU context
+}
+
+static void thread_free(thread_t* thread) {
+    if (thread != nullptr) {
+        if (thread->stack != nullptr) {
+            sys_stack_free(thread->stack);
+        }
+        if (thread->tcb != nullptr) {
+            mem_free((void*)thread->tcb - g_thread_tls_size);
+        }
+        if (thread->name != nullptr) {
+            mem_free(thread->name);
+        }
+        mem_free(thread);
+    }
+}
+
+thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name_fmt, va_list args) {
+    err_t err = NO_ERROR;
+
+    // allocate the thread itself
+    thread_t* thread = mem_alloc_aligned(g_thread_size, 64);
+    CHECK_ERROR(thread != nullptr, ERROR_OUT_OF_MEMORY);
+
+    // TODO: something simpler? better? just get a pointer and
+    //       copy from the user?
+    int count = vsnprintf_(nullptr, 0, name_fmt, args);
+    thread->name = mem_alloc(count + 1);
+    CHECK(thread->name != nullptr);
+    vsnprintf_(thread->name, count + 1, name_fmt, args);
+    thread->name[count] = '\0';
+
+    // allocate the stacks
+    sys_stack_alloc_t stack = sys_stack_alloc(SIZE_32KB);
+    CHECK_ERROR(stack.stack != nullptr, ERROR_OUT_OF_MEMORY);
+    thread->stack = stack.stack;
+    thread->ssp = stack.shadow_stack;
+
+    // allocate the tcb and set it up
+    void* tls = mem_alloc_aligned(g_thread_tls_size + sizeof(tcb_t), 16);
+    CHECK_ERROR(tls != nullptr, ERROR_OUT_OF_MEMORY);
+    thread->tcb = tls + g_thread_tls_size;
+    thread->tcb->tcb = thread->tcb;
+
+    // setup the rsp
+    void* rsp = thread->stack - 16;
+    rsp -= sizeof(thread_entry_frame_t);
+    thread_entry_frame_t* entry_frame = rsp;
+    thread->rsp = rsp;
+
+    // setup the entry frame
+    entry_frame->rip = (uintptr_t)thread_entry_thunk;
+    entry_frame->rsi = (uintptr_t)entry_point;
+    entry_frame->rdx = (uintptr_t)arg;
+
+cleanup:
+    if (IS_ERROR(err)) {
+        thread_free(thread);
+        thread = nullptr;
+    }
+    return thread;
+}

@@ -353,10 +353,9 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
 
 cleanup:
     if (IS_ERROR(err)) {
-        if (g_kernel_memory.base <= (void*)addr) {
-            vmar_dump(&g_kernel_memory);
-        } else {
+        if (addr > SIZE_4KB) {
             vmar_dump(&g_user_memory);
+            vmar_dump(&g_kernel_memory);
         }
     } else {
         // don't unlock if we got an error

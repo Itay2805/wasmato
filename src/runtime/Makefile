@@ -14,7 +14,7 @@ RUNTIME_CFLAGS += -mfsgsbase
 RUNTIME_CFLAGS += -fcf-protection=full -fno-jump-tables
 
 RUNTIME_CFLAGS += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
-RUNTIME_CFLAGS += -mcmodel=small
+RUNTIME_CFLAGS += -mcmodel=small -mno-red-zone
 RUNTIME_CFLAGS += -nostdlib -nostdinc
 RUNTIME_CFLAGS += -isystem $(shell $(CC) --print-resource-dir)/include
 RUNTIME_CFLAGS += -Isrc/runtime

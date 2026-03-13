@@ -11,12 +11,6 @@
 // This is used by the tsc header, initialize it in here
 uint64_t g_tsc_freq_hz;
 
-static void hello_world(timer_t* timer) {
-    TRACE("TIMER");
-
-    timer_set_timeout(timer, 1000);
-}
-
 __attribute__((force_align_arg_pointer, nocf_check))
 int _start(runtime_params_t* params) {
     static atomic_bool sched_ready = false;
@@ -37,8 +31,6 @@ int _start(runtime_params_t* params) {
             cpu_relax();
         }
 
-        TRACE("TODO: startup scheduler on core %d", params->cpu_id);
-
     } else {
         // setup the tsc freq so we can access it
         g_tsc_freq_hz = params->tsc_freq;
@@ -49,9 +41,11 @@ int _start(runtime_params_t* params) {
         // setup the timer subsystem
         init_timers(params->timer_vector);
 
-        // TODO: setup the scheduler
+        // setup threading
+        init_threads(params->tls_size);
 
-        // TODO: setup interrupt handling
+        // setup scheduler
+        init_sched();
 
         // we are done, let the kernel know we won't
         // need anything else
@@ -60,19 +54,8 @@ int _start(runtime_params_t* params) {
         // let the other cores know that we are
         // ready to run
         sched_ready = true;
-
-        static timer_t timer = {
-            .callback = hello_world
-        };
-        timer_set_timeout(&timer, 1000);
-
-        // TODO: startup scheduler
-        TRACE("TODO: startup scheduler on core %d", params->cpu_id);
     }
 
-    // should not reach here
-    irq_enable();
-    while (1) {
-        cpu_relax();
-    }
+    // we can start the scheduler on all cores
+    sched_start_per_core();
 }

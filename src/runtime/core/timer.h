@@ -4,12 +4,13 @@
 
 #include "lib/tsc.h"
 #include "lib/rbtree/rbtree.h"
+#include "sync/mutex.h"
 
-struct timer;
+typedef struct timer timer_t;
 
-typedef void (*timer_cb_t)(struct timer* timer);
+typedef void (*timer_cb_t)(timer_t* timer);
 
-typedef struct timer {
+struct timer {
     /**
      * The node in the timer tree
      */
@@ -24,13 +25,19 @@ typedef struct timer {
      * The callback for the timer
      */
     timer_cb_t callback;
-} timer_t;
+
+    /**
+     * Is the timer set?
+     */
+    bool set;
+};
 
 void init_timers(uint8_t timer_vector);
 
-void timer_set(timer_t* timer);
+void timer_set_deadline(timer_t* timer, uint64_t deadline);
 
 static inline void timer_set_timeout(timer_t* timer, uint64_t ms) {
-    timer->deadline = tsc_ms_deadline(ms);
-    timer_set(timer);
+    timer_set_deadline(timer, tsc_ms_deadline(ms));
 }
+
+void timer_cancel(timer_t* timer);

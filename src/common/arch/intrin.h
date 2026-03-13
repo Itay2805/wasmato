@@ -134,12 +134,20 @@ static inline void irq_restore(bool irq_status) {
 // gs/fs base
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static inline unsigned int INTRIN_ATTR _readfsbase_u64(void) {
+static inline uint64_t INTRIN_ATTR _readfsbase_u64(void) {
     return __builtin_ia32_rdfsbase64();
 }
 
-static inline unsigned int INTRIN_ATTR _readgsbase_u64(void) {
+static inline uint64_t INTRIN_ATTR _readgsbase_u64(void) {
     return __builtin_ia32_rdgsbase64();
+}
+
+static inline void INTRIN_ATTR _writefsbase_u64(uint64_t value) {
+    __builtin_ia32_wrfsbase64(value);
+}
+
+static inline void INTRIN_ATTR _writegsbase_u64(uint64_t value) {
+    __builtin_ia32_wrgsbase64(value);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

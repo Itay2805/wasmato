@@ -20,9 +20,6 @@ typedef struct spinlock {
 
 static inline void spinlock_acquire(spinlock_t* lock) {
     while (atomic_flag_test_and_set_explicit(&lock->lock, memory_order_acquire)) {
-        // TODO: check if an ipi needs to run right now,
-        //       if it does run it, because we don't run
-        //       with interrupts in kernel
         cpu_relax();
     }
 }

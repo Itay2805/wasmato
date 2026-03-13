@@ -81,6 +81,48 @@ typedef union {
     uint32_t raw;
 } CPUID_VERSION_INFO_EDX;
 
+#define CPUID_MONITOR_MWAIT  0x05
+
+typedef union {
+    struct {
+        uint32_t SMALLEST_MONITOR_LINE_SIZE : 16;
+        uint32_t : 16;
+    };
+    uint32_t raw;
+} CPUID_MONITOR_MWAIT_EAX;
+
+typedef union {
+    struct {
+        uint32_t LARGEST_MONITOR_LINE_SIZE : 16;
+        uint32_t : 16;
+    };
+    uint32_t raw;
+} CPUID_MONITOR_MWAIT_EBX;
+
+typedef union {
+    struct {
+        uint32_t MONITOR_MWAIT_EXTENSIONS : 1;
+        uint32_t INTERRUPT_AS_BREAK_EVENT : 1;
+        uint32_t : 30;
+    };
+    uint32_t raw;
+} CPUID_MONITOR_MWAIT_ECX;
+
+typedef union {
+    struct {
+        uint32_t C0_SUB_STATES : 4;
+        uint32_t C1_SUB_STATES : 4;
+        uint32_t C2_SUB_STATES : 4;
+        uint32_t C3_SUB_STATES : 4;
+        uint32_t C4_SUB_STATES : 4;
+        uint32_t C5_SUB_STATES : 4;
+        uint32_t C6_SUB_STATES : 4;
+        uint32_t C7_SUB_STATES : 4;
+    };
+    uint32_t raw;
+} CPUID_MONITOR_MWAIT_EDX;
+
+
 #define CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS  0x07
 
 #define CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO  0x00

@@ -1,6 +1,9 @@
 #include "syscall.h"
 #include "uapi/syscall.h"
 
+#include <stdatomic.h>
+
+#include "stack.h"
 #include "arch/apic.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
@@ -31,12 +34,17 @@ typedef struct syscall_frame {
     uint64_t rbp;
     uint64_t arg1;
     uint64_t arg2;
-    uint64_t arg3;
+    union {
+        uint64_t arg3;
+        uint64_t result2;
+        uint64_t rdx;
+    };
     uint64_t rcx;
     uint64_t rbx;
     union {
         uint64_t syscall;
         uint64_t result;
+        uint64_t rax;
     };
 } syscall_frame_t;
 
@@ -68,6 +76,38 @@ cleanup:
     return err;
 }
 
+static void user_access_enable(void) {
+    asm("stac");
+}
+
+static void user_access_disable(void) {
+    asm("clac");
+}
+
+static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
+    for (;;) {
+        user_access_enable();
+        uint32_t value = atomic_load_explicit(addr, memory_order_acquire);
+        user_access_disable();
+
+        if (value != expected) {
+            return;
+        }
+
+        __monitor((uintptr_t)addr, 0, 0);
+
+        user_access_enable();
+        value = atomic_load_explicit(addr, memory_order_acquire);
+        user_access_disable();
+        if (value != expected) {
+            return;
+        }
+
+        // BIT1 == break on interrupt even with IF=0
+        __mwait(BIT1, 0);
+    }
+}
+
 OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     err_t err = NO_ERROR;
     ipi_enable();
@@ -84,12 +124,26 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
         case SYSCALL_HEAP_ALLOC: {
             vmar_lock();
             vmar_t* region = vmar_allocate(&g_user_memory, frame->arg1, nullptr);
+            if (region != nullptr) {
+                region->name = "heap";
+            }
             vmar_unlock();
 
             if (region == NULL) {
                 frame->result = 0;
             } else {
                 frame->result = (uintptr_t)region->base;
+            }
+        } break;
+
+        case SYSCALL_STACK_ALLOC: {
+            stack_alloc_t alloc = {};
+            if (IS_ERROR(user_stack_alloc(&alloc, "TODO", frame->arg1))) {
+                frame->result = 0;
+                frame->result2 = 0;
+            } else {
+                frame->result = (uintptr_t)alloc.stack;
+                frame->result2 = (uintptr_t)alloc.shadow_stack;
             }
         } break;
 
@@ -106,6 +160,10 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             lapic_eoi();
         } break;
 
+        case SYSCALL_MONITOR_WAIT: {
+            monitor_wait((_Atomic(uint32_t)*)frame->arg1, frame->arg2);
+        } break;
+
         case SYSCALL_EARLY_INTERRUPT_SET_HANDLER: {
             CHECK(!m_early_done);
             intr_set_user_handler(frame->arg1, (interrupt_handler_t)frame->arg2);
@@ -115,9 +173,6 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             // perform last cleanups and reclaim all init code
             RETHROW(handle_early_done());
             reclaim_init_mem();
-
-            vmar_dump(&g_kernel_memory);
-            vmar_dump(&g_user_memory);
         } break;
 
         default:

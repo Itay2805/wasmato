@@ -1,6 +1,10 @@
 #pragma once
 
+#include <stdnoreturn.h>
 #include <stdint.h>
+
+#include "lib/except.h"
+#include "proc/thread.h"
 
 /**
  * The amount of cores we have
@@ -15,3 +19,13 @@ static inline uint32_t get_cpu_id(void) {
 }
 
 void init_sched(void);
+
+noreturn void sched_start_per_core(void);
+
+void sched_queue(thread_t* thread);
+
+thread_t* get_current_thread(void);
+
+void preempt_disable(void);
+
+void preempt_enable(void);

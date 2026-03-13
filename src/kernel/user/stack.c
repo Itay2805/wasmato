@@ -7,10 +7,7 @@
 
 LATE_RO bool g_shadow_stack_supported;
 
-void* user_stack_get_shadow(void* stack, size_t stack_size) {
-    // TODO: maybe use a vmar lookup or something?
-    return stack + PAGE_SIZE + ALIGN_UP(stack_size, PAGE_SIZE);
-}
+
 
 err_t user_stack_alloc(stack_alloc_t* alloc, void* name, size_t size) {
     err_t err = NO_ERROR;
