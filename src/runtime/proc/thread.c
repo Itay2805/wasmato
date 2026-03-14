@@ -2,6 +2,7 @@
 #include "core/thread.h"
 
 #include "alloc/alloc.h"
+#include "arch/cpuid.h"
 #include "arch/intrin.h"
 #include "lib/except.h"
 #include "lib/printf.h"
@@ -29,7 +30,10 @@ void init_threads(size_t tls_size) {
     g_thread_tls_size = ALIGN_UP(tls_size, 16);
     g_thread_size = sizeof(thread_t);
 
-    // TODO: calculate the FPU context
+    // Get the extended state size to allocate along size the thread itself
+    uint32_t a, xsave_area_size, c, d;
+    __cpuid_count(CPUID_EXTENDED_STATE, CPUID_EXTENDED_STATE_MAIN_LEAF, a, xsave_area_size, c, d);
+    g_thread_size += xsave_area_size;
 }
 
 static void thread_free(thread_t* thread) {
@@ -53,7 +57,7 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     // allocate the thread itself
     thread_t* thread = mem_alloc_aligned(g_thread_size, 64);
     CHECK_ERROR(thread != nullptr, ERROR_OUT_OF_MEMORY);
-    memset(thread, 0, sizeof(*thread));
+    memset(thread, 0, g_thread_size);
 
     // TODO: something simpler? better? just get a pointer and
     //       copy from the user?

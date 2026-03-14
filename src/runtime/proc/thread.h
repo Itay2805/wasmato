@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdalign.h>
 #include "lib/list.h"
 
 typedef void (*thread_entry_t)(void* arg);
@@ -54,7 +55,7 @@ typedef struct thread {
     //
     // FPU context
     //
-    // TODO: this
+    alignas(64) uint8_t fpu[];
 } thread_t;
 
 void init_threads(size_t tls_size);
