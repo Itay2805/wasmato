@@ -118,6 +118,7 @@ void thread_get(thread_t* thread) {
 
 void thread_put(thread_t* thread) {
     if (--thread->ref_count == 0) {
+        ASSERT(thread->state == THREAD_STATE_DEAD);
         // TODO: place a thread in a queue for being deleted
         //       and wakeup the thread GC
     }

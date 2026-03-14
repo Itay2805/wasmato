@@ -140,7 +140,12 @@ static void scheduler_after_schedule(void) {
  * Actually schedule a new thread
  * Runs with interrupts disabled for the entire time.
  */
-static void scheduler_schedule(scheduler_t* scheduler) {
+static void scheduler_schedule(void) {
+    // must be with irqs disabled but with preemption enabled
+    ASSERT(!is_irq_enabled());
+    ASSERT(m_preempt_count == 0);
+
+    scheduler_t* scheduler = get_scheduler();
     thread_t* current = get_current_thread();
 
     if (current == scheduler->idle) {
@@ -181,10 +186,8 @@ static void scheduler_schedule(scheduler_t* scheduler) {
     // the new thread to run, the state must be ready, which prevents
     // wakeups from touching anything on the thread
     thread_t* new_thread = scheduler_select_thread(scheduler);
-    spinlock_acquire(&new_thread->lock.lock);
     ASSERT(new_thread->state == THREAD_STATE_READY);
     new_thread->state = THREAD_STATE_RUNNING;
-    spinlock_release(&new_thread->lock.lock);
 
     // if the new thread is not the idle thread then setup
     // a new preemption timer for 10ms
@@ -274,8 +277,8 @@ void thread_entry_point(thread_t* thread, thread_entry_t entry, void* arg) {
     // call the entry point
     entry(arg);
 
-    // if it returns just exit
-    ASSERT(!"TODO: call exit");
+    // if it returns jus exit
+    sched_exit();
 }
 
 void init_sched(void) {
@@ -345,11 +348,18 @@ void sched_ready_thread(thread_t* thread) {
     irq_spinlock_release(&thread->lock, irq_state);
 }
 
+void sched_exit(void) {
+    irq_disable();
+    thread_t* current = get_current_thread();
+    current->state = THREAD_STATE_DEAD;
+    scheduler_schedule();
+}
+
 void sched_yield(void) {
     if (m_preempt_count == 0) {
         // we can preempt right now
         bool irq_state = irq_save();
-        scheduler_schedule(get_scheduler());
+        scheduler_schedule();
         irq_restore(irq_state);
     } else {
         // there is preemption right now
@@ -390,7 +400,7 @@ void preempt_enable(void) {
         // reschedule, we are already running
         // without interrupts so this can just
         // run
-        scheduler_schedule(get_scheduler());
+        scheduler_schedule();
 
         // we just got back from schedule, we don't
         // need more preemption

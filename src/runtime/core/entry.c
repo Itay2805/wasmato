@@ -23,7 +23,6 @@ int _start(runtime_params_t* params) {
     ASSERT(!is_irq_enabled());
 
     // wait for all cores to enter the runtime before we continue
-    TRACE("runtime: Entered on CPU #%d", params->cpu_id);
     m_cpu_count++;
     while (m_cpu_count != params->cpu_count) {
         cpu_relax();
