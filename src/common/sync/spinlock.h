@@ -27,3 +27,26 @@ static inline void spinlock_acquire(spinlock_t* lock) {
 static inline void spinlock_release(spinlock_t* lock) {
     atomic_flag_clear_explicit(&lock->lock, memory_order_release);
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Simple spinlock
+//
+// The kernel never runs with interrupts enabled, so IRQ locks are not needed
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+typedef struct irq_spinlock {
+    spinlock_t lock;
+} irq_spinlock_t;
+
+#define IRQ_SPINLOCK_INIT ((irq_spinlock_t){ .lock = ATOMIC_FLAG_INIT })
+
+static inline bool irq_spinlock_acquire(irq_spinlock_t* lock) {
+    bool irq_state = irq_save();
+    spinlock_acquire(&lock->lock);
+    return irq_state;
+}
+
+static inline void irq_spinlock_release(irq_spinlock_t* lock, bool irq_state) {
+    spinlock_release(&lock->lock);
+    irq_restore(irq_state);
+}

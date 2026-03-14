@@ -24,8 +24,15 @@ noreturn void sched_start_per_core(void);
 
 /**
  * Queue a new thread to run
+ *
+ * Consumes the ref it is given
  */
-void sched_queue(thread_t* thread);
+void sched_ready_thread(thread_t* thread);
+
+/**
+ * Exit the current thread
+ */
+void sched_exit(void);
 
 /**
  * Yield to another process

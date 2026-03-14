@@ -3,7 +3,6 @@
 
 #include "alloc/alloc.h"
 #include "arch/cpuid.h"
-#include "arch/intrin.h"
 #include "lib/except.h"
 #include "lib/printf.h"
 #include "uapi/syscall.h"
@@ -23,17 +22,25 @@ typedef struct thread_entry_frame {
     uint64_t rdx;
 } PACKED thread_entry_frame_t;
 
-static size_t g_thread_size = 0;
-static size_t g_thread_tls_size = 0;
+/**
+ * The size of a single thread with its extended
+ * save state
+ */
+static size_t m_thread_size = 0;
+
+/**
+ * The size of the TLS, not including the TCB
+ */
+static size_t m_thread_tls_size = 0;
 
 void init_threads(size_t tls_size) {
-    g_thread_tls_size = ALIGN_UP(tls_size, 16);
-    g_thread_size = sizeof(thread_t);
+    m_thread_tls_size = ALIGN_UP(tls_size, 16);
+    m_thread_size = sizeof(thread_t);
 
     // Get the extended state size to allocate along size the thread itself
     uint32_t a, xsave_area_size, c, d;
     __cpuid_count(CPUID_EXTENDED_STATE, CPUID_EXTENDED_STATE_MAIN_LEAF, a, xsave_area_size, c, d);
-    g_thread_size += xsave_area_size;
+    m_thread_size += xsave_area_size;
 }
 
 static void thread_free(thread_t* thread) {
@@ -42,7 +49,7 @@ static void thread_free(thread_t* thread) {
             sys_stack_free(thread->stack);
         }
         if (thread->tcb != nullptr) {
-            mem_free((void*)thread->tcb - g_thread_tls_size);
+            mem_free((void*)thread->tcb - m_thread_tls_size);
         }
         if (thread->name != nullptr) {
             mem_free(thread->name);
@@ -55,9 +62,14 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     err_t err = NO_ERROR;
 
     // allocate the thread itself
-    thread_t* thread = mem_alloc_aligned(g_thread_size, 64);
+    thread_t* thread = mem_alloc_aligned(m_thread_size, 64);
     CHECK_ERROR(thread != nullptr, ERROR_OUT_OF_MEMORY);
-    memset(thread, 0, g_thread_size);
+    memset(thread, 0, m_thread_size);
+
+    // start with ref count of one
+    thread->ref_count = 1;
+    thread->state = THREAD_STATE_PARKED;
+    thread->lock = IRQ_SPINLOCK_INIT;
 
     // TODO: something simpler? better? just get a pointer and
     //       copy from the user?
@@ -74,11 +86,11 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     thread->ssp = stack.shadow_stack;
 
     // allocate the tcb and set it up
-    size_t tls_size = g_thread_tls_size + sizeof(tcb_t);
+    size_t tls_size = m_thread_tls_size + sizeof(tcb_t);
     void* tls = mem_alloc_aligned(tls_size, 16);
     CHECK_ERROR(tls != nullptr, ERROR_OUT_OF_MEMORY);
     memset(tls, 0, tls_size);
-    thread->tcb = tls + g_thread_tls_size;
+    thread->tcb = tls + m_thread_tls_size;
     thread->tcb->tcb = thread->tcb;
 
     // setup the rsp
@@ -98,4 +110,15 @@ cleanup:
         thread = nullptr;
     }
     return thread;
+}
+
+void thread_get(thread_t* thread) {
+    thread->ref_count++;
+}
+
+void thread_put(thread_t* thread) {
+    if (--thread->ref_count == 0) {
+        // TODO: place a thread in a queue for being deleted
+        //       and wakeup the thread GC
+    }
 }

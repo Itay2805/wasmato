@@ -1,6 +1,5 @@
 #include "alloc.h"
 
-#include "arch/paging.h"
 #include "lib/assert.h"
 #include "lib/string.h"
 #include "mem/mappings.h"
@@ -47,15 +46,15 @@ static inline slab_t* object_to_slab(void* p) {
 }
 
 static slab_t* slab_create(mem_alloc_t* alloc) {
-    slab_t* slab = phys_alloc(alloc->slab_size);
-    if (slab == NULL) {
-        return NULL;
+    slab_t* slab = phys_alloc(PAGE_SIZE);
+    if (slab == nullptr) {
+        return nullptr;
     }
 
     // setup the metadata
     slab->alloc = alloc;
     slab->align = alloc->objet_align;
-    slab->free = NULL;
+    slab->free = nullptr;
     slab->in_use = 0;
     slab->total = alloc->objects_per_slab;
 
@@ -114,7 +113,7 @@ void* mem_alloc(mem_alloc_t* alloc) {
     spinlock_acquire(&alloc->lock);
 
     // choose a slab to use, prefer partial slabs
-    slab_t* slab = NULL;
+    slab_t* slab;
     if (!list_is_empty(&alloc->partial)) {
         slab = list_first_entry(&alloc->partial, slab_t, link);
 
@@ -153,7 +152,7 @@ void* mem_alloc(mem_alloc_t* alloc) {
 }
 
 void mem_free(mem_alloc_t* alloc, void* p) {
-    if (p == NULL) {
+    if (p == nullptr) {
         return;
     }
 
@@ -170,7 +169,7 @@ void mem_free(mem_alloc_t* alloc, void* p) {
 
     // decrease the use count
     ASSERT(slab->in_use != 0);
-    bool was_full = (slab->in_use == slab->total);
+    const bool was_full = (slab->in_use == slab->total);
     slab->in_use--;
 
     // if it was full, move to partial
@@ -190,7 +189,7 @@ void mem_free(mem_alloc_t* alloc, void* p) {
 
 void* mem_calloc(mem_alloc_t* alloc) {
     void* ptr = mem_alloc(alloc);
-    if (ptr != NULL) {
+    if (ptr != nullptr) {
         memset(ptr, 0, alloc->object_size);
     }
     return ptr;

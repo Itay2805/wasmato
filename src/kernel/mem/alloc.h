@@ -35,11 +35,6 @@ typedef struct mem_alloc {
     spinlock_t lock;
 
     /**
-     * Size of a single slab
-     */
-    uint16_t slab_size;
-
-    /**
      * The objects in each slab
      */
     uint16_t objects_per_slab;
