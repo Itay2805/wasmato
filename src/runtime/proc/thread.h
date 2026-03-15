@@ -16,6 +16,11 @@ typedef struct tcb {
 
 typedef enum thread_state {
     /**
+     * The state of the thread when it is just created
+     */
+    THREAD_STATE_IDLE,
+
+    /**
      * The thread is dead, it will be freed once all
      * refs run out
      */
@@ -69,7 +74,7 @@ typedef struct thread {
     /**
      * The runqueue link when the thread is active
      */
-    list_entry_t run_queue_link;
+    list_entry_t link;
 
     //
     // Misc thread context
@@ -98,20 +103,39 @@ typedef struct thread {
     //
     // FPU context
     //
-    alignas(64) uint8_t fpu[];
+    alignas(64) uint8_t extended_state[];
 } thread_t;
 
 void init_threads(size_t tls_size);
 
 thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name_fmt, va_list args);
 
-static inline thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_fmt, ...) {
-    va_list args = {};
-    va_start(args, name_fmt);
-    thread_t* thread = thread_vcreate(entry_point, arg, name_fmt, args);
-    va_end(args);
-    return thread;
-}
+/**
+ * Create a new thread
+ */
+thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_fmt, ...);
 
-void thread_get(thread_t* thread);
+/**
+ * Start the thread
+ */
+void thread_start(thread_t* thread);
+
+/**
+ * Increase the ref count of the thread
+ */
+thread_t* thread_get(thread_t* thread);
+
+/**
+ * Decrease the ref count of the thread
+ */
 void thread_put(thread_t* thread);
+
+/**
+ * Exit from the thread, losing its own reference
+ */
+void thread_exit(void);
+
+/**
+ * Put the thread to sleep
+ */
+void thread_sleep(size_t ms);

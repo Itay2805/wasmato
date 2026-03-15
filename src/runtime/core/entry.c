@@ -55,7 +55,7 @@ int _start(runtime_params_t* params) {
         // create the init thread and start it
         thread_t* thread = thread_create(main, nullptr, "init");
         ASSERT(thread != nullptr);
-        sched_ready_thread(thread);
+        thread_start(thread);
 
         // let the other cores know that we are
         // ready to run

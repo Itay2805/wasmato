@@ -1,6 +1,3 @@
-
-#include "arch/intrin.h"
-#include "lib/assert.h"
 #include "lib/log.h"
 #include "uapi/syscall.h"
 

@@ -5,8 +5,10 @@
 #include "lib/tsc.h"
 #include "lib/rbtree/rbtree.h"
 #include "sync/mutex.h"
+#include "sync/spinlock.h"
 
 typedef struct timer timer_t;
+typedef struct timers_queue timers_queue_t;
 
 typedef void (*timer_cb_t)(timer_t* timer);
 
@@ -15,6 +17,11 @@ struct timer {
      * The node in the timer tree
      */
     rb_node_t node;
+
+    /**
+     * Lock to protect the timer
+     */
+    irq_spinlock_t lock;
 
     /**
      * The deadline of the timer
@@ -27,9 +34,9 @@ struct timer {
     timer_cb_t callback;
 
     /**
-     * Is the timer set?
+     * The timers queue we are on right now
      */
-    bool set;
+    timers_queue_t* queue;
 };
 
 void init_timers(uint8_t timer_vector);

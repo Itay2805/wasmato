@@ -9,7 +9,7 @@ noreturn void do_thread_resume(thread_t* to);
 
 static void save_thread_context(thread_t* thread) {
     // Save modified extended state
-    _xsaveopt64(thread->fpu, ~0U);
+    _xsaveopt64(thread->extended_state, ~0U);
 }
 
 static void restore_thread_context(thread_t* thread) {
@@ -17,7 +17,7 @@ static void restore_thread_context(thread_t* thread) {
     _writefsbase_u64((uintptr_t)thread->tcb);
 
     // Restore extended state
-    _xrstor64(thread->fpu, ~0U);
+    _xrstor64(thread->extended_state, ~0U);
 }
 
 void thread_switch(thread_t* to, thread_t* from) {

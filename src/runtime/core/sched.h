@@ -22,17 +22,31 @@ void init_sched(void);
 
 noreturn void sched_start_per_core(void);
 
-/**
- * Queue a new thread to run
- *
- * Consumes the ref it is given
- */
-void sched_ready_thread(thread_t* thread);
+//----------------------------------------------------------------------------------------------------------------------
+// Private API don't use
+//----------------------------------------------------------------------------------------------------------------------
 
 /**
- * Exit the current thread
+ * This will perform a schedule, the thread lock of the current
+ * must be taken to enter this code.
  */
-void sched_exit(void);
+void scheduler_schedule(void);
+
+/**
+ * This will perform a schedule that wll only
+ * come back after the deadline is reached or
+ * someone actively woke up the thread
+ */
+void scheduler_schedule_deadline(uint64_t deadline);
+
+/**
+ * Queue the thread into the scheduler unconditionally
+ */
+void scheduler_queue(thread_t* thread);
+
+//----------------------------------------------------------------------------------------------------------------------
+// Public API
+//----------------------------------------------------------------------------------------------------------------------
 
 /**
  * Yield to another process

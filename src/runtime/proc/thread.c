@@ -3,8 +3,11 @@
 
 #include "alloc/alloc.h"
 #include "arch/cpuid.h"
+#include "arch/regs.h"
+#include "core/sched.h"
 #include "lib/except.h"
 #include "lib/printf.h"
+#include "lib/tsc.h"
 #include "uapi/syscall.h"
 
 /**
@@ -68,7 +71,7 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
 
     // start with ref count of one
     thread->ref_count = 1;
-    thread->state = THREAD_STATE_PARKED;
+    thread->state = THREAD_STATE_IDLE;
     thread->lock = IRQ_SPINLOCK_INIT;
 
     // TODO: something simpler? better? just get a pointer and
@@ -94,7 +97,7 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     thread->tcb->tcb = thread->tcb;
 
     // setup the rsp
-    void* rsp = thread->stack - 16;
+    void* rsp = thread->stack - 8;
     rsp -= sizeof(thread_entry_frame_t);
     thread_entry_frame_t* entry_frame = rsp;
     thread->rsp = rsp;
@@ -104,6 +107,10 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
     entry_frame->rsi = (uintptr_t)entry_point;
     entry_frame->rdx = (uintptr_t)arg;
 
+    // setup the extended state
+    xsave_legacy_region_t* extended_state = (xsave_legacy_region_t*)thread->extended_state;
+    extended_state->mxscr = 0x00001f80;
+
 cleanup:
     if (IS_ERROR(err)) {
         thread_free(thread);
@@ -112,8 +119,26 @@ cleanup:
     return thread;
 }
 
-void thread_get(thread_t* thread) {
+
+thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_fmt, ...) {
+    va_list args = {};
+    va_start(args, name_fmt);
+    thread_t* thread = thread_vcreate(entry_point, arg, name_fmt, args);
+    va_end(args);
+    return thread;
+}
+
+void thread_start(thread_t* thread) {
+    bool irq_state = irq_spinlock_acquire(&thread->lock);
+    ASSERT(thread->state == THREAD_STATE_IDLE);
+    thread->state = THREAD_STATE_PARKED;
+    scheduler_queue(thread);
+    irq_spinlock_release(&thread->lock, irq_state);
+}
+
+thread_t* thread_get(thread_t* thread) {
     thread->ref_count++;
+    return thread;
 }
 
 void thread_put(thread_t* thread) {
@@ -123,3 +148,18 @@ void thread_put(thread_t* thread) {
         //       and wakeup the thread GC
     }
 }
+
+void thread_exit(void) {
+    thread_t* current = get_current_thread();
+    irq_spinlock_acquire(&current->lock);
+    current->state = THREAD_STATE_DEAD;
+    scheduler_schedule();
+}
+
+void thread_sleep(size_t ms) {
+    thread_t* thread = get_current_thread();
+    bool irq_state = irq_spinlock_acquire(&thread->lock);
+    scheduler_schedule_deadline(tsc_ms_deadline(ms));
+    irq_spinlock_release(&thread->lock, irq_state);
+}
+

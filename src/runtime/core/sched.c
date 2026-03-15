@@ -1,34 +1,19 @@
 #include "sched.h"
 
 #include <cpuid.h>
+#include <stdalign.h>
 
 #include "thread.h"
 #include "timer.h"
 #include "alloc/alloc.h"
 #include "arch/cpuid.h"
 #include "arch/intrin.h"
+#include "lib/atomic.h"
 #include "lib/except.h"
 #include "proc/thread.h"
 #include "uapi/syscall.h"
 
 uint32_t g_cpu_count = 0;
-
-typedef enum after_schedule_op {
-    /**
-     * No operation to perform after scheduling
-     */
-    AFTER_SCHEDULE_NOP,
-
-    /**
-     * Put the thread after scheduling
-     */
-    AFTER_SCHEDULE_PUT_THREAD,
-
-    /**
-     * Unlock the thread lock after scheduling
-     */
-    AFTER_SCHEDULE_UNLOCK_THREAD,
-} after_schedule_op_t;
 
 typedef struct scheduler_context {
     /**
@@ -47,16 +32,21 @@ typedef struct scheduler_context {
     thread_t* idle;
 
     /**
-     * Operation to perform on the scheduler once it
-     * runs the new thread
+     * The last thread, we need to unlock it after
+     * the context switch
      */
-    after_schedule_op_t after_schedule_op;
+    thread_t* last_thread;
 
     /**
-     * The argument for the next schedule op
+     * Is the core parked
      */
-    thread_t* after_schedule_arg;
-} scheduler_t;
+    _Atomic(uint32_t) parked;
+
+    /**
+     * Should we also release the thread since it was unparked
+     */
+    bool release_thread;
+} __attribute__((aligned(128))) scheduler_t;
 
 /**
  * The schedulers for all the cores
@@ -85,14 +75,24 @@ static thread_local int32_t m_preempt_count = 0;
  */
 static thread_local bool m_want_preempt = false;
 
+thread_t* get_current_thread(void) {
+    return m_current;
+}
+
+static void scheduler_wakeup(scheduler_t* scheduler) {
+    // store into the parked thing, this will ensure
+    // the monitor wakes up
+    atomic_store_release(&scheduler->parked, 0);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Private API
+//----------------------------------------------------------------------------------------------------------------------
+
 /**
  * Should we use umwait or not
  */
 static bool m_umwait_supported = false;
-
-thread_t* get_current_thread(void) {
-    return m_current;
-}
 
 static scheduler_t* get_scheduler(void) {
     return &m_schedulers[get_cpu_id()];
@@ -103,44 +103,36 @@ static thread_t* scheduler_select_thread(scheduler_t* scheduler) {
         return scheduler->idle;
     }
 
-    thread_t* thread = list_first_entry(&scheduler->run_queue, thread_t, run_queue_link);
-    list_del(&thread->run_queue_link);
+    thread_t* thread = list_first_entry(&scheduler->run_queue, thread_t, link);
+    list_del(&thread->link);
     return thread;
 }
 
 static void scheduler_after_schedule(void) {
     scheduler_t* scheduler = get_scheduler();
-    switch (scheduler->after_schedule_op) {
-        case AFTER_SCHEDULE_NOP: {
-            // nothing to do
-        } break;
 
-        case AFTER_SCHEDULE_PUT_THREAD: {
-            // unlock and put the thread
-            spinlock_release(&scheduler->after_schedule_arg->lock.lock);
-            thread_put(scheduler->after_schedule_arg);
-        } break;
-
-        case AFTER_SCHEDULE_UNLOCK_THREAD: {
-            // unlock the thread, so it can be used and scheduled once again
-            spinlock_release(&scheduler->after_schedule_arg->lock.lock);
-        } break;
-
-        default: {
-            ASSERT(!"Invalid after schedule op");
-        } break;
+    // we are now on the new thread, but the last thread
+    // that was on the core is still locked by us, release
+    // the lock right now, we possibly also need to unref
+    // the thread and let it get freed
+    thread_t* last_thread = scheduler->last_thread;
+    if (last_thread != nullptr) {
+        scheduler->last_thread = nullptr;
+        spinlock_release(&last_thread->lock.lock);
+        if (scheduler->release_thread) {
+            scheduler->release_thread = false;
+            thread_put(last_thread);
+        }
     }
-
-    // clear the state
-    scheduler->after_schedule_op = AFTER_SCHEDULE_NOP;
-    scheduler->after_schedule_arg = nullptr;
 }
 
 /**
- * Actually schedule a new thread
+ * Actually schedule a new thread, the current thread should
+ * be locked at this point.
+ *
  * Runs with interrupts disabled for the entire time.
  */
-static void scheduler_schedule(void) {
+void scheduler_schedule(void) {
     // must be with irqs disabled but with preemption enabled
     ASSERT(!is_irq_enabled());
     ASSERT(m_preempt_count == 0);
@@ -148,44 +140,44 @@ static void scheduler_schedule(void) {
     scheduler_t* scheduler = get_scheduler();
     thread_t* current = get_current_thread();
 
-    if (current == scheduler->idle) {
-        // idle threads don't need anything special because they can't
-        // be readied or anything alike, so we don't even bother
-        // locking them
-        scheduler->after_schedule_op = AFTER_SCHEDULE_NOP;
+    if (current->state == THREAD_STATE_DEAD || current->state == THREAD_STATE_PARKED) {
+        // the thread has died or got parked, we are going to remove
+        // the ref that the scheduler owns
+        scheduler->release_thread = true;
 
-        // can only be running, can't be parked or dead
-        ASSERT(current->state == THREAD_STATE_RUNNING);
+    } else if (current->state == THREAD_STATE_RUNNING) {
+        // place back on the run queue and set the state as ready
         current->state = THREAD_STATE_READY;
-    } else {
-        // we lock the current to ensure no wake-ups happen
-        // while we are parking it
-        // NOTE: we are running with interrupts disabled in here, so we
-        //       don't need to save the irq
-        spinlock_acquire(&current->lock.lock);
 
-        if (current->state == THREAD_STATE_DEAD || current->state == THREAD_STATE_PARKED) {
-            // we need to unref the thread, it will possibly free it
-            // so we need to do it after a stack switch
-            scheduler->after_schedule_op = AFTER_SCHEDULE_PUT_THREAD;
-            scheduler->after_schedule_arg = current;
-
-        } else if (current->state == THREAD_STATE_RUNNING) {
-            scheduler->after_schedule_op = AFTER_SCHEDULE_UNLOCK_THREAD;
-            scheduler->after_schedule_arg = current;
-
-            // place back on the run queue and set the state as ready
-            current->state = THREAD_STATE_READY;
-            list_add_tail(&scheduler->run_queue, &current->run_queue_link);
-
-        } else {
-            ASSERT(!"Invalid thread state");
+        // only put non-idle threads into the run queue
+        if (current != scheduler->idle) {
+            list_add_tail(&scheduler->run_queue, &current->link);
         }
+
+    } else {
+        ASSERT(!"Invalid thread state");
     }
 
-    // the new thread to run, the state must be ready, which prevents
-    // wakeups from touching anything on the thread
+    // remember the last thread
+    // so we can unlock it
+    scheduler->last_thread = current;
+
+    // select a new thread
     thread_t* new_thread = scheduler_select_thread(scheduler);
+    if (new_thread == current) {
+        // mark it as running, we still hold its lock
+        new_thread->state = THREAD_STATE_RUNNING;
+
+        // the same thread was picked, we can just return
+        // without doing anything
+        scheduler->last_thread = nullptr;
+        scheduler->release_thread = false;
+        return;
+    }
+
+    // acquire the lock of the new thread and set
+    // it as runnable
+    spinlock_acquire(&new_thread->lock.lock);
     ASSERT(new_thread->state == THREAD_STATE_READY);
     new_thread->state = THREAD_STATE_RUNNING;
 
@@ -197,14 +189,89 @@ static void scheduler_schedule(void) {
         timer_cancel(&scheduler->timer);
     }
 
-    // only perform a switch if we actually have a new thread
-    if (new_thread != current) {
-        thread_switch(new_thread, current);
+    // actually switch to the new thread
+    thread_switch(new_thread, current);
+
+    // cleanup after schedule
+    scheduler_after_schedule();
+}
+
+typedef struct schedule_timer {
+    timer_t timer;
+    thread_t* thread;
+} schedule_timer_t;
+
+static void schedule_timer_wakeup(timer_t* timer) {
+    schedule_timer_t* ctx = containerof(timer, schedule_timer_t, timer);
+    thread_t* thread = ctx->thread;
+    bool scheduled = false;
+
+    // wake up the thread if its not running already
+    bool irq_state = irq_spinlock_acquire(&thread->lock);
+    if (thread->state == THREAD_STATE_PARKED) {
+        scheduler_queue(thread);
+        scheduled = true;
     }
 
-    // cleanup after the schedule, this will unlock
-    // anything that needs to be unlocked
-    scheduler_after_schedule();
+    // we delete the ref to tell the other side that
+    // they don't need to release the ref
+    ctx->thread = nullptr;
+
+    irq_spinlock_release(&thread->lock, irq_state);
+
+    // if we didn't schedule release the thread, otherwise
+    // we just passed it into the scheduler again
+    if (!scheduled) {
+        thread_put(thread);
+    }
+}
+
+void scheduler_schedule_deadline(uint64_t deadline) {
+    // if we are already over the timeout then
+    // just return right away
+    if (tsc_check_deadline(deadline)) {
+        return;
+    }
+
+    // setup the timer, we give it its own ref of the thread
+    // in case it dies before the timer fires
+    thread_t* thread = get_current_thread();
+    schedule_timer_t timer = {
+        .timer = {
+            .callback = schedule_timer_wakeup
+        },
+        .thread = thread_get(thread)
+    };
+
+    // setup the timer, if we still race then the interrupt
+    // will just fire as soon as we are done
+    timer_set_deadline(&timer.timer, deadline);
+
+    // schedule the thread now
+    thread->state = THREAD_STATE_PARKED;
+    scheduler_schedule();
+
+    // ensure the timer is disabled before we
+    // check anything else
+    timer_cancel(&timer.timer);
+
+    if (timer.thread != nullptr) {
+        // put the ref away
+        thread_put(timer.thread);
+    }
+}
+
+void scheduler_queue(thread_t* thread) {
+    ASSERT(thread->state == THREAD_STATE_PARKED);
+    ASSERT(!is_irq_enabled());
+    scheduler_t* scheduler = get_scheduler();
+
+    // place on the run queue
+    thread->state = THREAD_STATE_READY;
+    list_add_tail(&scheduler->run_queue, &thread->link);
+
+    // ensure the scheduler is woken up
+    scheduler_wakeup(scheduler);
 }
 
 /**
@@ -221,7 +288,7 @@ static void scheduler_tick(timer_t* timer) {
 
 static void umonitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
     for (;;) {
-        uint32_t value = atomic_load_explicit(addr, memory_order_acquire);
+        uint32_t value = atomic_load_acquire(addr);
 
         if (value != expected) {
             return;
@@ -229,60 +296,63 @@ static void umonitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
 
         _umonitor(addr);
 
-        value = atomic_load_explicit(addr, memory_order_acquire);
+        value = atomic_load_acquire(addr);
         if (value != expected) {
             return;
         }
 
-        // BIT1 == break on interrupt even with IF=0
-        // TODO: disable timer before entering the wait
-        // loop and do it manually?
         _umwait(0, UINT64_MAX);
     }
 }
 
 static void scheduler_idle_thread(void* arg) {
-    //
-    // The first thing we need to do is to preempt
-    // the current idle thread to actually let the
-    // scheduler start scheduling
-    //
-    sched_yield();
+    scheduler_t* scheduler = arg;
 
     //
     // After that first yield we can just while-true
     // go to sleep
     //
-    while (true) {
-        _Atomic(uint32_t) arg = 0;
+    for (;;) {
+        // start by yielding to ensure anyone who can
+        // run will run
+        sched_yield();
 
-        if (m_umwait_supported) {
-            umonitor_wait(&arg, 0);
-        } else {
-            sys_monitor_wait(&arg, 0);
+        // mark the core as parked, anyone who wants to wake us
+        // up will set this to 0, which will cause us to exit
+        // the monitor loop
+        atomic_store_relaxed(&scheduler->parked, 1);
+
+        // use the monitor to actually wait on the cache line
+        while (atomic_load_acquire(&scheduler->parked) != 0) {
+            if (m_umwait_supported) {
+                umonitor_wait(&scheduler->parked, 1);
+            } else {
+                sys_monitor_wait(&scheduler->parked, 1);
+            }
         }
-
-        // TODO: if someone woke us up then yield, otherwise
-        //       the interrupt handler did its work and we can
-        //       go back to sleep
     }
 }
 
 void thread_entry_point(thread_t* thread, thread_entry_t entry, void* arg) {
-    // set the current thread-local, and only after it enable
-    // interrupts to ensure we won't get a preemption beforehand
+    // set the current thread-local, so we can access it
     m_current = thread;
-    irq_enable();
+
+    // this is right after scheduling,
+    // so cleanup
+    scheduler_after_schedule();
+
+    // now we are ready to enable interrupts
+    irq_spinlock_release(&thread->lock, true);
 
     // call the entry point
     entry(arg);
 
     // if it returns jus exit
-    sched_exit();
+    thread_exit();
 }
 
 void init_sched(void) {
-    m_schedulers = mem_alloc(sizeof(*m_schedulers) * g_cpu_count);
+    m_schedulers = mem_alloc_aligned(sizeof(scheduler_t) * g_cpu_count, alignof(scheduler_t));
     ASSERT(m_schedulers != nullptr);
     memset(m_schedulers, 0, sizeof(*m_schedulers) * g_cpu_count);
 
@@ -296,7 +366,7 @@ void init_sched(void) {
 
         list_init(&scheduler->run_queue);
 
-        scheduler->idle = thread_create(scheduler_idle_thread, nullptr, "idle-%d", i);
+        scheduler->idle = thread_create(scheduler_idle_thread, scheduler, "idle-%d", i);
         ASSERT(scheduler->idle != nullptr);
     }
 
@@ -328,48 +398,22 @@ void sched_start_per_core(void) {
     thread_resume(thread);
 }
 
-void sched_ready_thread(thread_t* thread) {
-    // TODO: check the thread state outside of the lock? just to prevent the lock
-
-    const bool irq_state = irq_spinlock_acquire(&thread->lock);
-
-    ASSERT(
-        thread->state == THREAD_STATE_RUNNING ||
-        thread->state == THREAD_STATE_PARKED ||
-        thread->state == THREAD_STATE_READY
-    );
-
-    // if the thread is parked then ready it
-    if (thread->state == THREAD_STATE_PARKED) {
-        list_add(&get_scheduler()->run_queue, &thread->run_queue_link);
-        thread->state = THREAD_STATE_READY;
-    }
-
-    irq_spinlock_release(&thread->lock, irq_state);
-}
-
-void sched_exit(void) {
-    irq_disable();
-    thread_t* current = get_current_thread();
-    current->state = THREAD_STATE_DEAD;
-    scheduler_schedule();
-}
+//----------------------------------------------------------------------------------------------------------------------
+// Public API
+//----------------------------------------------------------------------------------------------------------------------
 
 void sched_yield(void) {
     if (m_preempt_count == 0) {
         // we can preempt right now
-        bool irq_state = irq_save();
+        thread_t* current = get_current_thread();
+        const bool irq_state = irq_spinlock_acquire(&current->lock);
         scheduler_schedule();
-        irq_restore(irq_state);
+        irq_spinlock_release(&current->lock, irq_state);
     } else {
         // there is preemption right now
         m_want_preempt = true;
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Preemption handling
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void preempt_disable(void) {
     ASSERT(m_preempt_count >= 0);
@@ -389,7 +433,8 @@ void preempt_enable(void) {
     // we are going to disable interrupts to make
     // sure nothing interrupts us while we are in
     // the scheduler itself
-    bool irq_state = irq_save();
+    thread_t* current = get_current_thread();
+    const bool irq_state = irq_spinlock_acquire(&current->lock);
 
     // reduce the preempt count
     // and check if we need to
@@ -407,5 +452,5 @@ void preempt_enable(void) {
         m_want_preempt = false;
     }
 
-    irq_restore(irq_state);
+    irq_spinlock_release(&current->lock, irq_state);
 }
