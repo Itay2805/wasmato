@@ -14,33 +14,63 @@ typedef struct tcb {
 
 #define TCB ((__seg_fs tcb_t*)(0))
 
+/**
+ * The various states in which a thread can be:
+ *
+ * - IDLE: newly-created, not running
+ * - DEAD: no longer running, will be freed when when all refs are released
+ * - READY: currently scheduled out, but not parked (blocked) on anything
+ * - RUNNING: currently running on a CPU
+ * - PARKING: preparing to park until woken, but currently still running
+ * - PARKED: waiting until an explicit unpark is issued
+ *
+ * The following transitions are allowed:
+ *
+ *         IDLE
+ *          |
+ *          V
+ *    +-> READY
+ *    |     |
+ *    ^     V
+ *    +- RUNNING -> DEAD
+ *    |     |
+ *    ^     V
+ *    +- PARKING
+ *    |     |
+ *    ^     V
+ *    +- PARKED
+ *
+ * - IDLE -> READY: performed non-atomically by `thread_start` (should happen at most once).
+ *
+ * - READY -> RUNNING: performed non-atomically only by the run queue in which the thread is
+ *   currently waiting to run.
+ *
+ * - RUNNING -> DEAD: performed non-atomically by the scheduler when the thead calls `thread_exit`
+ *   (can happen at most once).
+ *
+ * - RUNNING -> PARKING: performed non-atomically only by the thread itself when preparing to park;
+ *   exists to avoid races in condition-based parking (see `atomic_wait`) when checking the wait
+ *   condition itself.
+ *
+ * - PARKING -> PARKED: performed as an atomic CAS by the scheduler once a PARKING thread has been
+ *   switched out; may race against PARKING -> READY transitions performed by concurrent
+ *   `scheduler_try_unpark` calls.
+ *
+ * - PARKING -> READY: performed as an atomic CAS by `scheduler_try_unpark` to abort an in-progress
+ *   park operation; may race against the scheduler's PARKING -> PARKED transition and concurrent
+ *   `scheduler_try_unpark` calls.
+ *
+ * - PARKED -> READY: performed as an atomic CAS by `scheduler_try_unpark` to unpark a thread; may
+ *   race against concurrent `scheduler_try_unpark` calls.
+ *
+ */
 typedef enum thread_state {
-    /**
-     * The state of the thread when it is just created
-     */
     THREAD_STATE_IDLE,
-
-    /**
-     * The thread is dead, it will be freed once all
-     * refs run out
-     */
     THREAD_STATE_DEAD,
-
-    /**
-     * The thread is currently parked, and is not
-     * on any run queue
-     */
-    THREAD_STATE_PARKED,
-
-    /**
-     * The thread is ready is on a run queue
-     */
     THREAD_STATE_READY,
-
-    /**
-     * The thread is currently running
-     */
     THREAD_STATE_RUNNING,
+    THREAD_STATE_PARKING,
+    THREAD_STATE_PARKED,
 } thread_state_t;
 
 typedef struct thread {
@@ -91,14 +121,9 @@ typedef struct thread {
     atomic_size_t ref_count;
 
     /**
-     * Lock that protects the thread state
-     */
-    irq_spinlock_t lock;
-
-    /**
      * The thread state
      */
-    thread_state_t state;
+    _Atomic(thread_state_t) state;
 
     //
     // FPU context
@@ -116,7 +141,12 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
 thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_fmt, ...);
 
 /**
- * Start the thread
+ * Start the thread.
+ *
+ * This adopts a single reference on the thread;
+ * it will be automatically `thread_put` on exit.
+ *
+ * This function should be called at most once for every created thread.
  */
 void thread_start(thread_t* thread);
 

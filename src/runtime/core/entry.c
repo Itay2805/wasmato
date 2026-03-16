@@ -1,5 +1,6 @@
 #include <stdatomic.h>
 
+#include "proc/thread.h"
 #include "sched.h"
 #include "timer.h"
 #include "arch/intrin.h"

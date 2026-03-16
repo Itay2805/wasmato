@@ -27,8 +27,9 @@ noreturn void sched_start_per_core(void);
 //----------------------------------------------------------------------------------------------------------------------
 
 /**
- * This will perform a schedule, the thread lock of the current
- * must be taken to enter this code.
+ * Enter the scheduler and potentially select a new thread to run.
+ *
+ * Must be called with interrupts disabled and returns with interrupts disabled.
  */
 void scheduler_schedule(void);
 
@@ -40,9 +41,15 @@ void scheduler_schedule(void);
 void scheduler_schedule_deadline(uint64_t deadline);
 
 /**
- * Queue the thread into the scheduler unconditionally
+ * Unparks the requested thread, if it is currently parked.
  */
-void scheduler_queue(thread_t* thread);
+bool scheduler_try_unpark(thread_t* thread);
+
+/**
+ * Enqueues the requested thread for execution on the current core.
+ * The thread is expected to be READY.
+ */
+void scheduler_enqueue(thread_t* thread);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Public API
