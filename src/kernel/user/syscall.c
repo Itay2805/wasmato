@@ -3,6 +3,8 @@
 
 #include <stdatomic.h>
 
+#include "limine_requests.h"
+#include "runtime.h"
 #include "stack.h"
 #include "arch/apic.h"
 #include "arch/gdt.h"
@@ -74,9 +76,20 @@ LATE_RO static bool m_early_done = false;
 LATE_RO bool g_monitor_supported = false;
 
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
-    asm("stac");
     ASSERT(src <= (uintptr_t)vmar_end(&g_user_memory));
+    ASSERT(src + size <= (uintptr_t)vmar_end(&g_user_memory));
+
+    asm("stac");
     memcpy(dst, (void*)src, size);
+    asm("clac");
+}
+
+static void copy_to_user(uintptr_t dst, void* src, size_t size) {
+    ASSERT(dst <= (uintptr_t)vmar_end(&g_user_memory));
+    ASSERT(dst + size <= (uintptr_t)vmar_end(&g_user_memory));
+
+    asm("stac");
+    memcpy((void*)dst, src, size);
     asm("clac");
 }
 
@@ -90,6 +103,9 @@ INIT_CODE static err_t handle_early_done(void) {
     // ensure we are not done yet
     CHECK(!m_early_done);
     m_early_done = true;
+
+    // free the early stacks as they are no longer needed
+    runtime_free_early_stacks();
 
     // we don't need the bootloader memory anymore
     RETHROW(reclaim_bootloader_memory());
@@ -208,6 +224,18 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             CHECK((uintptr_t)g_runtime_region.base <= frame->arg1);
             CHECK(frame->arg1 < (uintptr_t)vmar_end(&g_runtime_region));
             g_shadow_stack_thread_entry_thunk = frame->arg1;
+        } break;
+
+        case SYSCALL_EARLY_GET_INITRD_SIZE: {
+            CHECK(!m_early_done);
+            struct limine_file* file = g_limine_module_request.response->modules[0];
+            frame->result = file->size;
+        } break;
+
+        case SYSCALL_EARLY_GET_INITRD: {
+            CHECK(!m_early_done);
+            struct limine_file* file = g_limine_module_request.response->modules[0];
+            copy_to_user(frame->arg1, file->address, file->size);
         } break;
 
         case SYSCALL_EARLY_DONE: {

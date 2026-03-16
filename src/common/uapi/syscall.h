@@ -123,23 +123,33 @@
 
 typedef enum syscall {
     SYSCALL_DEBUG_PRINT,
+
     SYSCALL_HEAP_ALLOC,
 	SYSCALL_HEAP_FREE,
+
 	SYSCALL_JIT_ALLOC,
 	SYSCALL_JIT_LOCK_PROTECTION,
 	SYSCALL_JIT_FREE,
+
 	SYSCALL_MEM_RESERVE,
 	SYSCALL_MEM_MAP_PHYS,
 	SYSCALL_MEM_BUMP,
 	SYSCALL_MEM_RELEASE,
+
 	SYSCALL_STACK_ALLOC,
 	SYSCALL_STACK_FREE,
+
 	SYSCALL_TIMER_SET_DEADLINE,
 	SYSCALL_TIMER_CLEAR,
+
 	SYSCALL_INTERRUPT_ACK,
+
 	SYSCALL_MONITOR_WAIT,
+
 	SYSCALL_EARLY_INTERRUPT_SET_HANDLER,
 	SYSCALL_EARLY_SET_THREAD_ENTRY_THUNK,
+	SYSCALL_EARLY_GET_INITRD_SIZE,
+	SYSCALL_EARLY_GET_INITRD,
     SYSCALL_EARLY_DONE,
 } syscall_t;
 
@@ -237,6 +247,14 @@ static inline void sys_early_interrupt_set_handler(uint8_t vector, interrupt_han
 
 static inline void sys_early_set_thread_entry_thunk(void* addr) {
 	(void)syscall1(SYSCALL_EARLY_SET_THREAD_ENTRY_THUNK, addr);
+}
+
+static inline size_t sys_early_get_initrd_size(void) {
+	return syscall0(SYSCALL_EARLY_GET_INITRD_SIZE);
+}
+
+static inline void sys_early_get_initrd(void* addr) {
+	(void)syscall1(SYSCALL_EARLY_GET_INITRD, addr);
 }
 
 static inline void sys_early_done(void) {

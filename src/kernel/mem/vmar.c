@@ -153,6 +153,9 @@ bool vmar_reserve_static(vmar_t* parent, vmar_t* child) {
     ASSERT(parent->type == VMAR_TYPE_REGION);
     ASSERT(!parent->locked);
 
+    ASSERT(child->parent == nullptr);
+    child->parent = parent;
+
     // start by either allocating or
     // verifying the given address
     if (child->base == nullptr) {
@@ -213,7 +216,7 @@ vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr) {
     vmar_t* child = mem_calloc(&m_vmar_alloc);
     if (child == nullptr)
         return nullptr;
-\
+
     // setup the child object
     child->type = VMAR_TYPE_ALLOC;
     child->base = addr;
@@ -258,7 +261,43 @@ void vmar_protect(void* mapping, mapping_protection_t protection) {
 void vmar_free(vmar_t* vmar) {
     assert_vmar_locked();
 
-    ASSERT(!"TODO: vmar_free");
+    // make sure this vmar is not pinned, otherwise we
+    // are not allowed to unmap it
+    ASSERT(!vmar->pinned);
+    ASSERT(vmar->parent != nullptr);
+
+    // if this is a region then we need to free
+    // everything under it first
+
+    switch (vmar->type) {
+        case VMAR_TYPE_REGION: {
+            for (;;) {
+                vmar_t* child = rb_entry_safe(vmar->region.root.rb_node, vmar_t, node);
+                if (child == nullptr) {
+                    break;
+                }
+                vmar_free(child);
+            }
+        } break;
+
+        case VMAR_TYPE_ALLOC:
+        case VMAR_TYPE_SHADOW_STACK:
+        case VMAR_TYPE_STACK: {
+            // for these types we just need to free the entire region
+            virt_unmap(vmar->base, vmar->page_count, true);
+        } break;
+
+        case VMAR_TYPE_PHYS: {
+            // physical memory we should not free
+            virt_unmap(vmar->base, vmar->page_count, false);
+        } break;
+
+        default:
+            ASSERT(!"Can't free vmar type");
+    }
+
+    // remove ourselves from the parent
+    rb_erase(&vmar->node, &vmar->parent->region.root);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

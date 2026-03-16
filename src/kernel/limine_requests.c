@@ -50,7 +50,10 @@ volatile struct limine_memmap_request g_limine_memmap_request = {
 };
 
 static struct limine_internal_module* m_internal_modules[] = {
-    
+    &(struct limine_internal_module){
+        .path = "initrd",
+        .flags = LIMINE_INTERNAL_MODULE_REQUIRED
+    }
 };
 
 __attribute__((section(".limine_requests")))
@@ -99,7 +102,7 @@ volatile struct limine_keep_iommu_request g_limine_x86_64_keep_iommu_request = {
 void limine_check_revision() {
 
     // basic boot information
-    if (g_limine_bootloader_info_request.response != NULL) {
+    if (g_limine_bootloader_info_request.response != nullptr) {
         TRACE("Bootloader: %s - %s",
             g_limine_bootloader_info_request.response->name,
             g_limine_bootloader_info_request.response->version);

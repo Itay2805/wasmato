@@ -8,8 +8,9 @@ quiet_cmd_mkimage = MKIMAGE $@
           $(BUILD)/limine bios-install $@; \
           mformat -i $@@@1M; \
           mmd -i $@@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine; \
-          mcopy -i $@@@1M build/kernel ::/boot; \
+          mcopy -i $@@@1M build/kernel ::/boot/kernel; \
           mcopy -i $@@@1M artifacts/limine.conf ::/boot/limine; \
+          mcopy -i $@@@1M artifacts/limine.conf ::/boot/initrd; \
           mcopy -i $@@@1M lib/limine/limine-bios.sys ::/boot/limine; \
           mcopy -i $@@@1M lib/limine/BOOTX64.EFI ::/EFI/BOOT; \
           mcopy -i $@@@1M lib/limine/BOOTIA32.EFI ::/EFI/BOOT

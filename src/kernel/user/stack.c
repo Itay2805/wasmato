@@ -97,11 +97,33 @@ void user_stack_free(void* ptr) {
     vmar_t* vmar = vmar_find(&g_user_memory, ptr);
     ASSERT(vmar != nullptr);
     ASSERT(vmar->type == VMAR_TYPE_REGION);
+    ASSERT(vmar->parent == &g_user_memory);
 
-    // TODO: verify this is a stack region
+    // ensure that this looks like a stack guard region
+    bool found_stack = false;
+    bool found_shadow_stack = false;
+    for (rb_node_t* node = rb_first(&vmar->region.root); node != nullptr; node = rb_next(node)) {
+        vmar_t* child = rb_entry(node, vmar_t, node);
+        if (child->type == VMAR_TYPE_STACK) {
+            ASSERT(!found_stack);
+            found_stack = true;
+        } else if (child->type == VMAR_TYPE_SHADOW_STACK) {
+            ASSERT(g_shadow_stack_supported);
+            ASSERT(!found_shadow_stack);
+            found_shadow_stack = true;
+        } else {
+            ASSERT(!"Invalid vmar type in stack region");
+        }
+    }
 
-    // free the entire mapping
-    vmar_free(vmar->base);
+    // ensure we found the entries at all
+    ASSERT(found_stack);
+    if (g_shadow_stack_supported) {
+        ASSERT(found_shadow_stack);
+    }
+
+    // free the entire region
+    vmar_free(vmar);
 
     vmar_unlock();
 }

@@ -53,6 +53,12 @@ typedef struct vmar {
     rb_node_t node;
 
     /**
+     * The parent node, null if this
+     * is the root
+     */
+    struct vmar* parent;
+
+    /**
      * The base address of the region
      */
     void* base;

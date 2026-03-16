@@ -396,6 +396,10 @@ OMIT_ENDBR INIT_CODE void _start() {
     RETHROW(init_tsc());
     RETHROW(init_lapic());
 
+    // ensure we only have a single module
+    CHECK(g_limine_module_request.response != nullptr);
+    CHECK(g_limine_module_request.response->module_count == 1);
+
     // load the runtime elf, before starting the cores
     RETHROW(load_runtime());
 

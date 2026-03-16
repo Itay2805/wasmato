@@ -7,12 +7,6 @@ typedef struct runtime_params {
     uint64_t tsc_freq;
 
     /**
-     * The stack allocated for the cpu, so it can be reused or freed
-     */
-    void* stack;
-    void* shadow_stack;
-
-    /**
      * The size of the TLS data without the TCB
      */
     size_t tls_size;

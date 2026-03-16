@@ -170,6 +170,40 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
     tlb_invl_commit();
 }
 
+void virt_unmap(void* virt, size_t page_count, bool free) {
+    // first mark everything as unmapped so we can properly free it without races
+    for (size_t i = 0; i < page_count; i++, virt += PAGE_SIZE) {
+        // get the pte
+        uint64_t* pte = virt_get_pte(virt, false, false);
+        if (pte == nullptr) {
+            continue;
+        }
+        *pte &= ~IA32_PG_P;
+        tlb_invl_queue(virt);
+    }
+
+    // actually commit to all the cores that we are now unmapped
+    tlb_invl_commit();
+
+    // now that all the cores see it as unmapped, we are going to
+    // actually unmap everything
+    for (size_t i = 0; i < page_count; i++, virt += PAGE_SIZE) {
+        // get the pte
+        uint64_t* pte = virt_get_pte(virt, false, false);
+        if (pte == nullptr) {
+            continue;
+        }
+
+        // free the page if we should
+        if (free) {
+            phys_free(phys_to_direct(*pte & PAGING_4K_ADDRESS_MASK), PAGE_SIZE);
+        }
+
+        // clear the entire pte
+        *pte = 0;
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Init memory reclamation
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

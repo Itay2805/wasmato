@@ -13,6 +13,7 @@
 #include "uapi/entry.h"
 #include "user/user.h"
 #include "mem/mappings.h"
+#include "mem/phys.h"
 #include "user/stack.h"
 
 /**
@@ -56,6 +57,15 @@ INIT_DATA static void* m_runtime_entry_point = NULL;
  * The TLS data, null if not found
  */
 INIT_DATA static Elf64_Phdr* m_runtime_tls_phdr = nullptr;
+
+INIT_DATA static void** m_runtime_early_stacks = nullptr;
+
+INIT_CODE void runtime_free_early_stacks(void) {
+    TRACE("runtime: freeing early stacks");
+    for (int i = 0; i < g_cpu_count; i++) {
+        user_stack_free(m_runtime_early_stacks[i]);
+    }
+}
 
 INIT_CODE static err_t runtime_elf_verify_header(void) {
     err_t err = NO_ERROR;
@@ -205,6 +215,10 @@ cleanup:
 INIT_CODE err_t load_runtime(void) {
     err_t err = NO_ERROR;
 
+    // allocate space for all the stacks
+    m_runtime_early_stacks = phys_alloc(SIZE_TO_PAGES(sizeof(void*) * g_cpu_count));
+    CHECK(m_runtime_early_stacks != nullptr);
+
     vmar_lock();
 
     // validate the elf header
@@ -249,6 +263,9 @@ INIT_CODE void runtime_start(void) {
     stack_alloc_t stack_alloc = {};
     ASSERT(!IS_ERROR(user_stack_alloc(&stack_alloc, name, SIZE_4KB)));
 
+    // remember the stack for freeing later
+    m_runtime_early_stacks[get_cpu_id()] = stack_alloc.stack;
+
     // setup the runtime params
     void* user_stack = stack_alloc.stack;
     user_stack -= sizeof(runtime_params_t);
@@ -262,10 +279,6 @@ INIT_CODE void runtime_start(void) {
     params->cpu_id = get_cpu_id();
     params->cpu_count = g_cpu_count;
     params->tsc_freq = g_tsc_freq_hz;
-
-    // pointer to the stack for reuse
-    params->stack = stack_alloc.stack;
-    params->shadow_stack = stack_alloc.shadow_stack;
 
     // tls info
     // TODO: somehow pass the init data

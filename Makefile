@@ -53,5 +53,6 @@ include src/rust-libs/Makefile
 include src/runtime/Makefile
 include src/kernel/Makefile
 include makefiles/limine.mk
+include makefiles/initrd.mk
 include makefiles/test.mk
 include scripts/build.mk

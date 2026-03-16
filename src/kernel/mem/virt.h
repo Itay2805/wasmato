@@ -34,6 +34,15 @@ bool virt_is_mapped(uintptr_t virt);
 void virt_protect(void* virt, size_t page_count, mapping_protection_t protection);
 
 /**
+ * Umap all pages under the range
+ *
+ * @param virt          [IN] The start address
+ * @param page_count    [IN] The page count
+ * @param free          [IN] Should we also free the physical pages
+ */
+void virt_unmap(void* virt, size_t page_count, bool free);
+
+/**
  * Handle a TLB flush ipi
  */
 void virt_handle_tlb_flush_ipi(void);
