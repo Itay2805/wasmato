@@ -25,6 +25,7 @@ endif
 CC := clang
 AS := clang
 AR := llvm-ar
+WASMLD := wasm-ld
 
 CLANG_RESOURCE_DIR := $(shell $(CC) --print-resource-dir)
 
@@ -52,6 +53,7 @@ clean:
 include src/rust-libs/Makefile
 include src/runtime/Makefile
 include src/kernel/Makefile
+include apps/Makefile
 include makefiles/limine.mk
 include makefiles/initrd.mk
 include makefiles/test.mk

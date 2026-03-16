@@ -13,6 +13,9 @@ quiet_cmd_ld = LD      $@
 quiet_cmd_ar = AR      $@
       cmd_ar = rm -f $@; $(AR) rcs --thin $@ $(objs-$(lib-name))
 
+quiet_cmd_wasm_ld = WASM    $@
+      cmd_wasm_ld = $(WASMLD) $(ldflags-$(bin-name)-y) $(objs-$(bin-name)) $(all-ldlibs) -o $@
+
 bin-outputs = $(addprefix $(BUILD)/,$(bins-y))
 targets += $(bin-outputs)
 
@@ -44,6 +47,19 @@ endef
 
 $(foreach bin-name,$(bins-y),$(eval $(each-bin)))
 
+wasm-outputs = $(addprefix $(BUILD)/,$(wasm-y))
+targets += $(wasm-outputs)
+
+define each-wasm
+$(call build-objs,$(bin-name))
+
+$(BUILD)/$(bin-name): private bin-name := $(bin-name)
+$(BUILD)/$(bin-name): $$(objs-$(bin-name)) $$(ldbuiltlibs) $(lddeps-y) $(lddeps-$(bin-name)-y) FORCE
+	$$(call cmd,wasm_ld)
+endef
+
+$(foreach bin-name,$(wasm-y),$(eval $(each-wasm)))
+
 lib-outputs = $(libs-y:%=$(OBJ)/%.a)
 targets += $(lib-outputs)
 
@@ -58,6 +74,7 @@ endef
 $(foreach lib-name,$(libs-y),$(eval $(each-lib)))
 
 all: $(bin-outputs)
+all: $(wasm-outputs)
 
 PHONY += FORCE
 FORCE: ;
