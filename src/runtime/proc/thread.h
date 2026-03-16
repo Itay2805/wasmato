@@ -27,6 +27,12 @@ typedef enum thread_state {
     THREAD_STATE_DEAD,
 
     /**
+     * The thread is currently being parked and will
+     * transition to THREAD_STATE_PARKED once scheduled out
+     */
+    THREAD_STATE_PARKING,
+
+    /**
      * The thread is currently parked, and is not
      * on any run queue
      */
@@ -91,14 +97,9 @@ typedef struct thread {
     atomic_size_t ref_count;
 
     /**
-     * Lock that protects the thread state
-     */
-    irq_spinlock_t lock;
-
-    /**
      * The thread state
      */
-    thread_state_t state;
+    _Atomic(thread_state_t) state;
 
     //
     // FPU context
@@ -116,7 +117,10 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
 thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_fmt, ...);
 
 /**
- * Start the thread
+ * Start the thread.
+ *
+ * This adopts a single reference on the thread;
+ * it will be automatically `thread_put` on exit.
  */
 void thread_start(thread_t* thread);
 

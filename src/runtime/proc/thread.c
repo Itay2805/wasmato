@@ -1,10 +1,12 @@
 #include "thread.h"
+#include "arch/intrin.h"
 #include "core/thread.h"
 
 #include "alloc/alloc.h"
 #include "arch/cpuid.h"
 #include "arch/regs.h"
 #include "core/sched.h"
+#include "lib/atomic.h"
 #include "lib/except.h"
 #include "lib/printf.h"
 #include "lib/tsc.h"
@@ -71,8 +73,7 @@ thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name
 
     // start with ref count of one
     thread->ref_count = 1;
-    thread->state = THREAD_STATE_IDLE;
-    thread->lock = IRQ_SPINLOCK_INIT;
+    atomic_store_relaxed(&thread->state, THREAD_STATE_IDLE);
 
     // TODO: something simpler? better? just get a pointer and
     //       copy from the user?
@@ -129,11 +130,11 @@ thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_
 }
 
 void thread_start(thread_t* thread) {
-    bool irq_state = irq_spinlock_acquire(&thread->lock);
-    ASSERT(thread->state == THREAD_STATE_IDLE);
-    thread->state = THREAD_STATE_PARKED;
-    scheduler_queue(thread);
-    irq_spinlock_release(&thread->lock, irq_state);
+    bool irq_state = irq_save();
+    ASSERT(atomic_load_relaxed(&thread->state) == THREAD_STATE_IDLE);
+    atomic_store_relaxed(&thread->state, THREAD_STATE_READY);
+    scheduler_enqueue(thread);
+    irq_restore(irq_state);
 }
 
 thread_t* thread_get(thread_t* thread) {
@@ -143,7 +144,7 @@ thread_t* thread_get(thread_t* thread) {
 
 void thread_put(thread_t* thread) {
     if (--thread->ref_count == 0) {
-        ASSERT(thread->state == THREAD_STATE_DEAD);
+        ASSERT(atomic_load_relaxed(&thread->state) == THREAD_STATE_DEAD);
         // TODO: place a thread in a queue for being deleted
         //       and wakeup the thread GC
     }
@@ -151,15 +152,15 @@ void thread_put(thread_t* thread) {
 
 void thread_exit(void) {
     thread_t* current = get_current_thread();
-    irq_spinlock_acquire(&current->lock);
-    current->state = THREAD_STATE_DEAD;
+    atomic_store_relaxed(&current->state, THREAD_STATE_DEAD);
+    irq_disable();
     scheduler_schedule();
 }
 
 void thread_sleep(size_t ms) {
     thread_t* thread = get_current_thread();
-    bool irq_state = irq_spinlock_acquire(&thread->lock);
+    bool irq_state = irq_save();
+    atomic_store_release(&thread->state, THREAD_STATE_PARKED);
     scheduler_schedule_deadline(tsc_ms_deadline(ms));
-    irq_spinlock_release(&thread->lock, irq_state);
+    irq_restore(irq_state);
 }
-
