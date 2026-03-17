@@ -8,7 +8,7 @@
 #include "lib/elf64.h"
 #include "lib/pcpu.h"
 #include "lib/printf.h"
-#include "lib/string.h"
+#include "../runtime/lib/string.h"
 #include "lib/tsc.h"
 #include "uapi/entry.h"
 #include "user/user.h"

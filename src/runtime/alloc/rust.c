@@ -1,6 +1,6 @@
 
 #include "alloc.h"
-#include "lib/string.h"
+#include "../lib/string.h"
 
 void* rust_platform_alloc(size_t size, size_t align) {
     return mem_alloc_aligned(size, align);

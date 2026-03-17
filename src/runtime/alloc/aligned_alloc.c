@@ -3,7 +3,7 @@
 #include "alloc.h"
 
 #include "malloc_impl.h"
-#include "lib/string.h"
+#include "../lib/string.h"
 
 void* mem_alloc_aligned(size_t len, size_t align) {
     unsigned char *mem, *new;

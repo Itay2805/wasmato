@@ -3,7 +3,7 @@
 #include "arch/intrin.h"
 #include "arch/paging.h"
 #include "lib/printf.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 #include "mem/mappings.h"
 #include "mem/alloc.h"
 

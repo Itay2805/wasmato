@@ -10,14 +10,14 @@ quiet_cmd_mkimage = MKIMAGE $@
           mmd -i $@@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine; \
           mcopy -i $@@@1M build/kernel ::/boot/kernel; \
           mcopy -i $@@@1M artifacts/limine.conf ::/boot/limine; \
-          mcopy -i $@@@1M artifacts/limine.conf ::/boot/initrd; \
+          mcopy -i $@@@1M build/init ::/boot/initrd; \
           mcopy -i $@@@1M lib/limine/limine-bios.sys ::/boot/limine; \
           mcopy -i $@@@1M lib/limine/BOOTX64.EFI ::/EFI/BOOT; \
           mcopy -i $@@@1M lib/limine/BOOTIA32.EFI ::/EFI/BOOT
 
 # Build a limine image with both bios and uefi boot options
 targets += $(IMAGE_NAME)
-$(IMAGE_NAME): artifacts/limine.conf $(BUILD)/limine $(BUILD)/kernel FORCE
+$(IMAGE_NAME): artifacts/limine.conf $(BUILD)/limine $(BUILD)/kernel $(BUILD)/init FORCE
 	$(call cmd,mkimage)
 
 quiet_cmd_run = QEMU    $<

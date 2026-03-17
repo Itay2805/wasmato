@@ -1,7 +1,7 @@
 #include "alloc.h"
 
 #include "lib/assert.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 #include "mem/mappings.h"
 #include "phys.h"
 

@@ -5,7 +5,7 @@
 #include "lib/defs.h"
 #include "lib/log.h"
 #include "lib/printf.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 #include "lib/rbtree/rbtree_types.h"
 #include "uapi/page.h"
 #include "uapi/mapping.h"

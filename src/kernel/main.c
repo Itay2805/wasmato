@@ -9,7 +9,7 @@
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/smp.h"
-#include "lib/string.h"
+#include "../runtime/lib/string.h"
 #include "mem/direct.h"
 #include "mem/early.h"
 #include "mem/phys.h"
@@ -220,8 +220,8 @@ INIT_CODE static void configure_cet(void) {
         // enable endbr tracking
         // specifically don't enable notrack prefix, we disable jump tables
         // so it won't be used
-        u_cet.ENDBR_EN = 1;
-        s_cet.ENDBR_EN = 1;
+        // u_cet.ENDBR_EN = 1;
+        // s_cet.ENDBR_EN = 1;
     }
 
     // enable shadow stack only for usermode for now

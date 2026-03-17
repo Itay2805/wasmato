@@ -6,7 +6,7 @@
 #include "arch/intr.h"
 #include "arch/paging.h"
 #include "lib/ipi.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 #include "sync/spinlock.h"
 #include "user/stack.h"
 
@@ -142,19 +142,22 @@ static uint64_t* virt_get_pte(void* virt, bool allocate, bool kernel) {
         return nullptr;
     }
 
-    uint64_t* entry = &pml1[index1];
-    if (!allocate && (*entry & IA32_PG_P) == 0) {
-        return nullptr;
-    }
+    return &pml1[index1];
+}
 
-    return entry;
+static bool pte_is_present(uint64_t* pte) {
+    bool present = *pte & IA32_PG_P;
+    if (!present) {
+        ASSERT(*pte == 0);
+    }
+    return present;
 }
 
 void virt_protect(void* virt, size_t page_count, mapping_protection_t protection) {
     for (size_t i = 0; i < page_count; i++, virt += PAGE_SIZE) {
         // get the pte
         uint64_t* pte = virt_get_pte(virt, false, false);
-        if (pte == nullptr) {
+        if (pte == nullptr || !pte_is_present(pte)) {
             continue;
         }
 
@@ -172,10 +175,10 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
 
 void virt_unmap(void* virt, size_t page_count, bool free) {
     // first mark everything as unmapped so we can properly free it without races
-    for (size_t i = 0; i < page_count; i++, virt += PAGE_SIZE) {
+    for (size_t i = 0; i < page_count; i++) {
         // get the pte
-        uint64_t* pte = virt_get_pte(virt, false, false);
-        if (pte == nullptr) {
+        uint64_t* pte = virt_get_pte(virt + i * PAGE_SIZE, false, false);
+        if (pte == nullptr || !pte_is_present(pte)) {
             continue;
         }
         *pte &= ~IA32_PG_P;
@@ -187,10 +190,10 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
 
     // now that all the cores see it as unmapped, we are going to
     // actually unmap everything
-    for (size_t i = 0; i < page_count; i++, virt += PAGE_SIZE) {
+    for (size_t i = 0; i < page_count; i++) {
         // get the pte
-        uint64_t* pte = virt_get_pte(virt, false, false);
-        if (pte == nullptr) {
+        uint64_t* pte = virt_get_pte(virt + i * PAGE_SIZE, false, false);
+        if (pte == nullptr || *pte == 0) {
             continue;
         }
 
@@ -235,7 +238,7 @@ void reclaim_init_mem(void) {
             void* virt = vmar[i]->base + j * PAGE_SIZE;
 
             uint64_t* pte = virt_get_pte(virt, false, true);
-            ASSERT(pte != NULL && (*pte & IA32_PG_P) != 0);
+            ASSERT(pte != nullptr);
 
             uint64_t phys = *pte & PAGING_4K_ADDRESS_MASK;
             *pte = 0;
@@ -338,7 +341,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
             goto cleanup;
         } else {
             // ensure we have an empty pte and nothing weird
-            CHECK(*pte == 0);
+            CHECK(*pte == 0, "%lx", *pte);
         }
     } else {
         // ensure the page actually exists, idk what to do

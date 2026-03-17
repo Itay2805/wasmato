@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/string.h"
+#include "../lib/string.h"
 
 void* mem_alloc(size_t len);
 

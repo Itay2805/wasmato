@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #include "lib/except.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 #include "lib/log.h"
 
 typedef struct source_location {

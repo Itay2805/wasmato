@@ -13,7 +13,7 @@
 #include "arch/regs.h"
 #include "lib/ipi.h"
 #include "lib/pcpu.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 #include "mem/mappings.h"
 #include "mem/phys.h"
 #include "mem/virt.h"

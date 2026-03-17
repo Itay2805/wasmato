@@ -5,7 +5,7 @@
 
 #include "sync/spinlock.h"
 #include "lib/list.h"
-#include "lib/string.h"
+#include "../../runtime/lib/string.h"
 
 typedef struct mem_alloc {
     /**

@@ -68,7 +68,7 @@ runtime-core-y += $(shell find src/runtime/core -name '*.S')
 runtime-core-y += src/common/debug/ubsan.c
 runtime-core-y += src/common/lib/rbtree/rbtree.c
 runtime-core-y += src/common/lib/except.c
-runtime-core-y += src/common/lib/string_base.c
+runtime-core-y += src/common/lib/string.c
 
 runtime-y += $(shell find src/runtime -name '*.c')
 runtime-y += $(shell find src/common -name '*.c')

@@ -330,8 +330,10 @@ static void ipi_interrupt_handler(interrupt_frame_t* frame) {
 }
 
 __attribute__((interrupt))
-static void panic_interrupt_handler(interrupt_frame_t* frame) {
-    asm("hlt");
+static void panic_handler(interrupt_frame_t* frame) {
+    while (true) {
+        asm("hlt");
+    }
 }
 
 __attribute__((interrupt))
@@ -410,7 +412,7 @@ INIT_CODE void init_idt(void) {
 
     // handlers with specific behaviour
     intr_set_kernel_handler(INTR_VECTOR_IPI, ipi_interrupt_handler, -1, 0);
-    intr_set_kernel_handler(INTR_VECTOR_PANIC, panic_interrupt_handler, -1, 0);
+    intr_set_kernel_handler(INTR_VECTOR_PANIC, panic_handler, -1, 0);
     intr_set_kernel_handler(INTR_VECTOR_SPURIOUS, spurious_interrupt_handler, -1, 0);
 
     idt_t idt = {
