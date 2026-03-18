@@ -205,7 +205,18 @@ vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr);
  * @param mapping       [IN]
  * @param protection    [IN]
  */
-void vmar_protect(void* mapping, mapping_protection_t protection);
+void vmar_protect(vmar_t* vmar, mapping_protection_t protection);
+
+/**
+ * Change the protection of the given region, must be an allocated region
+ * that is not locked.
+*
+ * Lock must be taken before entering the function
+ *
+ * @param mapping       [IN]
+ * @param protection    [IN]
+ */
+INIT_CODE void vmar_protect_ptr(void* mapping, mapping_protection_t protection);
 
 /**
  * Find an entry inside the region

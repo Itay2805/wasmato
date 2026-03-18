@@ -6,7 +6,7 @@
 LATE_RO vmar_t g_kernel_memory ={
     .name = "kernel-memory",
     .base = (void*)0xFFFF800000000000,
-    .page_count = SIZE_128TB / PAGE_SIZE,
+    .page_count = SIZE_TO_PAGES(SIZE_128TB),
     .type = VMAR_TYPE_REGION,
     .pinned = true,
     .region = {
@@ -17,7 +17,7 @@ LATE_RO vmar_t g_kernel_memory ={
 vmar_t g_user_memory = {
     .name = "user-memory",
     .base = (void*)BASE_64KB,
-    .page_count = (SIZE_128TB - BASE_64KB) / PAGE_SIZE,
+    .page_count = SIZE_TO_PAGES(SIZE_128TB - BASE_64KB),
     .type = VMAR_TYPE_REGION,
     .pinned = true,
     .region = {
@@ -28,7 +28,7 @@ vmar_t g_user_memory = {
 LATE_RO vmar_t g_kernel_region = {
     .name = "kernel",
     .base = (void*)0xffffffff80000000,
-    .page_count = SIZE_2GB / PAGE_SIZE,
+    .page_count = SIZE_TO_PAGES(SIZE_2GB),
     .type = VMAR_TYPE_REGION,
     .pinned = true,
     .region = {
@@ -40,6 +40,17 @@ vmar_t g_runtime_region = {
     .name = "runtime",
     .base = NULL,
     .page_count = 0,
+    .type = VMAR_TYPE_REGION,
+    .pinned = true,
+    .region = {
+        .root = RB_ROOT
+    }
+};
+
+vmar_t g_user_code_region = {
+    .name = "code",
+    .base = (void*)BASE_64KB,
+    .page_count = SIZE_TO_PAGES(SIZE_2GB),
     .type = VMAR_TYPE_REGION,
     .pinned = true,
     .region = {

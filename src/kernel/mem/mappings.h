@@ -11,6 +11,7 @@ LATE_RO extern vmar_t g_kernel_memory;
  * The lower half region
  */
 extern vmar_t g_user_memory;
+extern vmar_t g_user_code_region;
 extern vmar_t g_runtime_region;
 
 /**

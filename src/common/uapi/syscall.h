@@ -174,6 +174,22 @@ static inline void sys_heap_free(void* base) {
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// jit management
+//----------------------------------------------------------------------------------------------------------------------
+
+static inline void* sys_jit_alloc(size_t rx_page_count, size_t ro_page_count) {
+	return (void*)syscall2(SYSCALL_JIT_ALLOC, rx_page_count, ro_page_count);
+}
+
+static inline void sys_jit_lock_protection(void* ptr) {
+	(void)syscall1(SYSCALL_JIT_LOCK_PROTECTION, ptr);
+}
+
+static inline void sys_jit_free(void* ptr) {
+	(void)syscall1(SYSCALL_JIT_FREE, ptr);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Stack management
 //----------------------------------------------------------------------------------------------------------------------
 

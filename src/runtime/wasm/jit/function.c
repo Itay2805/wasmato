@@ -4,6 +4,39 @@
 #include "lib/stb_ds.h"
 #include "wasm/buffer.h"
 
+typedef struct jit_function_ctx {
+    err_t err;
+    jit_context_t* ctx;
+    uint32_t funcidx;
+} jit_function_ctx_t;
+
+typedef struct jit_block {
+    spidir_block_t block;
+} jit_block_t;
+
+typedef struct jit_value {
+    spidir_value_t value;
+    spidir_value_type_t type;
+} jit_value_t;
+
+#define JIT_PUSH(_type, _value) \
+    do { \
+        jit_value_t jit_value__ = { \
+            .value = _value, \
+            .type = _type \
+        }; \
+        arrpush(stack, jit_value__); \
+    } while (0)
+
+#define JIT_POP(_type) \
+    ({ \
+        spidir_value_type_t type__ = _type; \
+        CHECK(arrlen(stack) >= 1); \
+        jit_value_t jit_value__ = arrpop(stack); \
+        CHECK(jit_value__.type == type__, "%d != %d", jit_value__.type, type__); \
+        jit_value__.value; \
+    })
+
 static spidir_value_type_t jit_get_spidir_value_type(wasm_value_type_t type) {
     switch (type) {
         case WASM_VALUE_TYPE_F64: return SPIDIR_TYPE_F64;
@@ -49,7 +82,7 @@ err_t jit_prepare_function(jit_context_t* ctx, uint32_t funcidx) {
     char name[64];
     snprintf_(name, sizeof(name), "func%d", funcidx);
 
-    ctx->functions[funcidx].function = spidir_module_create_function(
+    ctx->functions[funcidx].spidir = spidir_module_create_function(
         ctx->spidir,
         name,
         ret_type,
@@ -65,39 +98,6 @@ err_t jit_prepare_function(jit_context_t* ctx, uint32_t funcidx) {
 
     return err;
 }
-
-typedef struct jit_function_ctx {
-    err_t err;
-    jit_context_t* ctx;
-    uint32_t funcidx;
-} jit_function_ctx_t;
-
-typedef struct jit_block {
-    spidir_block_t block;
-} jit_block_t;
-
-typedef struct jit_value {
-    spidir_value_t value;
-    spidir_value_type_t type;
-} jit_value_t;
-
-#define JIT_PUSH(_type, _value) \
-    do { \
-        jit_value_t jit_value__ = { \
-            .value = _value, \
-            .type = _type \
-        }; \
-        arrpush(stack, jit_value__); \
-    } while (0)
-
-#define JIT_POP(_type) \
-    ({ \
-        spidir_value_type_t type__ = _type; \
-        CHECK(arrlen(stack) >= 1); \
-        jit_value_t jit_value__ = arrpop(stack); \
-        CHECK(jit_value__.type == type__, "%d != %d", jit_value__.type, type__); \
-        jit_value__.value; \
-    })
 
 static void jit_build_function(spidir_builder_handle_t builder, void* _ctx) {
     err_t err = NO_ERROR;
@@ -198,7 +198,7 @@ err_t jit_function(jit_context_t* ctx, uint32_t funcidx) {
         .funcidx = funcidx,
         .ctx = ctx
     };
-    spidir_module_build_function(ctx->spidir, function->function, jit_build_function, &context);
+    spidir_module_build_function(ctx->spidir, function->spidir, jit_build_function, &context);
     RETHROW(context.err);
 
 cleanup:

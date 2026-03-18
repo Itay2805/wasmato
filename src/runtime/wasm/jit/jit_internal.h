@@ -5,7 +5,7 @@
 
 
 typedef struct jit_function {
-    spidir_function_t function;
+    spidir_function_t spidir;
     bool inited;
 } jit_function_t;
 
@@ -16,7 +16,7 @@ typedef struct jit_context {
     // the jit functions
     jit_function_t* functions;
 
-    // queue of functions to jit
+    // queue of functions to do
     uint32_t* queue;
 } jit_context_t;
 

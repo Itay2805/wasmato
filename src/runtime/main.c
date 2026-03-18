@@ -26,10 +26,15 @@ void main(void* arg) {
 
     // load the module
     wasm_module_t module = {};
+    wasm_jit_t jit = {};
     RETHROW(wasm_load_module(&module, initrd, initrd_size));
-    RETHROW(wasm_jit_module(&module));
+    RETHROW(wasm_jit_module(&module, &jit));
+
+    int (*start)(void) = wasm_jit_get_function(&jit, "_start");
+    TRACE("wasm returned 0x%x", start());
 
 cleanup:
+    wasm_jit_free(&jit);
     wasm_module_free(&module);
 
     (void)err;

@@ -14,6 +14,7 @@
 #include "lib/ipi.h"
 #include "lib/pcpu.h"
 #include "../../runtime/lib/string.h"
+#include "lib/rbtree/rbtree.h"
 #include "mem/mappings.h"
 #include "mem/phys.h"
 #include "mem/virt.h"
@@ -153,6 +154,79 @@ static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
     }
 }
 
+static err_t handle_jit_alloc(size_t rx_page_count, size_t ro_page_count, void** ptr) {
+    err_t err = NO_ERROR;
+
+    vmar_lock();
+
+    // must have at least one code page
+    CHECK(rx_page_count != 0);
+
+    // ensure the two don't overflow
+    size_t total_pages = 0;
+    CHECK(!__builtin_add_overflow(rx_page_count, ro_page_count, &total_pages));
+
+    // reserve a range for everything, we
+    // want it close together
+    vmar_t* jit_vmar = vmar_reserve(&g_user_code_region, total_pages, nullptr);
+    CHECK_ERROR(jit_vmar != nullptr, ERROR_OUT_OF_MEMORY);
+    snprintf_(jit_vmar->name, sizeof(jit_vmar->name), "jit");
+
+    // setup rx pages if any
+    vmar_t* rx_vmar = vmar_allocate(jit_vmar, rx_page_count, jit_vmar->base);
+    CHECK_ERROR(rx_vmar != nullptr, ERROR_OUT_OF_MEMORY);
+    snprintf_(rx_vmar->name, sizeof(rx_vmar->name), "code");
+
+    // setup ro pages if any
+    if (ro_page_count != 0) {
+        vmar_t* ro_vmar = vmar_allocate(jit_vmar, ro_page_count, vmar_end(rx_vmar) + 1);
+        CHECK_ERROR(ro_vmar != nullptr, ERROR_OUT_OF_MEMORY);
+        snprintf_(ro_vmar->name, sizeof(ro_vmar->name), "constpool");
+    }
+
+    // don't allow to modify the top level vmar
+    jit_vmar->locked = true;
+
+    // output it
+    *ptr = jit_vmar->base;
+
+cleanup:
+    if (IS_ERROR(err) && jit_vmar != nullptr) {
+        vmar_free(jit_vmar);
+    }
+
+    vmar_unlock();
+
+    return err;
+}
+
+static err_t handle_jit_lock_protection(void* ptr) {
+    err_t err = NO_ERROR;
+
+    vmar_lock();
+
+    // get the first region
+    vmar_t* rx_region = vmar_find_mapping(&g_user_code_region, ptr);
+    CHECK(rx_region != nullptr);
+
+    // set the code
+    CHECK(rx_region->parent->base == rx_region->base);
+    vmar_protect(rx_region, MAPPING_PROTECTION_RX);
+
+    // set constpool
+    struct rb_node* next = rb_next(&rx_region->node);
+    if (next != nullptr) {
+        CHECK(next != nullptr);
+        vmar_t* ro_region = rb_entry(next, vmar_t, node);
+        vmar_protect(ro_region, MAPPING_PROTECTION_RO);
+    }
+
+cleanup:
+    vmar_unlock();
+
+    return err;
+}
+
 OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     err_t err = NO_ERROR;
     ipi_enable();
@@ -194,6 +268,30 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
                 frame->result = (uintptr_t)alloc.stack;
                 frame->result2 = (uintptr_t)alloc.shadow_stack;
             }
+        } break;
+
+        case SYSCALL_JIT_ALLOC: {
+            void* ptr = nullptr;
+            err = handle_jit_alloc(frame->arg1, frame->arg2, &ptr);
+            if (err == ERROR_OUT_OF_MEMORY) {
+                frame->result = 0;
+            } else if (!IS_ERROR(err)) {
+                frame->result = (uintptr_t)ptr;
+            } else {
+                RETHROW(err);
+            }
+        } break;
+
+        case SYSCALL_JIT_LOCK_PROTECTION: {
+            handle_jit_lock_protection((void*)frame->arg1);
+        } break;
+
+        case SYSCALL_JIT_FREE: {
+            vmar_lock();
+            vmar_t* region = vmar_find_mapping(&g_user_code_region, (void*)frame->arg1);
+            CHECK(region != nullptr);
+            vmar_free(region);
+            vmar_unlock();
         } break;
 
         case SYSCALL_TIMER_SET_DEADLINE: {

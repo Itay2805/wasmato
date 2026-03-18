@@ -236,12 +236,8 @@ vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr) {
 // High level APIs
 //----------------------------------------------------------------------------------------------------------------------
 
-void vmar_protect(void* mapping, mapping_protection_t protection) {
+void vmar_protect(vmar_t* vmar, mapping_protection_t protection) {
     assert_vmar_locked();
-
-    vmar_t* vmar = vmar_find_mapping(&g_user_memory, mapping);
-    ASSERT(vmar != nullptr);
-    ASSERT(vmar->base == mapping);
 
     ASSERT(vmar->type == VMAR_TYPE_ALLOC);
     ASSERT(!vmar->locked);
@@ -252,6 +248,16 @@ void vmar_protect(void* mapping, mapping_protection_t protection) {
 
     // tell the vmm to change protection of existing pages
     virt_protect(vmar->base, vmar->page_count, protection);
+}
+
+void vmar_protect_ptr(void* mapping, mapping_protection_t protection) {
+    assert_vmar_locked();
+
+    vmar_t* vmar = vmar_find_mapping(&g_user_memory, mapping);
+    ASSERT(vmar != nullptr);
+    ASSERT(vmar->base == mapping);
+
+    vmar_protect(vmar, protection);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

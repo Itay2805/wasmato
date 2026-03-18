@@ -181,7 +181,7 @@ INIT_CODE static err_t runtime_elf_map(void) {
         }
 
         // set the correct protections now, this will also lock the region
-        vmar_protect((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
+        vmar_protect_ptr((void*)ALIGN_DOWN(phdr->p_vaddr, PAGE_SIZE), protection);
     }
 
 cleanup:
@@ -221,6 +221,9 @@ INIT_CODE err_t load_runtime(void) {
 
     vmar_lock();
 
+    // reserve the entire user code region
+    CHECK(vmar_reserve_static(&g_user_memory, &g_user_code_region));
+
     // validate the elf header
     RETHROW(runtime_elf_verify_header());
 
@@ -236,7 +239,7 @@ INIT_CODE err_t load_runtime(void) {
     // setup the runtime region, this should have the entire elf inside of it
     g_runtime_region.base = (void*)elf_load_address;
     g_runtime_region.page_count = SIZE_TO_PAGES(elf_top_address - elf_load_address);
-    CHECK(vmar_reserve_static(&g_user_memory, &g_runtime_region));
+    CHECK(vmar_reserve_static(&g_user_code_region, &g_runtime_region));
 
     // actually map the elf
     RETHROW(runtime_elf_map());
