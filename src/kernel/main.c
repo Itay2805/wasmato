@@ -98,7 +98,7 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(version_info_ecx.XSAVE, "Missing XSAVE support");
 
     // if monitor is supported check that it also has interrupt as break event
-    bool has_monitor;
+    bool has_monitor = false;
     if (version_info_ecx.MONITOR) {
         CPUID_MONITOR_MWAIT_ECX monitor_mwait_ecx = {};
         if (__get_cpuid(

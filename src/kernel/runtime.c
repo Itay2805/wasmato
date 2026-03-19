@@ -23,7 +23,7 @@
  *       to protect it from DMA more easily
  */
 INIT_DATA static char m_runtime_elf[] = {
-    #embed "build/runtime"
+    #embed "runtime"
 };
 
 #define ELF_PTR(type, offset) \
