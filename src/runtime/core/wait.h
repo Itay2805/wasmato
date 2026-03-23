@@ -8,6 +8,8 @@ typedef enum wait_key_size {
     WAIT_KEY_UINT64,
 } wait_key_size_t;
 
+void init_atomic_wait(void);
+
 /**
  * Waits on an memory location to change value, the key can either be 32bit
  * or 64bit.

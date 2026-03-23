@@ -1,4 +1,5 @@
 #include "wait.h"
+#include <stdint.h>
 
 #include "arch/intrin.h"
 #include "lib/atomic.h"
@@ -6,6 +7,11 @@
 #include "proc/thread.h"
 #include "sched.h"
 #include "sync/spinlock.h"
+
+#define WAIT_HASH_SHIFT 8
+#define WAIT_HASH_SIZE (1 << WAIT_HASH_SHIFT)
+
+#define GOLDEN_RATIO_64 0x61C8864680B583EBull
 
 typedef struct wait_queue {
     /**
@@ -36,10 +42,11 @@ typedef struct wait_queue_entry {
     void* key;
 } wait_queue_entry_t;
 
-static wait_queue_t m_wait_queue = {.queue = LIST_INIT(&m_wait_queue.queue)};
+static wait_queue_t m_wait_hash[WAIT_HASH_SIZE];
 
 static wait_queue_t* get_wait_queue_for_key(void* key) {
-    return &m_wait_queue;
+    size_t hash = ((uint64_t)key * GOLDEN_RATIO_64) >> (64 - WAIT_HASH_SHIFT);
+    return &m_wait_hash[hash];
 }
 
 static bool atomic_check_key(void* key, wait_key_size_t size, uint64_t old) {
@@ -76,6 +83,12 @@ static void wait_queue_finish(wait_queue_t* queue, wait_queue_entry_t* entry) {
         list_del(&entry->link);
     }
     spinlock_release(&queue->lock);
+}
+
+void init_atomic_wait(void) {
+    for (size_t i = 0; i < WAIT_HASH_SIZE; i++) {
+        list_init(&m_wait_hash[i].queue);
+    }
 }
 
 void atomic_wait(void* key, wait_key_size_t size, uint64_t old,

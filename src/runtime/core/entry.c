@@ -1,5 +1,6 @@
 #include <stdatomic.h>
 
+#include "core/wait.h"
 #include "proc/thread.h"
 #include "sched.h"
 #include "timer.h"
@@ -49,6 +50,8 @@ int _start(runtime_params_t* params) {
 
         // setup threading
         init_threads(params->tls_size);
+
+        init_atomic_wait();
 
         // setup scheduler
         init_sched();
