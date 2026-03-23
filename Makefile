@@ -24,8 +24,8 @@ endif
 
 CC := clang
 AS := clang
+LD := clang
 AR := llvm-ar
-WASMLD := wasm-ld
 
 CLANG_RESOURCE_DIR := $(shell $(CC) --print-resource-dir)
 
@@ -46,14 +46,18 @@ all:
 quiet_cmd_clean = CLEAN   $(BUILD)
       cmd_clean = rm -rf $(BUILD)
 
+# TODO: best way to do this?
+apps/build/init: FORCE
+	$(MAKE) -C apps build/init
+
 PHONY += clean
 clean:
 	$(call cmd,clean)
+	$(MAKE) -C apps clean
 
 include src/rust-libs/Makefile
 include src/runtime/Makefile
 include src/kernel/Makefile
-include apps/Makefile
 include makefiles/limine.mk
 include makefiles/initrd.mk
 include makefiles/test.mk
