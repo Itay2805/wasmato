@@ -11,8 +11,18 @@ typedef enum wait_key_size {
 void init_atomic_wait(void);
 
 /**
- * Waits on an memory location to change value, the key can either be 32bit
- * or 64bit.
+ * Atomically checks that `key` contains the value `old` and then parks the
+ * current thread until it is either woken by `atomic_notify` or the deadline
+ * expires.
+ *
+ * The value pointed to by `key` may be either 32-bit or 64-bit, as indicated
+ * by `size`.
+ *
+ * Typical usage patterns involving memory reclamation (*by unrelated code*)
+ * may cause this function to return spuriously, without `key` having changed,
+ * without `atomic_notify` having been invoked and without the deadline having
+ * expired. Callers must therefore invoke this function in a loop until a
+ * suitable value is observed in `key`.
  *
  * @param key       [IN] The pointer of the key
  * @param size      [IN] The size of the key
@@ -22,9 +32,10 @@ void init_atomic_wait(void);
 void atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline);
 
 /**
- * Wakeup up to the given amount of threads from the wait queue
+ * Wakes a number of threads currently waiting on `key` via `atomic_wait`.
  *
  * @param key       [IN] The key to wake
- * @param count     [IN] The amount of threads to wake, 0 for all
+ * @param count     [IN] The number of threads to wake, 0 for all
+ * @return The number of threads woken
  */
 size_t atomic_notify(void* key, size_t count);
