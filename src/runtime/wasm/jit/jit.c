@@ -341,6 +341,32 @@ cleanup:
     return err;
 }
 
+static err_t jit_prepare_globals(jit_context_t* ctx, wasm_jit_t* jit) {
+    err_t err = NO_ERROR;
+
+    arrsetlen(ctx->globals, arrlen(ctx->module->globals));
+
+    size_t offset = 0;
+    for (int i = 0; i < arrlen(ctx->module->globals); i++) {
+        wasm_global_t* global = &ctx->module->globals[i];
+        spidir_value_type_t type = jit_get_spidir_value_type(global->value.kind);
+        ctx->globals[i].type = type;
+        if (global->mutable) {
+            // mutable, we need space for it
+            ctx->globals[i].offset = offset;
+            offset += jit_get_spidir_size(type);
+        } else {
+            // immutable, not going to be allocated, mark it as such
+            ctx->globals[i].offset = -1;
+        }
+    }
+
+    jit->globals_size = offset;
+
+cleanup:
+    return err;
+}
+
 err_t wasm_jit_module(wasm_module_t* module, wasm_jit_t* jit) {
     err_t err = NO_ERROR;
     jit_context_t ctx = {
@@ -350,6 +376,9 @@ err_t wasm_jit_module(wasm_module_t* module, wasm_jit_t* jit) {
     // it should be cheap enough to allocate it linearly
     arrsetlen(ctx.functions, arrlen(module->functions));
     memset(ctx.functions, 0, sizeof(*ctx.functions) * arrlen(ctx.functions));
+
+    // setup the globals
+    RETHROW(jit_prepare_globals(&ctx, jit));
 
     ctx.spidir = spidir_module_create();
 
@@ -362,12 +391,15 @@ err_t wasm_jit_module(wasm_module_t* module, wasm_jit_t* jit) {
     // generate the entire thing
     RETHROW(jit_emit_code(&ctx, jit));
 
+    spidir_module_dump(ctx.spidir, spidir_dump_callback, nullptr);
+
 cleanup:
     if (ctx.spidir != nullptr) {
         spidir_module_destroy(ctx.spidir);
     }
     arrfree(ctx.queue);
     arrfree(ctx.functions);
+    arrfree(ctx.globals);
 
     return err;
 }

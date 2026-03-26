@@ -1,5 +1,6 @@
 #pragma once
 
+#include "module.h"
 #include "lib/except.h"
 
 
@@ -66,3 +67,5 @@ static inline void* buffer_pull(buffer_t* buffer, size_t len) {
         RETHROW(buffer_pull_i64(buffer, &value__)); \
         value__; \
     })
+
+err_t buffer_pull_val_type(buffer_t* buffer, wasm_value_type_t* valtype);

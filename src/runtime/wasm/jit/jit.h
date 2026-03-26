@@ -15,6 +15,9 @@ typedef struct wasm_jit {
         char* key;
         void* value;
     }* exported_functions;
+
+    // the size in bytes needed for all the globals
+    size_t globals_size;
 } wasm_jit_t;
 
 void wasm_jit_free(wasm_jit_t* jit);

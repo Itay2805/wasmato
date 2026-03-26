@@ -96,3 +96,19 @@ err_t buffer_pull_name(buffer_t* buffer, buffer_t* name) {
 cleanup:
     return err;
 }
+
+err_t buffer_pull_val_type(buffer_t* buffer, wasm_value_type_t* valtype) {
+    err_t err = NO_ERROR;
+
+    uint8_t byte = BUFFER_PULL(uint8_t, buffer);
+    switch (byte) {
+        case 0x7C: *valtype = WASM_VALUE_TYPE_F64; break;
+        case 0x7D: *valtype = WASM_VALUE_TYPE_F32; break;
+        case 0x7E: *valtype = WASM_VALUE_TYPE_I64; break;
+        case 0x7F: *valtype = WASM_VALUE_TYPE_I32; break;
+        default: CHECK_FAIL("%x", byte);
+    }
+
+    cleanup:
+        return err;
+}

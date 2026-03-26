@@ -86,22 +86,6 @@ static int find_section_index(wasm_section_id_t id, int index) {
     return -1;
 }
 
-static err_t wasm_pull_val_type(buffer_t* buffer, wasm_value_type_t* valtype) {
-    err_t err = NO_ERROR;
-
-    uint8_t byte = BUFFER_PULL(uint8_t, buffer);
-    switch (byte) {
-        case 0x7C: *valtype = WASM_VALUE_TYPE_F64; break;
-        case 0x7D: *valtype = WASM_VALUE_TYPE_F32; break;
-        case 0x7E: *valtype = WASM_VALUE_TYPE_I64; break;
-        case 0x7F: *valtype = WASM_VALUE_TYPE_I32; break;
-        default: CHECK_FAIL("%x", byte);
-    }
-
-cleanup:
-    return err;
-}
-
 static err_t wasm_pull_result_type(buffer_t* buffer, wasm_value_type_t** out_types) {
     err_t err = NO_ERROR;
 
@@ -111,7 +95,7 @@ static err_t wasm_pull_result_type(buffer_t* buffer, wasm_value_type_t** out_typ
 
     for (int i = 0; i < count; i++) {
         wasm_value_type_t type;
-        RETHROW(wasm_pull_val_type(buffer, &type));
+        RETHROW(buffer_pull_val_type(buffer, &type));
         arrpush(types, type);
     }
 
@@ -256,7 +240,7 @@ err_t wasm_parse_global_section(wasm_module_t* module, buffer_t* buffer) {
 
     for (int i = 0; i < count; i++) {
         wasm_value_type_t type;
-        RETHROW(wasm_pull_val_type(buffer, &type));
+        RETHROW(buffer_pull_val_type(buffer, &type));
         uint8_t mut = BUFFER_PULL(uint8_t, buffer);
         CHECK(mut == 0x00 || mut == 0x01);
 
