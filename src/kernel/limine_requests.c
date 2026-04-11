@@ -12,7 +12,7 @@
 //
 
 __attribute__((used, section(".limine_requests")))
-static volatile uint64_t g_limine_base_revision[] = LIMINE_BASE_REVISION(5);
+static volatile uint64_t g_limine_base_revision[] = LIMINE_BASE_REVISION(6);
 
 __attribute__((used, section(".limine_requests_start")))
 static uint64_t g_limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
@@ -94,8 +94,8 @@ volatile struct limine_paging_mode_request g_limine_page_mode_request = {
 };
 
 __attribute__((section(".limine_requests")))
-volatile struct limine_keep_iommu_request g_limine_x86_64_keep_iommu_request = {
-    .id = LIMINE_KEEP_IOMMU_REQUEST_ID,
+volatile struct limine_x86_64_keep_iommu_request g_limine_x86_64_keep_iommu_request = {
+    .id = LIMINE_X86_64_KEEP_IOMMU_REQUEST_ID,
     .revision = 0, .response = nullptr,
 };
 
