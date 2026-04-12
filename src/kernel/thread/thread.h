@@ -2,17 +2,12 @@
 
 #include <stdalign.h>
 #include <stdatomic.h>
+#include <stdnoreturn.h>
 
 #include "lib/list.h"
 #include "sync/spinlock.h"
 
 typedef void (*thread_entry_t)(void* arg);
-
-typedef struct tcb {
-    struct tcb* tcb;
-} tcb_t;
-
-#define TCB ((__seg_fs tcb_t*)(0))
 
 /**
  * The various states in which a thread can be:
@@ -73,29 +68,49 @@ typedef enum thread_state {
     THREAD_STATE_PARKED,
 } thread_state_t;
 
+typedef enum thread_flags {
+    /**
+     * This is a usermode thread
+     */
+    THREAD_FLAG_USER = BIT0,
+} thread_flags_t;
+
 typedef struct thread {
     /**
      * The stack of the thread
      * MUST NOT MOVE THE FIELD
+     * offset 0
      */
-    void* rsp;
+    void* kernel_rsp;
 
     /**
      * The shadow stack of the thread
      * MUST NOT MOVE THE FIELD
+     * offset 8
      */
-    void* ssp;
+    void* kernel_ssp;
+
+    /**
+     * The user stack-pointer,
+     */
+    void* user_rsp;
+
+    /**
+     * The user shadow-stack pointer,
+     */
+    void* user_ssp;
 
     //
     // CPU Context
     //
 
-    void* stack;
-
     /**
-     * The thread control block (for thread locals)
+     * The kernel stack to be used for syscall/interrupts
+     * MUST NOT MOVE THE FIELD
      */
-    tcb_t* tcb;
+    void* kernel_stack;
+
+    void* user_stack;
 
     //
     // Scheduler context
@@ -111,19 +126,24 @@ typedef struct thread {
     //
 
     /**
-     * The name of the thread, for debug
-     */
-    char* name;
-
-    /**
      * Ref count on the thread
      */
     atomic_size_t ref_count;
 
     /**
+     * The flags for the thread
+     */
+    thread_flags_t flags;
+
+    /**
      * The thread state
      */
     _Atomic(thread_state_t) state;
+
+    /**
+     * The name of the thread, for debug
+     */
+    char name[128];
 
     //
     // FPU context
@@ -131,14 +151,13 @@ typedef struct thread {
     alignas(64) uint8_t extended_state[];
 } thread_t;
 
-void init_threads(size_t tls_size);
+INIT_CODE void init_threads(void);
 
-thread_t* thread_vcreate(thread_entry_t entry_point, void* arg, const char* name_fmt, va_list args);
 
 /**
  * Create a new thread
  */
-thread_t* thread_create(thread_entry_t entry_point, void* arg, const char* name_fmt, ...);
+thread_t* thread_create(thread_entry_t entry_point, void* arg, thread_flags_t flags, const char* name_fmt, ...);
 
 /**
  * Start the thread.
@@ -169,3 +188,25 @@ void thread_exit(void);
  * Put the thread to sleep
  */
 void thread_sleep(size_t ms);
+
+/**
+ * Switching to another thread, saving
+ * the current context first
+ */
+void thread_switch(thread_t* to, thread_t* from);
+
+/**
+ * Resumes a thread, ignoring the current context
+ */
+noreturn void thread_resume(thread_t* thread);
+
+/**
+ * The thunk that we should jump to
+ * when starting a thread
+ */
+void thread_entry_thunk(void);
+
+/**
+ * The usermode entry thunk
+ */
+void thread_usermode_entry_thunk(void* arg);

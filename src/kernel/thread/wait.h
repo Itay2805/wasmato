@@ -3,12 +3,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "uapi/syscall.h"
+#include "lib/defs.h"
+
 typedef enum wait_key_size {
-    WAIT_KEY_UINT32,
-    WAIT_KEY_UINT64,
+	WAIT_KEY_UINT32,
+	WAIT_KEY_UINT64,
 } wait_key_size_t;
 
-void init_atomic_wait(void);
+INIT_CODE void init_atomic_wait(void);
 
 /**
  * Atomically checks that `key` contains the value `old` and then parks the

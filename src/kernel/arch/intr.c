@@ -9,6 +9,7 @@
 #include "mem/virt.h"
 #include "sync/spinlock.h"
 #include "lib/pcpu.h"
+#include "time/timer.h"
 #include "uapi/syscall.h"
 
 
@@ -174,7 +175,7 @@ static void exception_dump_frame(exception_frame_t* frame) {
             ERROR("Inside enclave");
         }
 
-        if (cpec == 1 || cpec == 2 || cpec == 4 | cpec == 5) {
+        if (cpec == 1 || cpec == 2 || cpec == 4 || cpec == 5) {
             uint64_t* shadow_stack = (uint64_t*)__rdmsr(MSR_IA32_PL3_SSP);
             uint64_t* stack = (uint64_t*)frame->rsp;
             ERROR("\tSSP:      %016lx", (uintptr_t)shadow_stack);
@@ -222,7 +223,7 @@ noreturn static void panic_exception_handler(exception_frame_t* frame) {
     spinlock_release(&m_exception_lock);
 
     // allow to access usermode for fun and profit
-    asm("stac");
+    user_access_enable();
     exception_dump_frame(frame);
 
     // stop
@@ -363,18 +364,6 @@ INIT_CODE static void intr_set_kernel_handler(uint8_t vector, void* func, int is
     m_idt_entries[vector].ist = ist + 1;
 }
 
-INIT_CODE void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler) {
-    ASSERT(vector >= INTR_VECTOR_TIMER);
-    ASSERT(!m_idt_entries[vector].present);
-    m_idt_entries[vector].handler_low = (uint16_t) ((uintptr_t)handler & 0xFFFF);
-    m_idt_entries[vector].handler_high = (uint64_t) ((uintptr_t)handler >> 16);
-    m_idt_entries[vector].gate_type = IDT_TYPE_INTERRUPT_32;
-    m_idt_entries[vector].selector = GDT_USER_CODE;
-    m_idt_entries[vector].present = 1;
-    m_idt_entries[vector].ring = 0;
-    m_idt_entries[vector].ist = 0;
-}
-
 INIT_CODE void init_idt(void) {
     // generic exception handlers
     intr_set_kernel_handler(EXCEPT_IA32_DIVIDE_ERROR, exception_handler_0x00, -1, 0);
@@ -411,6 +400,7 @@ INIT_CODE void init_idt(void) {
     intr_set_kernel_handler(0x1F, exception_handler_0x1F, -1, 0);
 
     // handlers with specific behaviour
+    intr_set_kernel_handler(INTR_VECTOR_TIMER, timer_interrupt_handler, -1, 0);
     intr_set_kernel_handler(INTR_VECTOR_IPI, ipi_interrupt_handler, -1, 0);
     intr_set_kernel_handler(INTR_VECTOR_PANIC, panic_handler, -1, 0);
     intr_set_kernel_handler(INTR_VECTOR_SPURIOUS, spurious_interrupt_handler, -1, 0);

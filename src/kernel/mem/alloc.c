@@ -53,7 +53,7 @@ static slab_t* slab_create(mem_alloc_t* alloc) {
 
     // setup the metadata
     slab->alloc = alloc;
-    slab->align = alloc->objet_align;
+    slab->align = alloc->object_align;
     slab->free = nullptr;
     slab->in_use = 0;
     slab->total = alloc->objects_per_slab;
@@ -88,7 +88,7 @@ INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align) {
 
     // setup the object metadata
     alloc->object_size = size;
-    alloc->objet_align = align;
+    alloc->object_align = align;
     alloc->object_stride = stride;
 
     // how many objects fit

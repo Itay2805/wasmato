@@ -129,14 +129,6 @@ static inline void vmar_set_name(vmar_t* vmar, const char* name) {
     vmar->name[len] = '\0';
 }
 
-static inline void vmar_set_user_name(vmar_t* vmar, const char* name) {
-    asm("stac");
-    size_t len = MIN(strlen(name), sizeof(vmar->name) - 1);
-    memcpy(vmar->name, name, len);
-    asm("clac");
-    vmar->name[len] = '\0';
-}
-
 static inline void* vmar_end(const vmar_t* vmar) {
     size_t size = PAGES_TO_SIZE(vmar->page_count) - 1;
     return vmar->base + size;

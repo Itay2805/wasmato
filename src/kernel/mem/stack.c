@@ -8,10 +8,9 @@
 
 LATE_RO bool g_shadow_stack_supported = false;
 
-LATE_RO uintptr_t g_shadow_stack_thread_entry_thunk = 0;
-
-err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
+err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, bool user) {
     err_t err = NO_ERROR;
+    vmar_t* top_vmar = user ? &g_user_memory : &g_kernel_memory;
 
     vmar_lock();
 
@@ -19,7 +18,8 @@ err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     size_t total_pages = SIZE_TO_PAGES(size) + 2;
 
     // and another range with its own guard for the shadow stack
-    if (g_shadow_stack_supported) {
+    // TODO: kernel shadow stacks support
+    if (user && g_shadow_stack_supported) {
         total_pages += SIZE_TO_PAGES(size) + 1;
     }
 
@@ -27,7 +27,7 @@ err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     size_t shadow_stack_offset = PAGE_SIZE + ALIGN_UP(size, PAGE_SIZE) + PAGE_SIZE;
 
     // reserve the total region
-    vmar_t* guard_region = vmar_reserve(&g_user_memory, total_pages, nullptr);
+    vmar_t* guard_region = vmar_reserve(top_vmar, total_pages, nullptr);
     CHECK_ERROR(guard_region != nullptr, ERROR_OUT_OF_MEMORY);
 
     // allocate the stack
@@ -35,8 +35,9 @@ err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     CHECK_ERROR(stack != nullptr, ERROR_OUT_OF_MEMORY);
 
     // allocate the shadow stack (if enabled)
+    // TODO: kernel shadow stacks support
     vmar_t* shadow_stack = nullptr;
-    if (g_shadow_stack_supported) {
+    if (user && g_shadow_stack_supported) {
         shadow_stack = vmar_allocate(guard_region, SIZE_TO_PAGES(size), guard_region->base + shadow_stack_offset);
         CHECK_ERROR(shadow_stack != nullptr, ERROR_OUT_OF_MEMORY);
     }
@@ -57,24 +58,13 @@ err_t user_stack_alloc(stack_alloc_t* alloc, const char* name, size_t size) {
     }
 
     // give the name to the top level entry
-    vmar_set_user_name(guard_region, name);
+    vmar_set_name(guard_region, name);
     guard_region->locked = true;
 
     // return both stacks
     alloc->stack = vmar_end(stack) + 1;
     if (shadow_stack != nullptr) {
         void* ssp = vmar_end(shadow_stack) + 1 - 8;
-
-        // push the thread_entry_thunk address, this is so
-        // the scheduler can return into the new thread
-        ssp -= 8;
-        _wrussq(g_shadow_stack_thread_entry_thunk, ssp);
-
-        // push the stack restore token, so we can even switch
-        // to this shadow stack
-        ssp -= 8;
-        _wrussq(((uintptr_t)ssp + 8) | BIT0, ssp);
-
         alloc->shadow_stack = ssp;
     }
 
@@ -90,14 +80,16 @@ cleanup:
     return err;
 }
 
-void user_stack_free(void* ptr) {
+void stack_free(void* ptr, bool user) {
+    vmar_t* top_vmar = user ? &g_user_memory : &g_kernel_memory;
+
     vmar_lock();
 
     // get the guard region
-    vmar_t* vmar = vmar_find(&g_user_memory, ptr);
+    vmar_t* vmar = vmar_find(top_vmar, ptr);
     ASSERT(vmar != nullptr);
     ASSERT(vmar->type == VMAR_TYPE_REGION);
-    ASSERT(vmar->parent == &g_user_memory);
+    ASSERT(vmar->parent == top_vmar);
 
     // ensure that this looks like a stack guard region
     bool found_stack = false;
@@ -117,9 +109,12 @@ void user_stack_free(void* ptr) {
     }
 
     // ensure we found the entries at all
+    // TODO: kernel shadow stacks
     ASSERT(found_stack);
-    if (g_shadow_stack_supported) {
+    if (user && g_shadow_stack_supported) {
         ASSERT(found_shadow_stack);
+    } else {
+        ASSERT(!found_shadow_stack);
     }
 
     // free the entire region

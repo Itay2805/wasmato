@@ -4,8 +4,8 @@
 #include "arch/intrin.h"
 #include "lib/atomic.h"
 #include "lib/list.h"
-#include "proc/thread.h"
 #include "sched.h"
+#include "mem/virt.h"
 #include "sync/spinlock.h"
 
 #define WAIT_HASH_SHIFT 8
@@ -49,14 +49,20 @@ static wait_queue_t* get_wait_queue_for_key(void* key) {
     return &m_wait_hash[hash];
 }
 
-static bool atomic_check_key(void* key, wait_key_size_t size, uint64_t old) {
+static bool atomic_check_user_key(void* key, wait_key_size_t size, uint64_t old) {
+    bool result = false;
+
+    user_access_enable();
     if (size == WAIT_KEY_UINT32) {
-        return atomic_load_relaxed((_Atomic(uint32_t)*) key) == (uint32_t) old;
+        result = atomic_load_relaxed((_Atomic(uint32_t)*) key) == (uint32_t) old;
     } else if (size == WAIT_KEY_UINT64) {
-        return atomic_load_relaxed((_Atomic(uint64_t)*) key) == old;
+        result = atomic_load_relaxed((_Atomic(uint64_t)*) key) == old;
     } else {
         ASSERT(!"Invalid key size");
     }
+    user_access_disable();
+
+    return result;
 }
 
 static bool wait_queue_prepare(wait_queue_t* queue, wait_queue_entry_t* entry,
@@ -68,7 +74,7 @@ static bool wait_queue_prepare(wait_queue_t* queue, wait_queue_entry_t* entry,
     // against concurrent notifications: anyone who has changed `key` and has
     // called `notify` will either observe us in the queue and wake us, or will
     // make their change visible to the check here when they release the lock.
-    if (!atomic_check_key(key, key_size, old)) {
+    if (!atomic_check_user_key(key, key_size, old)) {
         spinlock_release(&queue->lock);
         return false;
     }
@@ -85,14 +91,13 @@ static void wait_queue_finish(wait_queue_t* queue, wait_queue_entry_t* entry) {
     spinlock_release(&queue->lock);
 }
 
-void init_atomic_wait(void) {
+INIT_CODE void init_atomic_wait(void) {
     for (size_t i = 0; i < WAIT_HASH_SIZE; i++) {
         list_init(&m_wait_hash[i].queue);
     }
 }
 
-void atomic_wait(void* key, wait_key_size_t size, uint64_t old,
-                 uint64_t deadline) {
+void atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline) {
     thread_t* thread = get_current_thread();
     wait_queue_t* queue = get_wait_queue_for_key(key);
 

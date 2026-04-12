@@ -2,24 +2,25 @@
 #include <cpuid.h>
 
 #include "limine_requests.h"
-#include "runtime.h"
+#include "user/runtime.h"
 #include "acpi/acpi.h"
 #include "arch/apic.h"
 #include "arch/cpuid.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/smp.h"
-#include "../runtime/lib/string.h"
-#include "mem/direct.h"
 #include "mem/early.h"
 #include "mem/phys.h"
 #include "mem/phys_map.h"
 #include "mem/virt.h"
 #include "mem/vmar.h"
 #include "lib/pcpu.h"
+#include "mem/stack.h"
+#include "thread/sched.h"
+#include "thread/wait.h"
 #include "time/tsc.h"
-#include "user/stack.h"
 #include "user/syscall.h"
+#include "time/timer.h"
 
 /**
  * For waiting until all cpus are finished initializing
@@ -98,7 +99,7 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(version_info_ecx.XSAVE, "Missing XSAVE support");
 
     // if monitor is supported check that it also has interrupt as break event
-    bool has_monitor;
+    bool has_monitor = false;
     if (version_info_ecx.MONITOR) {
         CPUID_MONITOR_MWAIT_ECX monitor_mwait_ecx = {};
         if (__get_cpuid(
@@ -108,9 +109,7 @@ INIT_CODE static void validate_cpu_features(void) {
             &monitor_mwait_ecx.raw,
             &d
         )) {
-            if (monitor_mwait_ecx.INTERRUPT_AS_BREAK_EVENT) {
-                has_monitor = true;
-            }
+            has_monitor = true;
         }
     }
 
@@ -328,6 +327,8 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
 
     // and now we can init
     init_lapic_per_core();
+    init_timers_per_core();
+    init_sched_per_core();
 
     // we are done
     m_smp_count++;
@@ -338,7 +339,7 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     }
 
     // we can trigger the scheduler,
-    runtime_start();
+    sched_start_per_core();
 
 cleanup:
     // if we got an error mark it
@@ -395,13 +396,19 @@ OMIT_ENDBR INIT_CODE void _start() {
     // followed by actually setting the timers properly
     RETHROW(init_tsc());
     RETHROW(init_lapic());
+    init_timers_per_core();
+
+    // thread related init
+    init_threads();
+    init_atomic_wait();
+    init_sched_per_core();
+
+    // setup the runtime
+    RETHROW(runtime_load_and_start());
 
     // ensure we only have a single module
     CHECK(g_limine_module_request.response != nullptr);
     CHECK(g_limine_module_request.response->module_count == 1);
-
-    // load the runtime elf, before starting the cores
-    RETHROW(load_runtime());
 
     // perform cpu startup
     CHECK(g_limine_mp_request.response != NULL);
@@ -438,7 +445,7 @@ OMIT_ENDBR INIT_CODE void _start() {
     m_smp_count++;
 
     // jump to the runtime
-    runtime_start();
+    sched_start_per_core();
 
 cleanup:
     halt();

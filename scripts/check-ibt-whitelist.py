@@ -23,13 +23,22 @@ WHITELIST: set[str] = {
     "syscall_entry",
 
     # Exception/interrupt assembly stubs and C handler
-    "panic_interrupt_handler",
+    "panic_handler",
+    "timer_interrupt_handler",
     "ipi_interrupt_handler",
     "spurious_interrupt_handler",
 
     # Per-vector exception stubs (0x00-0x1F)
     # 0x0E (page fault) has its own function
     *(f"exception_handler_0x{i:02X}" for i in range(0x20)),
+
+    # Scheduler
+    "scheduler_idle_thread",
+    "scheduler_tick",
+    "schedule_timer_wakeup",
+
+    # runtime startup
+    "runtime_thread_entry_thunk",
 
     # printf character callback
     "putchar_wrapper",
@@ -42,6 +51,9 @@ WHITELIST_DEBUG = {
     "vmar_cmp_overlap",
     "vmar_less",
     "dummy_rotate",
+    "dummy_copy",
+    "dummy_propagate",
+    "timer_less",
 }
 
 # Non-function linker/section-marker symbols that may share an address with a

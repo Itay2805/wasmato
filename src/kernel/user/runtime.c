@@ -3,18 +3,14 @@
 #include <stdint.h>
 
 #include "arch/intr.h"
-#include "arch/intrin.h"
 #include "arch/smp.h"
 #include "lib/elf64.h"
 #include "lib/pcpu.h"
-#include "lib/printf.h"
-#include "../runtime/lib/string.h"
-#include "lib/tsc.h"
-#include "uapi/entry.h"
-#include "user/user.h"
 #include "mem/mappings.h"
-#include "mem/phys.h"
-#include "user/stack.h"
+#include "mem/stack.h"
+#include "thread/sched.h"
+#include "user.h"
+#include "mem/virt.h"
 
 /**
  * The elf of the usermode runtime
@@ -42,30 +38,10 @@ INIT_DATA static char m_runtime_elf[] = {
         CHECK(!__builtin_mul_overflow(size__, count__, &size__)); \
         size_t offset__ = offset; \
         size_t top_address__; \
-        CHECK(!__builtin_add_overflow(offset__, sizeof(type), &top_address__)); \
+        CHECK(!__builtin_add_overflow(offset__, size__, &top_address__)); \
         CHECK(ARRAY_LENGTH(m_runtime_elf) >= top_address__); \
         (type*)&m_runtime_elf[offset__]; \
     })
-
-/**
- * the runtime entry point, called on all cores with the first argument
- * being the cpu index
- */
-INIT_DATA static void* m_runtime_entry_point = NULL;
-
-/**
- * The TLS data, null if not found
- */
-INIT_DATA static Elf64_Phdr* m_runtime_tls_phdr = nullptr;
-
-INIT_DATA static void** m_runtime_early_stacks = nullptr;
-
-INIT_CODE void runtime_free_early_stacks(void) {
-    TRACE("runtime: freeing early stacks");
-    for (int i = 0; i < g_cpu_count; i++) {
-        user_stack_free(m_runtime_early_stacks[i]);
-    }
-}
 
 INIT_CODE static err_t runtime_elf_verify_header(void) {
     err_t err = NO_ERROR;
@@ -150,13 +126,13 @@ INIT_CODE static err_t runtime_elf_map(void) {
         region->pinned = true;
 
         // copy the data, we need to enable accessing user memory while we do that
-        asm("stac");
+        user_access_enable();
         void* data = ELF_ARR(char, phdr->p_filesz, phdr->p_offset);
-        memset((void*)phdr->p_vaddr, 0, SIZE_TO_PAGES(phdr->p_memsz));
+        memset((void*)phdr->p_vaddr, 0, phdr->p_memsz);
         if (phdr->p_filesz != 0) {
             memcpy((void*)phdr->p_vaddr, data, phdr->p_filesz);
         }
-        asm("clac");
+        user_access_disable();
     }
 
     // we created all mappings, we can lock the runtime
@@ -199,25 +175,33 @@ INIT_CODE static err_t runtime_elf_parse_tls(void) {
         if (phdr->p_type != PT_TLS)
             continue;
 
-        CHECK(m_runtime_tls_phdr == nullptr);
-        m_runtime_tls_phdr = phdr;
+        // CHECK(m_runtime_tls_phdr == nullptr);
+        // m_runtime_tls_phdr = phdr;
     }
 
-    if (m_runtime_tls_phdr != nullptr) {
-        // TODO: support for init data
-        CHECK(m_runtime_tls_phdr->p_filesz == 0);
-    }
+    // if (m_runtime_tls_phdr != nullptr) {
+    //     // TODO: support for init data
+    //     CHECK(m_runtime_tls_phdr->p_filesz == 0);
+    // }
 
 cleanup:
     return err;
 }
 
-INIT_CODE err_t load_runtime(void) {
-    err_t err = NO_ERROR;
+/**
+ * The usermode entry point code
+ */
+LATE_RO static void* m_usermode_entry = nullptr;
 
-    // allocate space for all the stacks
-    m_runtime_early_stacks = phys_alloc(SIZE_TO_PAGES(sizeof(void*) * g_cpu_count));
-    CHECK(m_runtime_early_stacks != nullptr);
+void runtime_thread_entry_thunk(void* arg) {
+    thread_t* thread = get_current_thread();
+
+    // jump to usermode
+    usermode_jump(arg, m_usermode_entry, thread->user_stack);
+}
+
+INIT_CODE err_t runtime_load_and_start(void) {
+    err_t err = NO_ERROR;
 
     vmar_lock();
 
@@ -249,60 +233,19 @@ INIT_CODE err_t load_runtime(void) {
 
     // save the entry point so we can jump to it
     Elf64_Ehdr* ehdr = ELF_PTR(Elf64_Ehdr, 0);
-    m_runtime_entry_point = (void*)ehdr->e_entry;
+    m_usermode_entry = (void*)ehdr->e_entry;
+
+    thread_t* init = thread_create(
+        runtime_thread_entry_thunk,
+        nullptr,
+        THREAD_FLAG_USER,
+        "init"
+    );
+    CHECK_ERROR(init != nullptr, ERROR_OUT_OF_MEMORY);
+    thread_start(init);
 
 cleanup:
     vmar_unlock();
 
     return err;
-}
-
-INIT_CODE void runtime_start(void) {
-    // set the name of the stack
-    char name[32];
-    snprintf_(name, sizeof(name), "early-stack-%d", get_cpu_id());
-
-    // allocate a stack, it will be used as the scheduler stack for the runtime
-    stack_alloc_t stack_alloc = {};
-    ASSERT(!IS_ERROR(user_stack_alloc(&stack_alloc, name, SIZE_4KB)));
-
-    // remember the stack for freeing later
-    m_runtime_early_stacks[get_cpu_id()] = stack_alloc.stack;
-
-    // setup the runtime params
-    void* user_stack = stack_alloc.stack;
-    user_stack -= sizeof(runtime_params_t);
-    user_stack = ALIGN_DOWN(user_stack, 16);
-
-    // we need to write to the usermode stack, lock for write
-    asm("stac");
-
-    // the cpu metadata
-    runtime_params_t* params = user_stack;
-    params->cpu_id = get_cpu_id();
-    params->cpu_count = g_cpu_count;
-    params->tsc_freq = g_tsc_freq_hz;
-
-    // tls info
-    // TODO: somehow pass the init data
-    params->tls_size = m_runtime_tls_phdr != nullptr ? m_runtime_tls_phdr->p_memsz : 0;
-
-    // setup the vector info
-    params->timer_vector = INTR_VECTOR_TIMER;
-    params->first_vector = INTR_VECTOR_TIMER + 1;
-    params->last_vector = INTR_VECTOR_SPURIOUS - 16;
-
-    // lock usermode again
-    asm("clac");
-
-    // for dummy region
-    user_stack -= 16;
-
-    // if we have a shadow stack set it now
-    if (stack_alloc.shadow_stack) {
-        __wrmsr(MSR_IA32_PL3_SSP, (uint64_t)stack_alloc.shadow_stack);
-    }
-
-    // and jump to it
-    usermode_jump(params, m_runtime_entry_point, user_stack);
 }

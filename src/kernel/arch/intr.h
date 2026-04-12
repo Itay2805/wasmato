@@ -37,6 +37,12 @@
 #define INTR_VECTOR_PANIC       0xF1
 #define INTR_VECTOR_SPURIOUS    0xFF
 
-INIT_CODE void init_idt(void);
+typedef struct interrupt_frame {
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t ss;
+} interrupt_frame_t;
 
-INIT_CODE void intr_set_user_handler(uint8_t vector, interrupt_handler_t handler);
+INIT_CODE void init_idt(void);

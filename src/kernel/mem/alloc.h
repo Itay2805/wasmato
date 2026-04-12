@@ -52,7 +52,7 @@ typedef struct mem_alloc {
     /**
      * The object's alignment
      */
-    uint16_t objet_align;
+    uint16_t object_align;
 } mem_alloc_t;
 
 INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align);

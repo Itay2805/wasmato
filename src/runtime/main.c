@@ -6,7 +6,8 @@
 #include "wasm/module.h"
 #include "wasm/jit/jit.h"
 
-void main(void* arg) {
+__attribute__((force_align_arg_pointer, nocf_check))
+void _start(void* arg) {
     err_t err = NO_ERROR;
 
     TRACE("From main thread!");
@@ -38,4 +39,5 @@ cleanup:
     wasm_module_free(&module);
 
     (void)err;
+    sys_thread_exit();
 }

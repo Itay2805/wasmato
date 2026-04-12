@@ -17,6 +17,14 @@ INIT_CODE err_t init_virt(void);
  */
 INIT_CODE void switch_page_table(void);
 
+static inline void user_access_enable(void) {
+    asm("stac");
+}
+
+static inline void user_access_disable(void) {
+    asm("clac");
+}
+
 /**
  * Check if an address is mapped currently, using the actual
  * page tables, should be used mainly for debugging and fault

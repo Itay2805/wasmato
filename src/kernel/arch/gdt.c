@@ -106,19 +106,13 @@ INIT_DATA static spinlock_t m_tss_lock = SPINLOCK_INIT;
  * The tss of the core
  */
 __attribute__((aligned(16)))
-static CPU_LOCAL tss64_t m_tss = {};
+CPU_LOCAL tss64_t m_tss = {};
 
 /**
  * per-cpu stacks to use, for special interrupts
  */
 __attribute__((aligned(16)))
 static CPU_LOCAL char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
-
-/**
- * per-cpu stacks to use, for any other exception
- */
-__attribute__((aligned(16)))
-static CPU_LOCAL char m_exception_stack[SIZE_4KB] = {};
 
 INIT_CODE void init_tss(void) {
     tss64_t* tss = pcpu_get_pointer(&m_tss);
@@ -127,12 +121,6 @@ INIT_CODE void init_tss(void) {
     for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
         tss->ist[ist] = (uintptr_t)pcpu_get_pointer(&m_stacks[ist]) + SIZE_4KB - 16;
     }
-
-    // set the stack for normal exceptions, we also use the same stack
-    // for syscalls, because it stays in the same ring the stack won't
-    // switch so we should be fine to re-use it
-    g_syscall_stack = (uintptr_t)pcpu_get_pointer(m_exception_stack) + SIZE_4KB - 16;
-    tss->rsp0 = (uintptr_t)pcpu_get_pointer(m_exception_stack) + SIZE_4KB - 16;
 
     spinlock_acquire(&m_tss_lock);
 
@@ -149,4 +137,8 @@ INIT_CODE void init_tss(void) {
     asm volatile ("ltr %%ax" : : "a"(GDT_TSS) : "memory");
 
     spinlock_release(&m_tss_lock);
+}
+
+void tss_set_rsp0(void* rsp) {
+    m_tss.rsp0 = (uintptr_t)rsp;
 }

@@ -4,23 +4,17 @@
 #include <stdint.h>
 
 #include "lib/except.h"
-#include "proc/thread.h"
+#include "thread.h"
 
 /**
- * The amount of cores we have
+ * Is the mwait/monitor instruction supported and can it
+ * be used to wait for interrupts
  */
-extern uint32_t g_cpu_count;
+extern LATE_RO bool g_monitor_supported;
 
-/**
- * Get the current CPU
- */
-static inline uint32_t get_cpu_id(void) {
-    return __builtin_ia32_rdpid();
-}
+INIT_CODE void init_sched_per_core(void);
 
-void init_sched(void);
-
-noreturn void sched_start_per_core(void);
+INIT_CODE noreturn void sched_start_per_core(void);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Private API don't use

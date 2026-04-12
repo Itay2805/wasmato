@@ -132,7 +132,7 @@ void* phys_alloc(size_t size) {
 
 static void phys_free_internal(void* ptr, int level, bool check_allocated) {
     // sanity check
-    ASSERT(((uintptr_t)ptr % (1UL << level)) == 0);
+    ASSERT(((uintptr_t)ptr % (1UL << (level + PHYS_BUDDY_MIN_ORDER))) == 0);
 
     spinlock_acquire(&m_phys_buddy_lock);
 
@@ -190,7 +190,7 @@ void phys_free(void* ptr, size_t size) {
     int level = get_level_by_size(size);
     ASSERT(level >= 0);
 
-    // phys_free_internal(ptr, level, true);
+    phys_free_internal(ptr, level, true);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

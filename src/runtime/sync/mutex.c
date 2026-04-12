@@ -1,8 +1,8 @@
 #include "mutex.h"
 
 #include "arch/intrin.h"
-#include "core/wait.h"
 #include "lib/atomic.h"
+#include "uapi/syscall.h"
 
 #define SPIN_LIMIT 40
 
@@ -26,11 +26,10 @@ void mutex_lock_slow(mutex_t* mutex, uint32_t cur_state) {
     while (
         atomic_exchange_acquire(&mutex->state, MUTEX_STATE_LOCKED_CONTENDED) !=
         MUTEX_STATE_UNLOCKED) {
-        atomic_wait(&mutex->state, WAIT_KEY_UINT32,
-                    MUTEX_STATE_LOCKED_CONTENDED, 0);
+        sys_atomic_wait32(&mutex->state, MUTEX_STATE_LOCKED_CONTENDED, 0);
     }
 }
 
 void mutex_unlock_slow(mutex_t* mutex) {
-    atomic_notify(&mutex->state, 1);
+    sys_atomic_notify(&mutex->state, 1);
 }

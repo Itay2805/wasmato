@@ -2,7 +2,6 @@
 
 #include "wasm/module.h"
 #include "lib/except.h"
-#include "proc/thread.h"
 
 typedef struct wasm_jit {
     // the jit area of the code, this is both the

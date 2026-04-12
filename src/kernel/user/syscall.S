@@ -10,29 +10,24 @@ syscall_entry:
     swapgs
 
     /**
-     * Save the stack pointer in memory
-     * and switch to the kernel stack
+     * Stash the user stack in a per-cpu scratch slot and
+     * switch to the kernel stack.
      */
-    xchg %rsp, %gs:g_syscall_stack
+    movq %rsp, %gs:m_user_rsp_scratch
+    movq %gs:m_tss+4, %rsp
 
     /**
-     * Save all the registers
+     * Save only the caller-saved registers.
      */
     pushq %rax
-    pushq %rbx
     pushq %rcx
     pushq %rdx
     pushq %rsi
     pushq %rdi
-    pushq %rbp
     pushq %r8
     pushq %r9
     pushq %r10
     pushq %r11
-    pushq %r12
-    pushq %r13
-    pushq %r14
-    pushq %r15
 
     /**
      * Call the kernel handler
@@ -41,28 +36,23 @@ syscall_entry:
     call syscall_handler
 
     /**
-     * Restore all the registers
+     * Restore the caller-saved registers
      */
-    popq %r15
-    popq %r14
-    popq %r13
-    popq %r12
     popq %r11
     popq %r10
     popq %r9
     popq %r8
-    popq %rbp
     popq %rdi
     popq %rsi
     popq %rdx
     popq %rcx
-    popq %rbx
     popq %rax
 
     /**
-     * Restore the stack pointer
+     * Restore the user stack pointer from the per-cpu
+     * scratch slot.
      */
-    xchg %rsp, %gs:g_syscall_stack
+    movq %gs:m_user_rsp_scratch, %rsp
 
     /**
      * Restore the user gsbase

@@ -2,13 +2,12 @@
 
 #include "direct.h"
 #include "phys.h"
+#include "stack.h"
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/paging.h"
 #include "lib/ipi.h"
-#include "../../runtime/lib/string.h"
 #include "sync/spinlock.h"
-#include "user/stack.h"
 
 /**
  * The kernel top level cr3
@@ -97,6 +96,7 @@ static void tlb_invl_queue(void* addr) {
 static void tlb_invl_commit(void) {
     if (m_tlb_flush_count != 0) {
         ipi_broadcast(IPI_REASON_TLB_FLUSH);
+        m_tlb_flush_count = 0;
     }
 }
 
@@ -176,13 +176,15 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
 void virt_unmap(void* virt, size_t page_count, bool free) {
     // first mark everything as unmapped so we can properly free it without races
     for (size_t i = 0; i < page_count; i++) {
+        void* cur = virt + i * PAGE_SIZE;
+
         // get the pte
-        uint64_t* pte = virt_get_pte(virt + i * PAGE_SIZE, false, false);
+        uint64_t* pte = virt_get_pte(cur, false, false);
         if (pte == nullptr || !pte_is_present(pte)) {
             continue;
         }
         *pte &= ~IA32_PG_P;
-        tlb_invl_queue(virt);
+        tlb_invl_queue(cur);
     }
 
     // actually commit to all the cores that we are now unmapped

@@ -5,31 +5,20 @@
 
 #include "limine_requests.h"
 #include "runtime.h"
-#include "stack.h"
 #include "arch/apic.h"
 #include "arch/gdt.h"
-#include "arch/intr.h"
 #include "arch/intrin.h"
 #include "arch/regs.h"
 #include "lib/ipi.h"
 #include "lib/pcpu.h"
-#include "../../runtime/lib/string.h"
 #include "lib/rbtree/rbtree.h"
 #include "mem/mappings.h"
 #include "mem/phys.h"
 #include "mem/virt.h"
-#include "time/tsc.h"
-
-/**
- * The id of the current cpu
- */
-CPU_LOCAL uintptr_t g_syscall_stack;
+#include "thread/sched.h"
+#include "thread/wait.h"
 
 typedef struct syscall_frame {
-    uint64_t r15;
-    uint64_t r14;
-    uint64_t r13;
-    uint64_t r12;
     uint64_t r11;
     union {
         uint64_t arg4;
@@ -43,7 +32,6 @@ typedef struct syscall_frame {
         uint64_t arg5;
         uint64_t r8;
     };
-    uint64_t rbp;
     union {
         uint64_t arg1;
         uint64_t rdi;
@@ -58,7 +46,6 @@ typedef struct syscall_frame {
         uint64_t rdx;
     };
     uint64_t rcx;
-    uint64_t rbx;
     union {
         uint64_t syscall;
         uint64_t result;
@@ -67,31 +54,39 @@ typedef struct syscall_frame {
 } syscall_frame_t;
 
 /**
+ * Per-cpu scratch slot used by the syscall asm stub to stash
+ * the user rsp while the kernel handler runs. The handler
+ * mirrors it into thread->user_rsp so a context switch inside
+ * the syscall is safe.
+ */
+CPU_LOCAL uint64_t m_user_rsp_scratch;
+
+/**
  * are we done with early memory
  */
 LATE_RO static bool m_early_done = false;
 
-/**
- * Is using monitor supported
- */
-LATE_RO bool g_monitor_supported = false;
+static void assert_user_range(uintptr_t addr, size_t size) {
+    uintptr_t end;
+    ASSERT(addr >= (uintptr_t)g_user_memory.base);
+    ASSERT(!__builtin_add_overflow(addr, size, &end));
+    ASSERT(end <= (uintptr_t)vmar_end(&g_user_memory));
+}
 
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
-    ASSERT(src <= (uintptr_t)vmar_end(&g_user_memory));
-    ASSERT(src + size <= (uintptr_t)vmar_end(&g_user_memory));
+    assert_user_range(src, size);
 
-    asm("stac");
+    user_access_enable();
     memcpy(dst, (void*)src, size);
-    asm("clac");
+    user_access_disable();
 }
 
 static void copy_to_user(uintptr_t dst, void* src, size_t size) {
-    ASSERT(dst <= (uintptr_t)vmar_end(&g_user_memory));
-    ASSERT(dst + size <= (uintptr_t)vmar_end(&g_user_memory));
+    assert_user_range(dst, size);
 
-    asm("stac");
+    user_access_enable();
     memcpy((void*)dst, src, size);
-    asm("clac");
+    user_access_disable();
 }
 
 INIT_CODE static err_t handle_early_done(void) {
@@ -105,9 +100,6 @@ INIT_CODE static err_t handle_early_done(void) {
     CHECK(!m_early_done);
     m_early_done = true;
 
-    // free the early stacks as they are no longer needed
-    runtime_free_early_stacks();
-
     // we don't need the bootloader memory anymore
     RETHROW(reclaim_bootloader_memory());
 
@@ -116,42 +108,6 @@ INIT_CODE static err_t handle_early_done(void) {
 
 cleanup:
     return err;
-}
-
-static void user_access_enable(void) {
-    asm("stac");
-}
-
-static void user_access_disable(void) {
-    asm("clac");
-}
-
-__attribute__((target("sse3")))
-static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
-    // ensure that we even support using the monitor instruction
-    ASSERT(g_monitor_supported);
-
-    for (;;) {
-        user_access_enable();
-        uint32_t value = atomic_load_explicit(addr, memory_order_acquire);
-        user_access_disable();
-
-        if (value != expected) {
-            return;
-        }
-
-        _mm_monitor(addr, 0, 0);
-
-        user_access_enable();
-        value = atomic_load_explicit(addr, memory_order_acquire);
-        user_access_disable();
-        if (value != expected) {
-            return;
-        }
-
-        // BIT1 == break on interrupt even with IF=0
-        _mm_mwait(BIT1, 0);
-    }
 }
 
 static err_t handle_jit_alloc(size_t rx_page_count, size_t ro_page_count, void** ptr) {
@@ -229,15 +185,20 @@ cleanup:
 
 OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     err_t err = NO_ERROR;
-    ipi_enable();
+
+    // mirror the user rsp from the per-cpu scratch slot into
+    // the thread so a context switch mid-syscall preserves it
+    thread_t* thread = get_current_thread();
+    thread->user_rsp = (void*)m_user_rsp_scratch;
+    irq_enable();
 
     switch (frame->syscall) {
         case SYSCALL_DEBUG_PRINT: {
             char buffer[512];
-            int len = MIN(frame->arg2, sizeof(buffer) - 1);
+            size_t len = MIN(frame->arg2, sizeof(buffer) - 1);
             copy_from_user(buffer, frame->arg1, len);
             buffer[len] = '\0';
-            debug_print("%.*s", len, buffer);
+            debug_print("%.*s", (int)len, buffer);
         } break;
 
         case SYSCALL_HEAP_ALLOC: {
@@ -252,21 +213,6 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
                 frame->result = 0;
             } else {
                 frame->result = (uintptr_t)region->base;
-            }
-        } break;
-
-        case SYSCALL_STACK_ALLOC: {
-            stack_alloc_t alloc = {};
-
-            const char* name = (const char*)frame->arg2;
-            CHECK((void*)name <= vmar_end(&g_user_memory));
-
-            if (IS_ERROR(user_stack_alloc(&alloc, name, frame->arg1))) {
-                frame->result = 0;
-                frame->result2 = 0;
-            } else {
-                frame->result = (uintptr_t)alloc.stack;
-                frame->result2 = (uintptr_t)alloc.shadow_stack;
             }
         } break;
 
@@ -294,34 +240,23 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             vmar_unlock();
         } break;
 
-        case SYSCALL_TIMER_SET_DEADLINE: {
-            tsc_timer_set_deadline(frame->arg1);
+        case SYSCALL_THREAD_EXIT: {
+            thread_exit();
         } break;
 
-        case SYSCALL_TIMER_CLEAR: {
-            // TODO: lapic timer
-            tsc_timer_clear();
+        case SYSCALL_ATOMIC_WAIT32: {
+            assert_user_range(frame->arg1, sizeof(uint32_t));
+            atomic_wait((void*)frame->arg1, WAIT_KEY_UINT32, frame->arg2, frame->arg3);
         } break;
 
-        case SYSCALL_INTERRUPT_ACK: {
-            lapic_eoi();
+        case SYSCALL_ATOMIC_WAIT64: {
+            assert_user_range(frame->arg1, sizeof(uint64_t));
+            atomic_wait((void*)frame->arg1, WAIT_KEY_UINT64, frame->arg2, frame->arg3);
         } break;
 
-        case SYSCALL_MONITOR_WAIT: {
-            monitor_wait((_Atomic(uint32_t)*)frame->arg1, frame->arg2);
-        } break;
-
-        case SYSCALL_EARLY_INTERRUPT_SET_HANDLER: {
-            CHECK(!m_early_done);
-            intr_set_user_handler(frame->arg1, (interrupt_handler_t)frame->arg2);
-        } break;
-
-        case SYSCALL_EARLY_SET_THREAD_ENTRY_THUNK: {
-            CHECK(!m_early_done);
-            CHECK(g_shadow_stack_thread_entry_thunk == 0);
-            CHECK((uintptr_t)g_runtime_region.base <= frame->arg1);
-            CHECK(frame->arg1 < (uintptr_t)vmar_end(&g_runtime_region));
-            g_shadow_stack_thread_entry_thunk = frame->arg1;
+        case SYSCALL_ATOMIC_NOTIFY: {
+            assert_user_range(frame->arg1, sizeof(uint32_t));
+            frame->result = atomic_notify((void*)frame->arg1, frame->arg2);
         } break;
 
         case SYSCALL_EARLY_GET_INITRD_SIZE: {
@@ -347,8 +282,14 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
     }
 
 cleanup:
-    ipi_disable();
+    // disable interrupts
+    irq_disable();
+
     ASSERT(!IS_ERROR(err), "syscall: error while performing syscall");
+
+    // hand the (possibly updated after a context switch) user rsp
+    // back to the asm stub so sysretq lands on the right stack
+    m_user_rsp_scratch = (uint64_t)thread->user_rsp;
 }
 
 // this is called directly by the stub and no-one else
@@ -380,5 +321,5 @@ INIT_CODE void init_syscall() {
         .AC = 1,
         .ID = 1,
     };
-    __wrmsr(MSR_IA32_CSTAR, flags.packed);
+    __wrmsr(MSR_IA32_FMASK, flags.packed);
 }

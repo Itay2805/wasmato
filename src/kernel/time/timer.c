@@ -1,9 +1,10 @@
 #include "timer.h"
 
-#include "sched.h"
-#include "alloc/alloc.h"
+#include "tsc.h"
+#include "arch/apic.h"
+#include "thread/sched.h"
 #include "arch/intrin.h"
-#include "lib/assert.h"
+#include "lib/pcpu.h"
 #include "sync/spinlock.h"
 #include "uapi/syscall.h"
 
@@ -27,9 +28,9 @@ typedef struct timers_queue {
 } timers_queue_t;
 
 /**
- * The per-cpu timers
+ * The per-cpu timer
  */
-static timers_queue_t* m_timers = nullptr;
+static CPU_LOCAL timers_queue_t m_timer = {};
 
 static __always_inline bool timer_less(rb_node_t* a, const rb_node_t* b) {
     timer_t* ta = containerof(a, timer_t, node);
@@ -37,18 +38,28 @@ static __always_inline bool timer_less(rb_node_t* a, const rb_node_t* b) {
     return ta->deadline < tb->deadline;
 }
 
+static void arch_timer_set_deadline(uint64_t deadline) {
+    // TODO: LAPIC timer support
+    tsc_timer_set_deadline(deadline);
+}
+
+static void arch_timer_clear(void) {
+    // TODO: LAPIC timer support
+    tsc_timer_clear();
+}
+
 __attribute__((interrupt))
-static void timer_interrupt_handler(interrupt_frame_t* frame) {
+void timer_interrupt_handler(interrupt_frame_t* frame) {
     // disable preemption so we won't switch context
     // while running timers
     preempt_disable();
 
     // we know the interrupt happened, we can ack it
-    sys_interrupt_ack();
+    lapic_eoi();
 
     // get the root for this core and lock it, we are
     // with interrupts disabled already
-    timers_queue_t* timers = &m_timers[get_cpu_id()];
+    timers_queue_t* timers = pcpu_get_pointer(&m_timer);
     spinlock_acquire(&timers->lock);
     timers->dispatching = true;
 
@@ -98,9 +109,9 @@ static void timer_interrupt_handler(interrupt_frame_t* frame) {
     // if we still have a timer object in here it means that this is the next
     // time we should run it, setup the timer
     if (timer != nullptr) {
-        sys_timer_set_deadline(timer->deadline);
+        arch_timer_set_deadline(timer->deadline);
     } else {
-        sys_timer_clear();
+        arch_timer_clear();
     }
 
     // we re-enable preemption (tho right now
@@ -109,19 +120,10 @@ static void timer_interrupt_handler(interrupt_frame_t* frame) {
     preempt_enable();
 }
 
-void init_timers(uint8_t timer_vector) {
-    // allocate a root per cpu
-    m_timers = mem_alloc(sizeof(*m_timers) * g_cpu_count);
-    ASSERT(m_timers != nullptr);
-
+INIT_CODE void init_timers_per_core(void) {
     // initialize all the roots
-    for (int i = 0; i < g_cpu_count; i++) {
-        m_timers[i].root = RB_ROOT_CACHED;
-        m_timers[i].dispatching = false;
-    }
-
-    // register the timer interrupt
-    sys_early_interrupt_set_handler(timer_vector, timer_interrupt_handler);
+    m_timer.root = RB_ROOT_CACHED;
+    m_timer.dispatching = false;
 }
 
 void timer_set_deadline(timer_t* timer, uint64_t deadline) {
@@ -139,7 +141,7 @@ void timer_set_deadline(timer_t* timer, uint64_t deadline) {
         spinlock_release(&timers->lock);
     }
 
-    timers_queue_t* timers = &m_timers[get_cpu_id()];
+    timers_queue_t* timers = pcpu_get_pointer(&m_timer);
     spinlock_acquire(&timers->lock);
 
     // update the time
@@ -151,7 +153,7 @@ void timer_set_deadline(timer_t* timer, uint64_t deadline) {
         if (!timers->dispatching) {
             // if we are the new leftmost node then we are the next timer to arrive,
             // so set the deadline to us, otherwise the dispatcher will set the deadline
-            sys_timer_set_deadline(timer->deadline);
+            arch_timer_set_deadline(timer->deadline);
         }
     }
 
@@ -170,16 +172,16 @@ void timer_cancel(timer_t* timer) {
         spinlock_acquire(&timers->lock);
 
         timer_t* leftmost = rb_entry_safe(rb_erase_cached(&timer->node, &timers->root), timer_t, node);
-        if (!timers->dispatching && timers == &m_timers[get_cpu_id()]) {
+        if (!timers->dispatching && timers == pcpu_get_pointer(&m_timer)) {
             // update the per-cpu timer, only do this if we are on the correct core, if we are not
             // the timer on the other core will simply jump too early (or spuriously), and we handle
             // that gracefully.
             if (leftmost != nullptr) {
                 // we are the new leftmost timer
-                sys_timer_set_deadline(leftmost->deadline);
+                arch_timer_set_deadline(leftmost->deadline);
             } else {
                 // no more timers
-                sys_timer_clear();
+                arch_timer_clear();
             }
         }
         spinlock_release(&timers->lock);

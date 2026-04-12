@@ -5,16 +5,13 @@
 #include <stdatomic.h>
 
 #include "thread.h"
-#include "timer.h"
-#include "alloc/alloc.h"
+#include "time/timer.h"
 #include "arch/cpuid.h"
 #include "arch/intrin.h"
 #include "lib/atomic.h"
 #include "lib/except.h"
-#include "proc/thread.h"
 #include "uapi/syscall.h"
-
-uint32_t g_cpu_count = 0;
+#include "user/syscall.h"
 
 typedef enum last_thread_action {
     LAST_THREAD_ACTION_NONE,
@@ -55,14 +52,20 @@ typedef struct scheduler_context {
 } __attribute__((aligned(128))) scheduler_t;
 
 /**
+ * Is using monitor supported
+ */
+LATE_RO bool g_monitor_supported = false;
+
+/**
  * The schedulers for all the cores
  */
-static scheduler_t* m_schedulers = nullptr;
+static scheduler_t CPU_LOCAL m_scheduler;
 
 /**
  * The current thread
+ * not static so can be accessed from assembly
  */
-static thread_local thread_t* m_current = nullptr;
+thread_t* CPU_LOCAL m_current;
 
 /**
  * Preemption is disabled if non-zero, this can be used
@@ -74,12 +77,12 @@ static thread_local thread_t* m_current = nullptr;
  * we don't have per-cpu variables that we can access
  * atomically.
  */
-static thread_local int32_t m_preempt_count = 0;
+static CPU_LOCAL int32_t m_preempt_count = 0;
 
 /**
  * Do we need to preempt whe restoring preempt count to zero?
  */
-static thread_local bool m_want_preempt = false;
+static CPU_LOCAL bool m_want_preempt = false;
 
 thread_t* get_current_thread(void) {
     return m_current;
@@ -95,13 +98,8 @@ static void scheduler_wakeup(scheduler_t* scheduler) {
 // Private API
 //----------------------------------------------------------------------------------------------------------------------
 
-/**
- * Should we use umwait or not
- */
-static bool m_umwait_supported = false;
-
 static scheduler_t* get_scheduler(void) {
-    return &m_schedulers[get_cpu_id()];
+    return pcpu_get_pointer(&m_scheduler);
 }
 
 static thread_t* scheduler_select_thread(scheduler_t* scheduler) {
@@ -135,23 +133,21 @@ static void scheduler_finish_park(thread_t* thread) {
 }
 
 static void scheduler_after_schedule(void) {
-    scheduler_t* scheduler = get_scheduler();
-
     // We are now executing in the context of the new thread, but may need to clean up
     // after the old thread.
-    switch (scheduler->last_thread_action) {
+    switch (m_scheduler.last_thread_action) {
     case LAST_THREAD_ACTION_NONE:
         break;
     case LAST_THREAD_ACTION_PARK:
-        scheduler_finish_park(scheduler->last_thread);
+        scheduler_finish_park(m_scheduler.last_thread);
         break;
     case LAST_THREAD_ACTION_PUT:
-        thread_put(scheduler->last_thread);
+        thread_put(m_scheduler.last_thread);
         break;
     }
 
-    scheduler->last_thread = nullptr;
-    scheduler->last_thread_action = LAST_THREAD_ACTION_NONE;
+    m_scheduler.last_thread = nullptr;
+    m_scheduler.last_thread_action = LAST_THREAD_ACTION_NONE;
 }
 
 void scheduler_schedule(void) {
@@ -201,6 +197,7 @@ void scheduler_schedule(void) {
 
     if (new_thread != current) {
         // actually switch to the new thread
+        m_current = new_thread;
         thread_switch(new_thread, current);
     }
 
@@ -224,12 +221,6 @@ static void schedule_timer_wakeup(timer_t* timer) {
 }
 
 void scheduler_schedule_deadline(uint64_t deadline) {
-    // if we are already over the timeout then
-    // just return right away
-    if (tsc_check_deadline(deadline)) {
-        return;
-    }
-
     // setup the timer, we give it its own ref of the thread
     // in case it dies before the timer fires
     thread_t* thread = get_current_thread();
@@ -302,6 +293,7 @@ static void scheduler_tick(timer_t* timer) {
     m_want_preempt = true;
 }
 
+__attribute__((target("waitpkg")))
 static void umonitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
     for (;;) {
         uint32_t value = atomic_load_acquire(addr);
@@ -321,8 +313,32 @@ static void umonitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
     }
 }
 
+__attribute__((target("sse3")))
+static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
+    // ensure that we even support using the monitor instruction
+    ASSERT(g_monitor_supported);
+
+    for (;;) {
+        uint32_t value = atomic_load_acquire(addr);
+
+        if (value != expected) {
+            return;
+        }
+
+        _mm_monitor(addr, 0, 0);
+
+        value = atomic_load_acquire(addr);
+        if (value != expected) {
+            return;
+        }
+
+        // BIT1 == break on interrupt even with IF=0
+        _mm_mwait(0, 0);
+    }
+}
+
 static void scheduler_idle_thread(void* arg) {
-    scheduler_t* scheduler = arg;
+    scheduler_t* scheduler = get_scheduler();
 
     //
     // After that first yield we can just while-true
@@ -340,19 +356,16 @@ static void scheduler_idle_thread(void* arg) {
 
         // use the monitor to actually wait on the cache line
         while (atomic_load_acquire(&scheduler->parked) != 0) {
-            if (m_umwait_supported) {
-                umonitor_wait(&scheduler->parked, 1);
+            if (g_monitor_supported) {
+                monitor_wait(&scheduler->parked, 1);
             } else {
-                sys_monitor_wait(&scheduler->parked, 1);
+                umonitor_wait(&scheduler->parked, 1);
             }
         }
     }
 }
 
-void thread_entry_point(thread_t* thread, thread_entry_t entry, void* arg) {
-    // set the current thread-local, so we can access it
-    m_current = thread;
-
+OMIT_ENDBR void thread_entry_point(thread_t* thread, thread_entry_t entry, void* arg) {
     // this is right after scheduling,
     // so cleanup
     scheduler_after_schedule();
@@ -367,50 +380,25 @@ void thread_entry_point(thread_t* thread, thread_entry_t entry, void* arg) {
     thread_exit();
 }
 
-void init_sched(void) {
-    m_schedulers = mem_alloc_aligned(sizeof(scheduler_t) * g_cpu_count, alignof(scheduler_t));
-    ASSERT(m_schedulers != nullptr);
-    memset(m_schedulers, 0, sizeof(*m_schedulers) * g_cpu_count);
+INIT_CODE void init_sched_per_core(void) {
+    // setup the scheduler context
+    scheduler_t* scheduler = get_scheduler();
+    list_init(&scheduler->run_queue);
 
-    // tell the kernel about our entry thunk, it will ensure that
-    // shadow stacks are properly set with this
-    sys_early_set_thread_entry_thunk(thread_entry_thunk);
+    // the timer callback we use
+    scheduler->timer.callback = scheduler_tick;
 
-    for (int i = 0; i < g_cpu_count; i++) {
-        scheduler_t* scheduler = &m_schedulers[i];
-        scheduler->timer.callback = scheduler_tick;
-
-        list_init(&scheduler->run_queue);
-
-        scheduler->idle = thread_create(scheduler_idle_thread, scheduler, "idle-%d", i);
-        ASSERT(scheduler->idle != nullptr);
-    }
-
-    // check for umwait support and use that whenever supported
-    // because it offers better perf
-    uint32_t a, b, d;
-    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
-    ASSERT(__get_cpuid_count(
-        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
-        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
-        &a,
-        &b,
-        &structured_extended_feature_flags_ecx.raw,
-        &d
-    ));
-    if (structured_extended_feature_flags_ecx.WAITPKG) {
-        TRACE("sched: using umwait in idle thread");
-        m_umwait_supported = true;
-    } else {
-        TRACE("sched: using kernel monitor in idle thread");
-    }
+    // setup the idle thread
+    scheduler->idle = thread_create(scheduler_idle_thread, nullptr, 0, "idle-%d", get_cpu_id());
+    ASSERT(scheduler->idle != nullptr);
 }
 
-void sched_start_per_core(void) {
+INIT_CODE void sched_start_per_core(void) {
     // start by running the idle threads, just to get into a stable
     // stack, from there we will do the rest
     thread_t* thread = get_scheduler()->idle;
     atomic_store_relaxed(&thread->state, THREAD_STATE_RUNNING);
+    m_current = thread;
     thread_resume(thread);
 }
 
@@ -421,7 +409,6 @@ void sched_start_per_core(void) {
 void sched_yield(void) {
     if (m_preempt_count == 0) {
         // we can preempt right now
-        thread_t* current = get_current_thread();
         const bool irq_state = irq_save();
         scheduler_schedule();
         irq_restore(irq_state);

@@ -1,4 +1,4 @@
 
-int _start(int a, int b) {
-    return a + b;
+int _start(void) {
+    return 0xBABE;
 }
