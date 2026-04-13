@@ -30,18 +30,19 @@ AR := llvm-ar
 # Pinned wasi-sdk release — both the sysroot and the compiler-rt
 # builtins archive are fetched from this release to keep the build
 # reproducible and independent of the host distro's packaging.
-WASI_SDK_VERSION := 25
+WASI_SDK_VERSION := 32
 WASI_SDK_URL_BASE := https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WASI_SDK_VERSION)
 WASI_SYSROOT_URL := $(WASI_SDK_URL_BASE)/wasi-sysroot-$(WASI_SDK_VERSION).0.tar.gz
-WASI_RT_URL      := $(WASI_SDK_URL_BASE)/libclang_rt.builtins-wasm32-wasi-$(WASI_SDK_VERSION).0.tar.gz
+WASI_RT_URL      := $(WASI_SDK_URL_BASE)/libclang_rt-$(WASI_SDK_VERSION).0.tar.gz
 
 BUILD := build
+ARTIFACTS := artifacts
 OBJ := $(BUILD)/obj
 
-WASI_SYSROOT := $(abspath $(BUILD)/wasi-sysroot)
+WASI_SYSROOT := $(abspath $(ARTIFACTS)/wasi-sysroot)
 WASI_SYSROOT_STAMP := $(WASI_SYSROOT)/lib/wasm32-wasi/libc.a
 
-WASI_RT_DIR := $(BUILD)/wasi-rt
+WASI_RT_DIR := $(ARTIFACTS)/wasi-rt
 WASI_RT_LIB := $(WASI_RT_DIR)/lib/wasm32-unknown-wasi/libclang_rt.builtins.a
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -78,11 +79,10 @@ clean:
 	$(call cmd,clean)
 
 quiet_cmd_fetch_rt = FETCH   $(WASI_RT_URL)
-      cmd_fetch_rt = mkdir -p $(dir $@) && \
+      cmd_fetch_rt = rm -rf $(WASI_RT_DIR) && \
+      				 mkdir -p $(WASI_RT_DIR)/lib && \
                      curl -sSfL $(WASI_RT_URL) \
-                       | tar -xz -C $(dir $@) --strip-components=1 \
-                            --wildcards '*/libclang_rt.builtins-wasm32.a' && \
-                     mv $(dir $@)libclang_rt.builtins-wasm32.a $@
+                       | tar -xz -C $(WASI_RT_DIR)/lib --strip-components=1
 
 $(WASI_RT_LIB): FORCE
 	$(call cmd,fetch_rt)
