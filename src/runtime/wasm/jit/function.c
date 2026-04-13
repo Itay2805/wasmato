@@ -85,49 +85,6 @@ cleanup:
     return err;
 }
 
-#define JIT_TRACE(fmt, ...) \
-    do { \
-        TRACE("wasm: \t" fmt, ##__VA_ARGS__); \
-    } while (0)
-
-static void jit_print_opcode(uint8_t opcode) {
-    if (g_wasm_opcode_names[opcode] == nullptr) {
-        JIT_TRACE("<unknown 0x%02x>", opcode);
-    } else {
-        JIT_TRACE("%s", g_wasm_opcode_names[opcode]);
-    }
-}
-
-typedef struct wasm_mem_arg {
-    uint32_t index;
-    uint32_t align;
-    uint64_t offset;
-} wasm_mem_arg_t;
-
-static err_t jit_pull_memarg(buffer_t* buffer, wasm_mem_arg_t* arg) {
-    err_t err = NO_ERROR;
-
-    arg->align = BUFFER_PULL_U32(buffer);
-
-    // if the value is larger than or equal to 64 then we have an index
-    // and the real value is 64 less
-    if (arg->align >= 64) {
-        arg->align -= 64;
-        arg->index = BUFFER_PULL_U32(buffer);
-    } else {
-        arg->index = 0;
-    }
-
-    // validate the final alignment
-    CHECK(arg->align < 64);
-
-    // get the offset
-    arg->offset = BUFFER_PULL_U64(buffer);
-
-cleanup:
-    return err;
-}
-
 static void jit_build_function(spidir_builder_handle_t builder, void* _ctx) {
     err_t err = NO_ERROR;
 
@@ -158,13 +115,12 @@ static void jit_build_function(spidir_builder_handle_t builder, void* _ctx) {
 
     // setup params
     wasm_value_type_t* arg_types = type->func.arg_types;
-    arrsetlen(inst.locals_types, arrlen(arg_types));
-    arrsetlen(label.locals_values, arrlen(arg_types));
+    arrsetlen(inst.locals, arrlen(arg_types));
     for (int i = 0; i < arrlen(arg_types); i++) {
-        inst.locals_types[i] = jit_get_spidir_value_type(arg_types[i]);
+        inst.locals[i].type = jit_get_spidir_value_type(arg_types[i]);
 
         // offset of 2 because first two params are the locals and memory base
-        label.locals_values[i] = spidir_builder_build_param_ref(builder, i + 2);
+        inst.locals[i].value = spidir_builder_build_param_ref(builder, i + 2);
     }
 
     // setup ret type
@@ -183,12 +139,10 @@ static void jit_build_function(spidir_builder_handle_t builder, void* _ctx) {
         wasm_value_type_t type = 0;
         RETHROW(buffer_pull_val_type(&code, &type));
 
-        spidir_value_type_t* types = arraddnptr(inst.locals_types, count);
-        spidir_value_t* values = arraddnptr(label.locals_values, count);
+        jit_value_t* locals = arraddnptr(inst.locals, count);
         for (int j = 0; j < count; j++) {
-            types[j] = jit_get_spidir_value_type(type);
-            // TODO: do we need to initialize these to zero or nah?
-            values[j] = SPIDIR_VALUE_INVALID;
+            locals[j].type = jit_get_spidir_value_type(type);
+            locals[j].value = SPIDIR_VALUE_INVALID;
         }
     }
 
@@ -222,7 +176,7 @@ cleanup:
         jit_free_label(&label);
     }
     arrfree(inst.labels);
-    arrfree(inst.locals_types);
+    arrfree(inst.locals);
 
     context->err = err;
 }

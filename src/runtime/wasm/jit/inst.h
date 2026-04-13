@@ -34,7 +34,7 @@ typedef struct jit_label {
 
 typedef struct jit_instruction_ctx {
     // the types of all the locals
-    spidir_value_type_t* locals_types;
+    jit_value_t* locals;
 
     // handle returning values
     spidir_value_type_t ret_type;
