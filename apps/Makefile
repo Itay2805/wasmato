@@ -24,13 +24,25 @@ endif
 
 CC := clang
 AS := clang
-LD := wasm-ld
+LD := clang
 AR := llvm-ar
 
-CLANG_RESOURCE_DIR := $(shell $(CC) --print-resource-dir)
+# Pinned wasi-sdk release — both the sysroot and the compiler-rt
+# builtins archive are fetched from this release to keep the build
+# reproducible and independent of the host distro's packaging.
+WASI_SDK_VERSION := 25
+WASI_SDK_URL_BASE := https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WASI_SDK_VERSION)
+WASI_SYSROOT_URL := $(WASI_SDK_URL_BASE)/wasi-sysroot-$(WASI_SDK_VERSION).0.tar.gz
+WASI_RT_URL      := $(WASI_SDK_URL_BASE)/libclang_rt.builtins-wasm32-wasi-$(WASI_SDK_VERSION).0.tar.gz
 
 BUILD := build
 OBJ := $(BUILD)/obj
+
+WASI_SYSROOT := $(abspath $(BUILD)/wasi-sysroot)
+WASI_SYSROOT_STAMP := $(WASI_SYSROOT)/lib/wasm32-wasi/libc.a
+
+WASI_RT_DIR := $(BUILD)/wasi-rt
+WASI_RT_LIB := $(WASI_RT_DIR)/lib/wasm32-unknown-wasi/libclang_rt.builtins.a
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Targets
@@ -39,12 +51,16 @@ OBJ := $(BUILD)/obj
 include ../scripts/defs.mk
 
 # Common cflags for all apps
-cflags-y += --target=wasm32
+cflags-y += --target=wasm32-wasi
+cflags-y += --sysroot=$(WASI_SYSROOT)
 cflags-y += -Wall -Werror -std=gnu23
 cflags-y += -flto -g
 cflags-y += -fvisibility=hidden
-cflags-y += -nostdlib -nostdinc
-cflags-y += -isystem $(shell $(CC) --print-resource-dir)/include
+
+ldflags-y += --target=wasm32-wasi
+ldflags-y += --sysroot=$(WASI_SYSROOT)
+ldflags-y += -resource-dir=$(abspath $(WASI_RT_DIR))
+ldflags-y += -flto
 
 cflags-$(OPTIMIZE) += -O3
 
@@ -61,5 +77,34 @@ PHONY += clean
 clean:
 	$(call cmd,clean)
 
+quiet_cmd_fetch_rt = FETCH   $(WASI_RT_URL)
+      cmd_fetch_rt = mkdir -p $(dir $@) && \
+                     curl -sSfL $(WASI_RT_URL) \
+                       | tar -xz -C $(dir $@) --strip-components=1 \
+                            --wildcards '*/libclang_rt.builtins-wasm32.a' && \
+                     mv $(dir $@)libclang_rt.builtins-wasm32.a $@
+
+$(WASI_RT_LIB): FORCE
+	$(call cmd,fetch_rt)
+
+targets += $(WASI_RT_LIB)
+
+quiet_cmd_fetch_sysroot = FETCH   $(WASI_SYSROOT_URL)
+      cmd_fetch_sysroot = rm -rf $(WASI_SYSROOT) && \
+                          mkdir -p $(WASI_SYSROOT) && \
+                          curl -sSfL $(WASI_SYSROOT_URL) \
+                            | tar -xz -C $(WASI_SYSROOT) --strip-components=1
+
+$(WASI_SYSROOT_STAMP): FORCE
+	$(call cmd,fetch_sysroot)
+
+targets += $(WASI_SYSROOT_STAMP)
+
 include init/Makefile
 include ../scripts/build.mk
+
+# Ensure sysroot + compiler-rt builtins are staged before any bin is linked.
+$(bin-outputs): $(WASI_RT_LIB) $(WASI_SYSROOT_STAMP)
+
+# Compiles also need the sysroot headers.
+ccodeps-y += $(WASI_SYSROOT_STAMP)

@@ -1,4 +1,4 @@
 
-int _start(void) {
+int main(void) {
     return 0xBABE;
 }
