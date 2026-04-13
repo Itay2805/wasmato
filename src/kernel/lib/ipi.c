@@ -33,8 +33,11 @@ void ipi_broadcast(ipi_reason_t ipi) {
 
     // TODO: what fence do we want here?
 
-    // wait for everything to do stuff
-    lapic_send_ipi_all_excluding_self(INTR_VECTOR_IPI);
+    // trigger the ipi to everyone, we don't do that before core startup
+    // because otherwise we will get a spurious ipi later on
+    if (g_cpu_count > 1) {
+        lapic_send_ipi_all_excluding_self(INTR_VECTOR_IPI);
+    }
 
     // wait for everyone to finish
     // TODO: maybe use a sleep instead

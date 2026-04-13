@@ -75,6 +75,24 @@ static void* m_tlb_flush_addresses[64];
  */
 static uint8_t m_tlb_flush_count = 0;
 
+void virt_handle_tlb_flush_ipi(void) {
+    ASSERT(m_tlb_flush_count != 0);
+
+    if (m_tlb_flush_count == 0xFF) {
+        // flush everything by moving the cr3
+        __writecr3(__readcr3());
+
+    } else if (m_tlb_flush_count <= ARRAY_LENGTH(m_tlb_flush_addresses)) {
+        // flush the wanted addresses
+        for (int i = 0; i < m_tlb_flush_count; i++) {
+            __invlpg(m_tlb_flush_addresses[i]);
+        }
+
+    } else {
+        ASSERT(!"Invalid TLB flush count");
+    }
+}
+
 static void tlb_invl_queue(void* addr) {
     // might as well flush it normally on our core
     __invlpg(addr);
@@ -259,24 +277,6 @@ void reclaim_init_mem(void) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Page fault handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void virt_handle_tlb_flush_ipi(void) {
-    ASSERT(m_tlb_flush_count != 0);
-
-    if (m_tlb_flush_count == 0xFF) {
-        // flush everything by moving the cr3
-        __writecr3(__readcr3());
-
-    } else if (m_tlb_flush_count <= ARRAY_LENGTH(m_tlb_flush_addresses)) {
-        // flush the wanted addresses
-        for (int i = 0; i < m_tlb_flush_count; i++) {
-            __invlpg(m_tlb_flush_addresses[i]);
-        }
-
-    } else {
-        ASSERT(!"Invalid TLB flush count");
-    }
-}
 
 err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     err_t err = NO_ERROR;
