@@ -73,6 +73,26 @@ static void assert_user_range(uintptr_t addr, size_t size) {
     ASSERT(end <= (uintptr_t)vmar_end(&g_user_memory));
 }
 
+static void copy_string_from_user(void* dst, uintptr_t src, size_t max_size) {
+    user_access_enable();
+
+    // copy over the chars
+    for (size_t i = 0; i < max_size - 1; i++, dst++, src++) {
+        // ensure that the source is still valid
+        assert_user_range(src, 1);
+        char value = *(char*)src;
+        if (value == '\0') {
+            break;
+        }
+        *(char*)dst = value;
+    }
+
+    // ensure we have null-terminator
+    *(char*)dst = '\0';
+
+    user_access_disable();
+}
+
 static void copy_from_user(void* dst, uintptr_t src, size_t size) {
     assert_user_range(src, size);
 
@@ -238,6 +258,33 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             CHECK(region != nullptr);
             vmar_free(region);
             vmar_unlock();
+        } break;
+
+        case SYSCALL_THREAD_CREATE: {
+            // create the new thread
+            thread_t* thread = thread_create(
+                runtime_thread_entry_thunk,
+                (void*)frame->arg1,
+                THREAD_FLAG_USER,
+                ""
+            );
+
+            // fail if the thread creation failed
+            if (thread == nullptr) {
+                frame->result = false;
+            } else {
+                frame->result = true;
+            }
+
+            // copy the name from the user
+            copy_string_from_user(thread->name, frame->arg2, sizeof(thread->name));
+
+            // start the thread
+            thread_start(thread);
+        } break;
+
+        case SYSCALL_THREAD_SLEEP: {
+            thread_sleep(frame->arg1);
         } break;
 
         case SYSCALL_THREAD_EXIT: {

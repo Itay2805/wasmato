@@ -6,9 +6,13 @@
 #include "wasm/module.h"
 #include "wasm/jit/jit.h"
 
-__attribute__((force_align_arg_pointer, nocf_check))
-void _start(void* arg) {
+static void main(void) {
     err_t err = NO_ERROR;
+
+    // ensure we only enter the main function once
+    static bool init_once = false;
+    CHECK(!init_once);
+    init_once = true;
 
     TRACE("From main thread!");
 
@@ -37,7 +41,19 @@ void _start(void* arg) {
 cleanup:
     wasm_jit_free(&jit);
     wasm_module_free(&module);
-
     (void)err;
+}
+
+/**
+ * The design makes it so all thread entries start from here,
+ * we make sure that only
+ */
+__attribute__((force_align_arg_pointer, nocf_check))
+void _start(void* arg) {
+    if (arg == nullptr) {
+        main();
+    } else {
+        // TODO: wasm entry point
+    }
     sys_thread_exit();
 }

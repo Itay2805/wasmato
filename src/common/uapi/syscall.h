@@ -131,6 +131,8 @@ typedef enum syscall {
 	SYSCALL_JIT_LOCK_PROTECTION,
 	SYSCALL_JIT_FREE,
 
+	SYSCALL_THREAD_CREATE,
+	SYSCALL_THREAD_SLEEP,
 	SYSCALL_THREAD_EXIT,
 
 	SYSCALL_MEM_RESERVE,
@@ -186,6 +188,16 @@ static inline void sys_jit_free(void* ptr) {
 //----------------------------------------------------------------------------------------------------------------------
 // Thread handling
 //----------------------------------------------------------------------------------------------------------------------
+
+typedef void (*sys_thread_entry_t)(void* arg);
+
+static inline bool sys_thread_create(void* arg, const char* name) {
+	return (bool)syscall2(SYSCALL_THREAD_CREATE, arg, name);
+}
+
+static inline void sys_thread_sleep(size_t ms) {
+	(void)syscall1(SYSCALL_THREAD_SLEEP, ms);
+}
 
 static inline void sys_thread_exit(void) {
 	(void)syscall0(SYSCALL_THREAD_EXIT);
