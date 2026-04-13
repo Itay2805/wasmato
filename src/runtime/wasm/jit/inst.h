@@ -23,6 +23,9 @@ typedef struct jit_label {
     // the values of the locals
     spidir_value_t* locals_values;
 
+    // how many inputs we have so far to the phis
+    int inputs;
+
     // this is a loop block, meaning we jump back
     // into the starting block instead of jumping
     // into the end

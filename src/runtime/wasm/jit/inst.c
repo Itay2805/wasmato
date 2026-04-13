@@ -15,9 +15,10 @@
 
 #define JIT_POP(_type) \
     ({ \
-        CHECK(arrlen(label->stack) >= 1); \
+        CHECK(arrlen(label->stack) >= 1, "Out of stack space"); \
         jit_value_t value__ = arrpop(label->stack); \
-        CHECK(value__.type == _type); \
+        spidir_value_type_t type__ = _type; \
+        CHECK(value__.type == type__, "Unexpected type (%d != %d)", value__.type, type__); \
         value__.value; \
     })
 
@@ -28,14 +29,14 @@ void jit_free_label(jit_label_t* label) {
 }
 
 static wasm_type_t* wasm_get_func_type(jit_context_t* ctx, uint32_t funcidx) {
-    size_t imports_count = arrlen(ctx->module);
-    typeidx_t functype;
+    size_t imports_count = arrlen(ctx->module->imports);
+    typeidx_t typeidx;
     if (funcidx < imports_count) {
-        functype = ctx->module->functions[funcidx];
+        typeidx = ctx->module->imports[funcidx].index;
     } else {
-        functype = ctx->module->functions[funcidx - imports_count];
+        typeidx = ctx->module->functions[funcidx - imports_count];
     }
-    wasm_type_t* type = &ctx->module->types[functype];
+    wasm_type_t* type = &ctx->module->types[typeidx];
     if (type->kind != WASM_TYPE_KIND_FUNC) return nullptr;
     return type;
 }
@@ -63,6 +64,48 @@ static err_t jit_wasm_nop(spidir_builder_handle_t builder, buffer_t* code, jit_c
 cleanup:
     return err;
 }
+
+static err_t jit_wasm_drop(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
+    err_t err = NO_ERROR;
+
+    TRACE("wasm: \tdrop");
+    CHECK(arrlen(label->stack) >= 1);
+    arrpop(label->stack);
+
+cleanup:
+    return err;
+}
+
+static err_t jit_wasm_select(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
+    err_t err = NO_ERROR;
+
+    TRACE("wasm: \tselect");
+
+    spidir_value_t c = JIT_POP(SPIDIR_TYPE_I32);
+    CHECK(arrlen(label->stack) >= 2);
+    jit_value_t val2 = arrpop(label->stack);
+    jit_value_t val1 = arrpop(label->stack);
+    CHECK(val1.type == val2.type);
+
+    // prepare the next block
+    spidir_block_t next_block = spidir_builder_create_block(builder);
+
+    // we are going to use a brcond, if its zero it will take val1 and if its
+    // non-zero it will take val2
+    spidir_value_t values[] = { val1.value, val2.value };
+    spidir_builder_build_brcond(builder, c, next_block, next_block);
+
+    // setup the continuation
+    spidir_builder_set_block(builder, next_block);
+    spidir_value_t value = spidir_builder_build_phi(builder, val1.type, 2, values, NULL);
+
+    // and push it
+    JIT_PUSH(val1.type, value);
+
+cleanup:
+    return err;
+}
+
 
 //----------------------------------------------------------------------------------------------------------------------
 // Control Instructions
@@ -96,6 +139,138 @@ cleanup:
     return err;
 }
 
+static err_t jit_wasm_prepare_branch(spidir_builder_handle_t builder, jit_instruction_ctx_t* inst, jit_label_t* target) {
+    err_t err = NO_ERROR;
+
+    if (arrlen(target->locals_values) == 0) {
+        // first attempt at going to the label, just copy
+        // all the values as-is
+        arrsetlen(target->locals_values, arrlen(inst->locals));
+        arrsetlen(target->locals_phis, arrlen(inst->locals));
+        for (int i = 0; i < arrlen(inst->locals); i++) {
+            target->locals_values[i] = inst->locals[i].value;
+
+            // TODO: this is not standard...
+            target->locals_phis[i].id = UINT32_MAX;
+        }
+
+    } else {
+        // ensure this is correct
+        CHECK(arrlen(inst->locals) == arrlen(target->locals_values));
+
+        // switch into the block so we can create phis properly
+        spidir_block_t current;
+        CHECK(spidir_builder_cur_block(builder, &current));
+        spidir_builder_set_block(builder, target->block);
+
+        // we have an existing branch, check if we need any phis
+        for (int i = 0; i < arrlen(inst->locals); i++) {
+            // ignore if same value
+            if (inst->locals[i].value.id == target->locals_values[i].id) {
+                continue;
+            }
+
+            // create phi if doesn't exist
+            if (target->locals_phis[i].id == UINT32_MAX) {
+                // we need to create a new phi
+                spidir_value_t value = spidir_builder_build_phi(builder,
+                    inst->locals[i].type,
+                    0, nullptr,
+                    &target->locals_phis[i]
+                );
+
+                // fill with the last input as many times as needed
+                for (int j = 0; j < target->inputs; j++) {
+                    spidir_builder_add_phi_input(builder, target->locals_phis[i], target->locals_values[i]);
+                }
+
+                // this is the new value
+                target->locals_values[i] = value;
+            }
+
+            // add as input
+            spidir_builder_add_phi_input(builder, target->locals_phis[i], inst->locals[i].value);
+        }
+
+        // switch back
+        spidir_builder_set_block(builder, current);
+    }
+
+    // increment the input count
+    target->inputs++;
+
+cleanup:
+    return err;
+}
+
+static err_t jit_wasm_br(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
+    err_t err = NO_ERROR;
+
+    // get the target
+    uint32_t index = BUFFER_PULL_U32(code);
+    TRACE("wasm: \tbr %d", index);
+    CHECK(index < arrlen(inst->labels));
+    jit_label_t* target = &inst->labels[arrlen(inst->labels) - index - 1];
+
+    // prepare a branch to the target
+    RETHROW(jit_wasm_prepare_branch(builder, inst, target));
+
+    // branch into the block
+    spidir_builder_build_branch(builder, target->block);
+
+    // block is now terminated
+    label->terminated = true;
+
+cleanup:
+    return err;
+}
+
+static err_t jit_wasm_br_if(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
+    err_t err = NO_ERROR;
+
+    // get the target
+    uint32_t index = BUFFER_PULL_U32(code);
+    TRACE("wasm: \tbr.if %d", index);
+    CHECK(index < arrlen(inst->labels));
+    jit_label_t* target = &inst->labels[arrlen(inst->labels) - index - 1];
+
+    // prepare a branch to the target
+    RETHROW(jit_wasm_prepare_branch(builder, inst, target));
+
+    // get the condition
+    spidir_value_t c = JIT_POP(SPIDIR_TYPE_I32);
+
+    // perform the branch
+    spidir_block_t continuation = spidir_builder_create_block(builder);
+    spidir_builder_build_brcond(builder, c, target->block, continuation);
+
+    // and continue
+    spidir_builder_set_block(builder, continuation);
+
+cleanup:
+    return err;
+}
+
+static err_t jit_wasm_return(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
+    err_t err = NO_ERROR;
+
+    TRACE("wasm: \treturn");
+
+    // handle return value if any
+    spidir_value_t value = SPIDIR_VALUE_INVALID;
+    if (inst->ret_type != SPIDIR_TYPE_NONE) {
+        value = JIT_POP(inst->ret_type);
+    }
+    CHECK(arrlen(label->stack) == 0);
+    spidir_builder_build_return(builder, value);
+
+    // we terminated the label
+    label->terminated = true;
+
+cleanup:
+    return err;
+}
+
 static err_t jit_wasm_call(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
     err_t err = NO_ERROR;
     spidir_value_t* params = nullptr;
@@ -118,7 +293,8 @@ static err_t jit_wasm_call(spidir_builder_handle_t builder, buffer_t* code, jit_
 
     // pop the rest of the args from the stack
     for (int i = 0; i < arrlen(type->func.arg_types); i++) {
-        spidir_value_t value = JIT_POP(type->func.arg_types[i]);
+        spidir_value_type_t stype = jit_get_spidir_value_type(type->func.arg_types[i]);
+        spidir_value_t value = JIT_POP(stype);
         arrpush(params, value);
     }
 
@@ -126,13 +302,11 @@ static err_t jit_wasm_call(spidir_builder_handle_t builder, buffer_t* code, jit_
     spidir_value_t ret_val = spidir_builder_build_call(builder, callee->spidir, arrlen(params), params);
 
     // if we have a return push it into the stack
-    if (arrlen(type->func.result_types) != 0) {
+    if (arrlen(type->func.result_types) > 0) {
         CHECK(arrlen(type->func.result_types) == 1);
 
-        JIT_PUSH(
-            jit_get_spidir_value_type(type->func.result_types[0]),
-            ret_val
-        );
+        spidir_value_type_t stype = jit_get_spidir_value_type(type->func.result_types[0]);
+        JIT_PUSH(stype, ret_val);
     }
 
 cleanup:
@@ -465,6 +639,68 @@ cleanup:
     return err;
 }
 
+#define SWAP(a, b) \
+    do { \
+        typeof(a) temp__ = a; \
+        a = b; \
+        b = temp__; \
+    } while (0)
+
+static err_t jit_wasm_cmpi(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
+    err_t err = NO_ERROR;
+
+    uint8_t opcode = ((uint8_t*)code->data)[-1];
+    TRACE("wasm: \t%s", g_wasm_opcode_names[opcode]);
+
+    // figure the exact type
+    spidir_value_type_t type;
+    switch (opcode) {
+        case 0x45 ... 0x4F: type = SPIDIR_TYPE_I32; opcode -= 0x45; break;
+        case 0x50 ... 0x5A: type = SPIDIR_TYPE_I64; opcode -= 0x50; break;
+        default: CHECK_FAIL();
+    }
+
+    // get the args
+    spidir_value_t arg2, arg1;
+    if (opcode == 0) {
+        // eqz
+        arg2 = JIT_POP(type);
+        arg1 = spidir_builder_build_iconst(builder, type, 0);
+    } else {
+        arg2 = JIT_POP(type);
+        arg1 = JIT_POP(type);
+    }
+
+    // choose the compare, got gt kinds we just swap
+    spidir_icmp_kind_t kind;
+    switch (opcode) {
+        case 0:
+        case 1: kind = SPIDIR_ICMP_EQ; break;
+        case 2: kind = SPIDIR_ICMP_NE; break;
+        case 3: kind = SPIDIR_ICMP_SLT; break;
+        case 4: kind = SPIDIR_ICMP_ULT; break;
+        case 5: kind = SPIDIR_ICMP_SLT; SWAP(arg1, arg2); break;
+        case 6: kind = SPIDIR_ICMP_ULT; SWAP(arg1, arg2); break;
+        case 7: kind = SPIDIR_ICMP_SLE; break;
+        case 8: kind = SPIDIR_ICMP_ULE; break;
+        case 9: kind = SPIDIR_ICMP_SLE; SWAP(arg1, arg2); break;
+        case 10: kind = SPIDIR_ICMP_ULE; SWAP(arg1, arg2); break;
+        default: CHECK_FAIL();
+    }
+
+    // build the icmp, it always outputs i32
+    spidir_value_t value = spidir_builder_build_icmp(builder,
+        kind, SPIDIR_TYPE_I32,
+        arg1, arg2
+    );
+
+    // push the result
+    JIT_PUSH(SPIDIR_TYPE_I32, value);
+
+cleanup:
+    return err;
+}
+
 static err_t jit_wasm_binopi(spidir_builder_handle_t builder, buffer_t* code, jit_context_t* ctx, jit_instruction_ctx_t* inst, jit_label_t* label) {
     err_t err = NO_ERROR;
 
@@ -515,26 +751,39 @@ static err_t jit_wasm_end(spidir_builder_handle_t builder, buffer_t* code, jit_c
 
     TRACE("wasm: \tend");
 
-    if (!label->terminated) {
-        // block not terminated, we have things to do
+    // TODO: handle loop case
+    CHECK(!label->loop);
 
-        // TODO: handle this case
-        CHECK(!label->loop);
-
-        if (arrlen(inst->labels) == 1) {
-            // this is the last block, we need to handle
-            // a return sequence
+    if (arrlen(inst->labels) == 1) {
+        if (!label->terminated) {
+            // this is a fallthrough from the entire function,
+            // handle it like a return
             spidir_value_t value = SPIDIR_VALUE_INVALID;
             if (inst->ret_type != SPIDIR_TYPE_NONE) {
                 value = JIT_POP(inst->ret_type);
             }
-            CHECK(arrlen(label->stack) == 0);
             spidir_builder_build_return(builder, value);
-
-        } else {
-            CHECK_FAIL();
         }
+
+    } else {
+        if (!label->terminated) {
+            // handle fallthrough from a block into its label
+            RETHROW(jit_wasm_prepare_branch(builder, inst, label));
+            spidir_builder_build_branch(builder, label->block);
+        }
+
+        // copy over all the locals, if we never initialized them
+        // we stay with the current locals which is correct
+        for (int i = 0; i < arrlen(label->locals_values); i++) {
+            inst->locals[i].value = label->locals_values[i];
+        }
+
+        // and use the new block
+        spidir_builder_set_block(builder, label->block);
     }
+
+    // stack must be empty at this point
+    CHECK(arrlen(label->stack) == 0);
 
     // remove the block
     label = nullptr;
@@ -551,9 +800,14 @@ const jit_instruction_t g_wasm_inst_jit_callbacks[0x100] = {
     // Parametric Instructions
     [0x00] = jit_wasm_unreachable,
     [0x01] = jit_wasm_nop,
+    [0x1A] = jit_wasm_drop,
+    [0x1B] = jit_wasm_select,
 
     // Control Instructions
     [0x02] = jit_wasm_block,
+    [0x0C] = jit_wasm_br,
+    [0x0D] = jit_wasm_br_if,
+    [0x0F] = jit_wasm_return,
     [0x10] = jit_wasm_call,
 
     // Variable Instructions
@@ -572,6 +826,7 @@ const jit_instruction_t g_wasm_inst_jit_callbacks[0x100] = {
     [0x42] = jit_wasm_i64_const,
     [0x43] = jit_wasm_f32_const,
     [0x44] = jit_wasm_f64_const,
+    [0x45 ... 0x5A] = jit_wasm_cmpi,
     [0x6A ... 0x73] = jit_wasm_binopi,
     [0x7C ... 0x85] = jit_wasm_binopi,
 };

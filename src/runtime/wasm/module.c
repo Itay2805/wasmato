@@ -122,20 +122,21 @@ static err_t wasm_parse_type_section(wasm_module_t* module, buffer_t* buffer) {
 
     for (int i = 0; i < type_count; i++) {
         uint8_t type = BUFFER_PULL(uint8_t, buffer);
-        wasm_type_t* wasm_type = arraddnptr(module->types, 1);
-        *wasm_type = (wasm_type_t){};
+        wasm_type_t wasm_type = {};
 
         switch (type) {
             case 0x60: {
-                wasm_type->kind = WASM_TYPE_KIND_FUNC;
-                RETHROW(wasm_pull_result_type(buffer, &wasm_type->func.arg_types));
-                RETHROW(wasm_pull_result_type(buffer, &wasm_type->func.result_types));
+                wasm_type.kind = WASM_TYPE_KIND_FUNC;
+                RETHROW(wasm_pull_result_type(buffer, &wasm_type.func.arg_types));
+                RETHROW(wasm_pull_result_type(buffer, &wasm_type.func.result_types));
             } break;
 
             default: {
                 CHECK_FAIL("Unknown type %x", type);
             } break;
         }
+
+        arrpush(module->types, wasm_type);
     }
 
     CHECK(buffer->len == 0);
