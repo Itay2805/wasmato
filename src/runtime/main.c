@@ -2,6 +2,7 @@
 #include "lib/assert.h"
 #include "lib/except.h"
 #include "lib/log.h"
+#include "lib/stb_ds.h"
 #include "uapi/syscall.h"
 #include "wasm/module.h"
 #include "wasm/jit/jit.h"
@@ -35,8 +36,10 @@ static void main(void) {
     RETHROW(wasm_load_module(&module, initrd, initrd_size));
     RETHROW(wasm_jit_module(&module, &jit));
 
-    int (*start)(void) = wasm_jit_get_function(&jit, "_start");
-    TRACE("wasm returned 0x%x", start());
+    TRACE("Exports:");
+    for (int i = 0; i < shlen(module.exports); i++) {
+        TRACE("\t%s(func%d) - %p", module.exports[i].key, module.exports[i].index, wasm_jit_get_function(&jit, module.exports[i].key));
+    }
 
 cleanup:
     wasm_jit_free(&jit);

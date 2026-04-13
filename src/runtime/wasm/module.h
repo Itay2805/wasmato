@@ -38,17 +38,32 @@ typedef struct wasm_global {
     bool mutable;
 } wasm_global_t;
 
+typedef enum wasm_extern_type {
+    WASM_EXTERN_FUNC,
+    WASM_EXTERN_TABLE,
+    WASM_EXTERN_MEM,
+    WASM_EXTERN_GLOBAL,
+    WASM_EXTERN_TAG,
+} wasm_extern_type_t;
+
+typedef struct wasm_import {
+    const char* module_name;
+    const char* item_name;
+    wasm_extern_type_t kind;
+    uint32_t index;
+} wasm_import_t;
+
 typedef enum wasm_export_kind {
     WASM_EXPORT_FUNC,
     WASM_EXPORT_TABLE,
     WASM_EXPORT_MEMORY,
     WASM_EXPORT_GLOBAL,
     WASM_EXPORT_TAG,
-} wasm_export_kind_t;
+} wasm_export_type_t;
 
 typedef struct wasm_export {
     char* key;
-    wasm_export_kind_t kind;
+    wasm_export_type_t kind;
     uint32_t index;
 } wasm_export_t;
 
@@ -63,6 +78,7 @@ typedef struct wasm_module {
     wasm_type_t* types;
     typeidx_t* functions;
     wasm_global_t* globals;
+    wasm_import_t* imports;
     wasm_export_t* exports;
     wasm_code_t* code;
 

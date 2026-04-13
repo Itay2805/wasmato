@@ -5,7 +5,7 @@
 
 
 typedef struct jit_function {
-    spidir_function_t spidir;
+    spidir_funcref_t spidir;
     bool inited;
 } jit_function_t;
 

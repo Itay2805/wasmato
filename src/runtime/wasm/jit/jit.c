@@ -26,6 +26,37 @@ static void spidir_log_callback(spidir_log_level_t level, const char* module, si
     }
 }
 
+static int isprint(int c) {
+    return (unsigned)c - 0x20 < 0x5f;
+}
+
+static void hexdump(const void *ptr, size_t buflen) {
+    const unsigned char *buf = (const unsigned char*)ptr;
+    for (size_t i = 0; i < buflen; i += 16) {
+        // 1. Print the offset
+        debug_print("%06zx: ", i);
+
+        // 2. Print hexadecimal byte values
+        for (size_t j = 0; j < 16; j++) {
+            if (i + j < buflen) {
+                debug_print("%02x ", buf[i + j]);
+            } else {
+                debug_print("   ");
+            }
+        }
+
+        // 3. Print printable ASCII characters
+        debug_print(" |");
+        for (int j = 0; j < 16; j++) {
+            if (i + j < buflen) {
+                unsigned char c = buf[i + j];
+                debug_print("%c", isprint(c) ? c : '.');
+            }
+        }
+        debug_print("|\n");
+    }
+}
+
 void wasm_jit_init(void) {
     spidir_log_init(spidir_log_callback);
     spidir_log_set_max_level(SPIDIR_LOG_LEVEL_DEBUG);
@@ -55,7 +86,7 @@ static err_t jit_emit_spidir(jit_context_t* ctx) {
 
     // add all the exported functions into the functions
     // that we want to jit
-    for (int i = 0; i < hmlen(ctx->module->exports); i++) {
+    for (int i = 0; i < shlen(ctx->module->exports); i++) {
         wasm_export_t* export = &ctx->module->exports[i];
         if (export->kind == WASM_EXPORT_FUNC) {
             RETHROW(jit_prepare_function(ctx, export->index));
@@ -99,7 +130,7 @@ static inline uint8_t* jit_pad(uint8_t* ptr, size_t length) {
     return ptr;
 }
 
-static err_t jit_apply_reloc(uint8_t* code, size_t code_size, spidir_reloc_kind_t kind, size_t offset, size_t addened, void* target) {
+static err_t jit_apply_reloc(uint8_t* code, size_t code_size, spidir_reloc_kind_t kind, size_t offset, int64_t addened, void* target) {
     err_t err = NO_ERROR;
 
     void* F = code + offset;
@@ -176,7 +207,11 @@ static err_t jit_emit_code(jit_context_t* ctx, wasm_jit_t* jit) {
         if (!ctx->functions[i].inited) {
             continue;
         }
-        spidir_function_t func = ctx->functions[i].spidir;
+        spidir_funcref_t funcref = ctx->functions[i].spidir;
+        if (!spidir_funcref_is_internal(funcref)) {
+            continue;
+        }
+        spidir_function_t func = spidir_funcref_get_internal(funcref);
 
         // actually emit the function
         spidir_codegen_blob_handle_t blob;
@@ -232,6 +267,8 @@ static err_t jit_emit_code(jit_context_t* ctx, wasm_jit_t* jit) {
         };
         hmputs(code_map, entry);
     }
+
+    size_t trimmed_code_size = arrlen(code);
 
     // align everything to page size
     code = jit_align(code, PAGE_SIZE, true);
@@ -289,7 +326,7 @@ static err_t jit_emit_code(jit_context_t* ctx, wasm_jit_t* jit) {
 
             // actually apply the reloc
             RETHROW(jit_apply_reloc(
-                code + func_code_offset,
+                jit_code + func_code_offset,
                 spidir_codegen_blob_get_code_size(blob),
                 reloc->kind,
                 reloc->offset,
@@ -307,7 +344,9 @@ static err_t jit_emit_code(jit_context_t* ctx, wasm_jit_t* jit) {
         }
         uint32_t funcidx = ctx->module->exports[i].index;
         CHECK(ctx->functions[funcidx].inited);
-        int idx = hmgeti(code_map, ctx->functions[funcidx].spidir);
+        spidir_funcref_t funcref = ctx->functions[funcidx].spidir;
+        CHECK(spidir_funcref_is_internal(funcref));
+        int idx = hmgeti(code_map, spidir_funcref_get_internal(funcref));
         CHECK(idx >= 0);
 
         // add the exported function as an indirect target
@@ -321,6 +360,9 @@ static err_t jit_emit_code(jit_context_t* ctx, wasm_jit_t* jit) {
     // output the entire thing
     jit->code = area;
     jit->code_page_count = rx_page_count + ro_page_count;
+
+    TRACE("Jitted code:");
+    hexdump(area, trimmed_code_size);
 
 cleanup:
     // free the global stuff
@@ -374,7 +416,7 @@ err_t wasm_jit_module(wasm_module_t* module, wasm_jit_t* jit) {
     };
 
     // it should be cheap enough to allocate it linearly
-    arrsetlen(ctx.functions, arrlen(module->functions));
+    arrsetlen(ctx.functions, arrlen(module->functions) + arrlen(module->imports));
     memset(ctx.functions, 0, sizeof(*ctx.functions) * arrlen(ctx.functions));
 
     // setup the globals

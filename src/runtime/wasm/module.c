@@ -21,6 +21,11 @@ void wasm_module_free(wasm_module_t* module) {
         wasm_type_free(&module->types[i]);
     }
 
+    for (int i = 0; i < arrlen(module->imports); i++) {
+        arrfree(module->imports[i].item_name);
+        arrfree(module->imports[i].module_name);
+    }
+
     for (int i = 0; i < arrlen(module->code); i++) {
         mem_free(module->code[i].code);
     }
@@ -138,6 +143,69 @@ static err_t wasm_parse_type_section(wasm_module_t* module, buffer_t* buffer) {
 cleanup:
     return err;
 }
+static err_t wasm_parse_import_section(wasm_module_t* module, buffer_t* buffer) {
+    err_t err = NO_ERROR;
+    char* module_name = nullptr;
+    char* item_name = nullptr;
+
+    uint32_t count = BUFFER_PULL_U32(buffer);
+    arrsetcap(module->imports, count);
+
+    for (int i = 0; i < count; i++) {
+        // pull the module name
+        buffer_t module_name_buf = {};
+        RETHROW(buffer_pull_name(buffer, &module_name_buf));
+        CHECK(module_name_buf.len > 0);
+        arrsetlen(module_name, module_name_buf.len + 1);
+        memcpy(module_name, module_name_buf.data, module_name_buf.len);
+        module_name[module_name_buf.len] = '\0';
+
+        // pull the item name
+        buffer_t item_name_buf = {};
+        RETHROW(buffer_pull_name(buffer, &item_name_buf));
+        CHECK(item_name_buf.len > 0);
+        arrsetlen(item_name, item_name_buf.len + 1);
+        memcpy(item_name, item_name_buf.data, item_name_buf.len);
+        item_name[item_name_buf.len] = '\0';
+
+        // get the type and index
+        uint8_t byte = BUFFER_PULL(uint8_t, buffer);
+
+        // get the index
+        wasm_extern_type_t kind;
+        uint32_t index = BUFFER_PULL_U32(buffer);
+        switch (byte) {
+            case 0x00: {
+                CHECK(index < arrlen(module->types));
+                kind = WASM_EXTERN_FUNC;
+            } break;
+
+            default: {
+                CHECK_FAIL("Unknown export type %x (%s, %s)", byte, module_name, item_name);
+            } break;
+        }
+
+        // and now insert it into the hashmap
+        wasm_import_t import = {
+            .item_name = item_name,
+            .module_name = module_name,
+            .kind = kind,
+            .index = index,
+        };
+        arrpush(module->imports, import);
+
+        module_name = nullptr;
+        item_name = nullptr;
+    }
+
+    CHECK(buffer->len == 0);
+
+cleanup:
+    arrfree(module_name);
+    arrfree(item_name);
+
+    return err;
+}
 
 static err_t wasm_parse_function_section(wasm_module_t* module, buffer_t* buffer) {
     err_t err = NO_ERROR;
@@ -149,7 +217,7 @@ static err_t wasm_parse_function_section(wasm_module_t* module, buffer_t* buffer
         uint32_t typeidx = BUFFER_PULL_U32(buffer);
         CHECK(typeidx < arrlen(module->types));
         CHECK(module->types[typeidx].kind == WASM_TYPE_KIND_FUNC);
-        *arraddnptr(module->functions, 1) = typeidx;
+        arrpush(module->functions, typeidx);
     }
 
     CHECK(buffer->len == 0);
@@ -283,7 +351,7 @@ err_t wasm_parse_export_section(wasm_module_t* module, buffer_t* buffer) {
         uint8_t byte = BUFFER_PULL(uint8_t, buffer);
 
         // get the index
-        wasm_export_kind_t kind;
+        wasm_export_type_t kind;
         uint32_t index = BUFFER_PULL_U32(buffer);
         switch (byte) {
             case 0x00: CHECK(index < arrlen(module->functions)); kind = WASM_EXPORT_FUNC; break;
@@ -363,6 +431,7 @@ err_t wasm_load_module(wasm_module_t* module, void* data, size_t size) {
             } break;
 
             case WASM_SECTION_TYPE: RETHROW(wasm_parse_type_section(module, contents)); break;
+            case WASM_SECTION_IMPORT: RETHROW(wasm_parse_import_section(module, contents)); break;
             case WASM_SECTION_FUNCTION: RETHROW(wasm_parse_function_section(module, contents)); break;
             case WASM_SECTION_MEMORY: RETHROW(wasm_parse_memory_section(module, contents)); break;
             case WASM_SECTION_GLOBAL: RETHROW(wasm_parse_global_section(module, contents)); break;
