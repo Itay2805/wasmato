@@ -257,3 +257,13 @@ typedef struct unreachable_data {
 OMIT_ENDBR void __ubsan_handle_builtin_unreachable(unreachable_data_t* data) {
     LOG_UBSAN("execution reached a __builtin_unreachable() call");
 }
+
+typedef struct float_cast_overflow_data {
+    source_location_t loc;
+    const type_descriptor_t* from_type;
+    const type_descriptor_t* to_type;
+} float_cast_overflow_data_t;
+
+OMIT_ENDBR void __ubsan_handle_float_cast_overflow(float_cast_overflow_data_t* data, size_t val) {
+    LOG_UBSAN("value %ld is outside the range of representable values of type %s", val, data->to_type->type_name);
+}

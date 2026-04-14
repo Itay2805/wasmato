@@ -2,7 +2,6 @@
 
 #include "sync/spinlock.h"
 #include "lib/pcpu.h"
-#include "user/syscall.h"
 
 typedef struct tss64 {
     uint32_t reserved_1;

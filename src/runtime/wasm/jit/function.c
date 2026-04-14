@@ -2,7 +2,7 @@
 
 #include "inst.h"
 #include "opcodes.h"
-#include "lib/printf.h"
+#include "../../lib/stb_sprintf.h"
 #include "lib/stb_ds.h"
 #include "wasm/buffer.h"
 
@@ -52,7 +52,7 @@ err_t jit_prepare_function(jit_context_t* ctx, uint32_t funcidx) {
     }
 
     char name[64];
-    snprintf_(name, sizeof(name), "func%d", funcidx);
+    stbsp_snprintf(name, sizeof(name), "func%d", funcidx);
 
     if (funcidx < arrlen(ctx->module->imports)) {
         // for imports we create an extern reference

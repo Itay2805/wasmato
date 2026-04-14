@@ -2,16 +2,27 @@
 
 #include <stdarg.h>
 
-#include "lib/printf.h"
-#include "uapi/syscall.h"
+#include "lib/stb_sprintf.h"
+#include "lib/syscall.h"
+
+static char* debug_print_cb(const char* buf, void* user, int len) {
+    sys_debug_print(buf, len);
+    return user;
+}
+
+static size_t strlen(const char* s) {
+    const char *a = s;
+    for (; *s; s++) {}
+    return s - a;
+}
+
 
 void debug_print(const char* fmt, ...) {
-    char buffer[512];
-    va_list ap;
+    char buffer[STB_SPRINTF_MIN];
+    va_list ap = {};
     va_start(ap, fmt);
-    int len = vsnprintf_(buffer, sizeof(buffer), fmt, ap);
+    stbsp_vsprintfcb(debug_print_cb, buffer, buffer, fmt, ap);
     va_end(ap);
-    syscall2(SYSCALL_DEBUG_PRINT, buffer, len);
 }
 
 void rust_platform_panic(const char* message, size_t message_len) {

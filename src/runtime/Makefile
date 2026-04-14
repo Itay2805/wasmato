@@ -2,8 +2,6 @@
 # can do whatever it wants
 bins-y += runtime
 
-cflags-runtime-y += $(RUNTIME_CFLAGS)
-
 ldflags-runtime-y += -flto
 ldflags-runtime-y += -nostdlib
 ldflags-runtime-y += -static
@@ -23,7 +21,7 @@ cflags-runtime-y += -mfsgsbase
 cflags-runtime-y += -fcf-protection=full -fno-jump-tables
 
 cflags-runtime-y += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
-cflags-runtime-y += -mcmodel=small -mno-red-zone
+cflags-runtime-y += -mcmodel=small
 cflags-runtime-y += -nostdlib -nostdinc
 cflags-runtime-y += -isystem $(shell $(CC) --print-resource-dir)/include
 cflags-runtime-y += -Isrc/runtime

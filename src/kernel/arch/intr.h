@@ -2,7 +2,6 @@
 
 #include "arch/regs.h"
 #include "lib/defs.h"
-#include "uapi/syscall.h"
 
 #define EXCEPT_IA32_DIVIDE_ERROR        0
 #define EXCEPT_IA32_DEBUG               1

@@ -3,7 +3,7 @@
 #include "lib/except.h"
 #include "lib/log.h"
 #include "lib/stb_ds.h"
-#include "uapi/syscall.h"
+#include "lib/syscall.h"
 #include "wasm/module.h"
 #include "wasm/jit/jit.h"
 

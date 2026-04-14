@@ -23,6 +23,11 @@
 void init_early_logging(void);
 
 /**
+ * Print a raw string to the debug log
+ */
+void debug_print_raw(const char* buf, size_t size);
+
+/**
  * Print a string to the debug log
  */
 void debug_print(const char* fmt, ...) __attribute__((format(printf, (1), (2))));

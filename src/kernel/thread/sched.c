@@ -10,7 +10,6 @@
 #include "arch/intrin.h"
 #include "lib/atomic.h"
 #include "lib/except.h"
-#include "uapi/syscall.h"
 #include "user/syscall.h"
 
 typedef enum last_thread_action {

@@ -16,17 +16,24 @@ INIT_CODE void init_early_logging() {
     m_e9_enabled = __inbyte(0xE9) == 0xE9;
 }
 
-void putchar_(char c) {
-    __outbyte(0xE9, c);
+void debug_print_raw(const char* buf, size_t size) {
+    for (int i = 0; i < size; i++) {
+        __outbyte(0xE9, buf[i]);
+    }
+}
+
+int debug_print_cb(void* user, const char* buf, size_t size) {
+    debug_print_raw(buf, size);
+    return 0;
 }
 
 void debug_print(const char* fmt, ...) {
-    va_list args;
+    va_list args = {};
     va_start(args, fmt);
 
     bool state = irq_save();
     spinlock_acquire(&m_debug_lock);
-    vprintf_(fmt, args);
+    vcprintf(debug_print_cb, nullptr, SIZE_MAX, fmt, args);
     spinlock_release(&m_debug_lock);
     irq_restore(state);
 

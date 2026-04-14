@@ -21,64 +21,64 @@ exception_common_thunk:
 
     // push all gprs
     pushq %rdi
-    .cfi_rel_offset rdi, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rdi, 0
 
     pushq %rsi
-    .cfi_rel_offset rsi, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rsi, 0
 
     pushq %rdx
-    .cfi_rel_offset rdx, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rdx, 0
 
     pushq %rcx
-    .cfi_rel_offset rcx, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rcx, 0
 
     pushq %rax
-    .cfi_rel_offset rax, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rax, 0
 
     pushq %r8
-    .cfi_rel_offset r8, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r8, 0
 
     pushq %r9
-    .cfi_rel_offset r9, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r9, 0
 
     pushq %r10
-    .cfi_rel_offset r10, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r10, 0
 
     pushq %r11
-    .cfi_rel_offset r11, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r11, 0
 
     pushq %rbx
-    .cfi_rel_offset rbx, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rbx, 0
 
     pushq %rbp
-    .cfi_rel_offset rbp, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset rbp, 0
 
     pushq %r12
-    .cfi_rel_offset r12, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r12, 0
 
     pushq %r13
-    .cfi_rel_offset r13, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r13, 0
 
     pushq %r14
-    .cfi_rel_offset r14, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r14, 0
 
     pushq %r15
-    .cfi_rel_offset r15, 0
     .cfi_adjust_cfa_offset 8
+    .cfi_rel_offset r15, 0
 
     movq %rsp, %rdi
     call exception_common_handler
@@ -144,6 +144,7 @@ exception_common_thunk:
     .cfi_adjust_cfa_offset -8
 
     addq $16, %rsp
+    .cfi_adjust_cfa_offset -16
 
     iretq
 .cfi_endproc

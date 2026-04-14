@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "uapi/syscall.h"
 #include "lib/defs.h"
 
 typedef enum wait_key_size {

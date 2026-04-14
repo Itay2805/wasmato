@@ -10,7 +10,6 @@
 #include "sync/spinlock.h"
 #include "lib/pcpu.h"
 #include "time/timer.h"
-#include "uapi/syscall.h"
 
 
 #define IDT_TYPE_TASK           0x5

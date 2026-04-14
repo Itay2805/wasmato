@@ -31,6 +31,7 @@ void wasm_module_free(wasm_module_t* module) {
     }
 
     arrfree(module->types);
+    arrfree(module->imports);
     arrfree(module->functions);
     arrfree(module->globals);
     shfree(module->exports);

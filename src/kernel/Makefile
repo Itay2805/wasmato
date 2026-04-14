@@ -32,9 +32,6 @@ ldflags-kernel-y += -static
 lddeps-kernel-y += src/kernel/linker.ld
 ldflags-kernel-y += -Tsrc/kernel/linker.ld
 
-# don't include floating point support in the printf for the kernel
-cflags-kernel-y += -DSTB_SPRINTF_NOFLOAT
-
 #
 cflags-kernel-$(OPTIMIZE) += -O3
 ldflags-kernel-$(OPTIMIZE) += -O3

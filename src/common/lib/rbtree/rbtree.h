@@ -30,7 +30,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifndef __always_inline
 #define __always_inline __attribute__((always_inline)) inline
+#endif
 
 #define rb_parent(r)   ((struct rb_node *)((r)->__rb_parent_color & ~3))
 

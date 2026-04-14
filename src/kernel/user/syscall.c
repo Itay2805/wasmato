@@ -146,18 +146,18 @@ static err_t handle_jit_alloc(size_t rx_page_count, size_t ro_page_count, void**
     // want it close together
     vmar_t* jit_vmar = vmar_reserve(&g_user_code_region, total_pages, nullptr);
     CHECK_ERROR(jit_vmar != nullptr, ERROR_OUT_OF_MEMORY);
-    snprintf_(jit_vmar->name, sizeof(jit_vmar->name), "jit");
+    snprintf(jit_vmar->name, sizeof(jit_vmar->name), "jit");
 
     // setup rx pages if any
     vmar_t* rx_vmar = vmar_allocate(jit_vmar, rx_page_count, jit_vmar->base);
     CHECK_ERROR(rx_vmar != nullptr, ERROR_OUT_OF_MEMORY);
-    snprintf_(rx_vmar->name, sizeof(rx_vmar->name), "code");
+    snprintf(rx_vmar->name, sizeof(rx_vmar->name), "code");
 
     // setup ro pages if any
     if (ro_page_count != 0) {
         vmar_t* ro_vmar = vmar_allocate(jit_vmar, ro_page_count, vmar_end(rx_vmar) + 1);
         CHECK_ERROR(ro_vmar != nullptr, ERROR_OUT_OF_MEMORY);
-        snprintf_(ro_vmar->name, sizeof(ro_vmar->name), "constpool");
+        snprintf(ro_vmar->name, sizeof(ro_vmar->name), "constpool");
     }
 
     // don't allow to modify the top level vmar
@@ -214,11 +214,10 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
 
     switch (frame->syscall) {
         case SYSCALL_DEBUG_PRINT: {
-            char buffer[512];
-            size_t len = MIN(frame->arg2, sizeof(buffer) - 1);
-            copy_from_user(buffer, frame->arg1, len);
-            buffer[len] = '\0';
-            debug_print("%.*s", (int)len, buffer);
+            assert_user_range(frame->arg1, frame->arg2);
+            user_access_enable();
+            debug_print_raw((const char*)frame->arg1, frame->arg2);
+            user_access_disable();
         } break;
 
         case SYSCALL_HEAP_ALLOC: {
@@ -234,6 +233,17 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             } else {
                 frame->result = (uintptr_t)region->base;
             }
+        } break;
+
+        case SYSCALL_HEAP_FREE: {
+            vmar_lock();
+            vmar_t* mapping = vmar_find_mapping(&g_user_memory, (void*)frame->arg1);
+            CHECK(mapping != nullptr);
+            CHECK(mapping->parent == &g_user_memory);
+            CHECK(mapping->type == VMAR_TYPE_ALLOC);
+            CHECK(mapping->alloc.protection == MAPPING_PROTECTION_RW);
+            vmar_free(mapping);
+            vmar_unlock();
         } break;
 
         case SYSCALL_JIT_ALLOC: {

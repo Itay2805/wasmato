@@ -15,8 +15,6 @@
 #include "lib/tsc.h"
 #include "mem/alloc.h"
 #include "mem/stack.h"
-#include "uapi/syscall.h"
-#include "user/user.h"
 
 /**
  * The saved state when switching between threads
@@ -75,7 +73,7 @@ thread_t* thread_create(thread_entry_t entry_point, void* arg, thread_flags_t fl
     // just used for debug
     va_list args = {};
     va_start(args, name_fmt);
-    int count = vsnprintf_(thread->name, sizeof(thread->name), name_fmt, args);
+    int count = vsnprintf(thread->name, sizeof(thread->name), name_fmt, args);
     va_end(args);
     thread->name[count] = '\0';
 

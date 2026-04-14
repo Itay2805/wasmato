@@ -52,11 +52,13 @@ OMIT_ENDBR void* memmove(void* dest, const void* src, size_t n) {
     void* d = dest;
 
     if (src < dest && dest < src + n) {
+        const void* src_end = (const char*)src + (n - 1);
+        void* dest_end = (char*)dest + (n - 1);
         asm volatile (
             "std\n"
             "rep movsb\n"
             "cld\n"
-            : "+D"(dest), "+S"(src), "+c"(n)
+            : "+D"(dest_end), "+S"(src_end), "+c"(n)
             :
             : "memory"
         );

@@ -288,7 +288,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
     CHECK((code & allowed_mask) == code);
 
     // get the region it happened in
-    vmar_t* mapping = NULL;
+    vmar_t* mapping = nullptr;
     bool kernel = false;
     if (g_kernel_memory.base <= (void*)addr) {
         mapping = &g_kernel_memory;

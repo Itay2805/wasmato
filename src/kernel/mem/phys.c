@@ -190,7 +190,7 @@ void phys_free(void* ptr, size_t size) {
     int level = get_level_by_size(size);
     ASSERT(level >= 0);
 
-    phys_free_internal(ptr, level, true);
+    // phys_free_internal(ptr, level, true);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

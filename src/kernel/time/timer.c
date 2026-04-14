@@ -6,7 +6,6 @@
 #include "arch/intrin.h"
 #include "lib/pcpu.h"
 #include "sync/spinlock.h"
-#include "uapi/syscall.h"
 
 typedef struct timers_queue {
     /**

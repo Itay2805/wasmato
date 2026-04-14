@@ -5,7 +5,7 @@
 #include "lib/assert.h"
 #include "sync/mutex.h"
 #include "uapi/page.h"
-#include "uapi/syscall.h"
+#include "lib/syscall.h"
 
 static struct {
     atomic_uint_fast64_t binmap;
@@ -366,10 +366,10 @@ static void unmap_chunk(struct chunk *self) {
 void mem_free(void *p) {
     if (!p) return;
 
-    struct chunk *self = MEM_TO_CHUNK(p);
-
-    if (IS_MMAPPED(self))
-        unmap_chunk(self);
-    else
-        __bin_chunk(self);
+    // struct chunk *self = MEM_TO_CHUNK(p);
+    //
+    // if (IS_MMAPPED(self))
+    //     unmap_chunk(self);
+    // else
+    //     __bin_chunk(self);
 }

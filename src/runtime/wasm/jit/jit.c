@@ -3,7 +3,6 @@
 #include "function.h"
 #include "jit_internal.h"
 
-#include "lib/printf.h"
 #include "lib/stb_ds.h"
 #include "lib/unaligned.h"
 #include "spidir/log.h"
@@ -11,7 +10,7 @@
 #include "spidir/x64.h"
 #include "spidir/opt.h"
 #include "uapi/page.h"
-#include "uapi/syscall.h"
+#include "lib/syscall.h"
 
 static spidir_codegen_machine_handle_t g_spidir_machine = nullptr;
 
@@ -319,7 +318,8 @@ static err_t jit_emit_code(jit_context_t* ctx, wasm_jit_t* jit) {
                 // in a different place
                 CHECK(reloc->target_kind == SPIDIR_RELOC_X64_PC32);
             } else if (reloc->target_kind == SPIDIR_RELOC_TARGET_EXTERNAL_FUNCTION) {
-                CHECK_FAIL();
+                // TODO: resolve the import...
+                target = nullptr;
             } else {
                 CHECK_FAIL();
             }

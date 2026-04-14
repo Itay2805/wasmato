@@ -119,7 +119,7 @@ typedef struct vmar {
 static inline void vmar_set_name_format(vmar_t* vmar, const char* fmt, ...) {
     va_list ap = {};
     va_start(ap, fmt);
-    vsnprintf_(vmar->name, sizeof(vmar->name), fmt, ap);
+    vsnprintf(vmar->name, sizeof(vmar->name), fmt, ap);
     va_end(ap);
 }
 

@@ -2,7 +2,7 @@
 
 #include "arch/intrin.h"
 #include "lib/atomic.h"
-#include "uapi/syscall.h"
+#include "lib/syscall.h"
 
 #define SPIN_LIMIT 40
 

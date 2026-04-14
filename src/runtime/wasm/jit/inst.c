@@ -705,7 +705,7 @@ static err_t jit_wasm_binopi(spidir_builder_handle_t builder, buffer_t* code, ji
     err_t err = NO_ERROR;
 
     uint8_t opcode = ((uint8_t*)code->data)[-1];
-    TRACE("wasm: \t%s", g_wasm_opcode_names[opcode]);
+    TRACE("wasm: \t%p", g_wasm_opcode_names[opcode]);
 
     // figure the exact type
     spidir_value_type_t type;
