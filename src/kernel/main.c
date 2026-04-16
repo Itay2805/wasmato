@@ -76,19 +76,6 @@ INIT_CODE static void set_extended_state_features(void) {
     first = false;
 }
 
-INIT_CODE static void string_verify_features(void) {
-    uint32_t eax, ebx, ecx, edx;
-
-    __cpuid_count(7, 0, eax, ebx, ecx, edx);
-    if ((ebx & bit_ENH_MOVSB) == 0) WARN("string: Missing enhanced REP MOVSB/STOSB");
-    if ((edx & BIT4) == 0) WARN("string: Missing fast short REP MOVSB");
-
-    __cpuid_count(7, 1, eax, ebx, ecx, edx);
-    // if ((eax & BIT10) == 0) LOG_WARN("string: Missing zero-length REP MOVSB");
-    if ((eax & BIT11) == 0) WARN("string: Missing fast short REP STOSB");
-    // if ((eax & BIT12) == 0) LOG_WARN("string: Missing fast short REP CMPSB/CSASB");
-}
-
 INIT_CODE static void validate_cpu_features(void) {
     INIT_DATA static bool first = true;
 
@@ -249,23 +236,6 @@ INIT_CODE static void configure_cet(void) {
     __writecr4(cr4);
 }
 
-INIT_CODE static void set_cpu_id(void) {
-    uint32_t a, b, d;
-
-    CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
-    __get_cpuid_count(
-        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
-        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_SUB_LEAF_INFO,
-        &a, &b,
-        &structured_extended_feature_flags_ecx.raw,
-        &d
-    );
-    ASSERT(structured_extended_feature_flags_ecx.RDPID, "Missing RDPID support");
-
-    // set the cpuid in the TSC aux for usermode to use
-    __wrmsr(MSR_IA32_TSC_AUX, get_cpu_id());
-}
-
 INIT_CODE static void set_cpu_features(void) {
     // ensure all required cpu features exist
     validate_cpu_features();
@@ -319,7 +289,6 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     set_cpu_features();
     switch_page_table();
     pcpu_init_per_core(info->extra_argument);
-    set_cpu_id();
     init_tss();
     init_idt();
 
@@ -375,9 +344,7 @@ OMIT_ENDBR INIT_CODE void _start() {
     //
     // Setup the cpu features
     //
-    string_verify_features();
     set_cpu_features();
-    set_cpu_id();
 
     // This must run before memory init because it accesses acpi tables
     // which we don't map ourselves into the direct map (as they are not
