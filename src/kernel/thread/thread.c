@@ -159,6 +159,11 @@ static void save_thread_context(thread_t* thread) {
         thread->user_ssp = (void*)__rdmsr(MSR_IA32_PL3_SSP);
     }
 
+    // save the fs/gs base since they may not match if
+    // the user did fs/gs base write
+    thread->fs_base = _readfsbase_u64();
+    thread->gs_base = __rdmsr(MSR_IA32_KERNEL_GS_BASE);
+
     // Save modified extended state
     _xsaveopt64(thread->extended_state, ~0U);
 }
@@ -168,6 +173,10 @@ static void restore_thread_context(thread_t* thread) {
     if (g_shadow_stack_supported) {
         __wrmsr(MSR_IA32_PL3_SSP, (uintptr_t)thread->user_ssp);
     }
+
+    // restore fs/gs base
+    _writefsbase_u64(thread->fs_base);
+    __wrmsr(MSR_IA32_KERNEL_GS_BASE, (uintptr_t)thread->gs_base);
 
     // set the stack for the next thread
     tss_set_rsp0(thread->kernel_stack);

@@ -112,6 +112,9 @@ typedef struct thread {
 
     void* user_stack;
 
+    uint64_t fs_base;
+    uint64_t gs_base;
+
     //
     // Scheduler context
     //

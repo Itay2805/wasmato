@@ -219,14 +219,17 @@ INIT_CODE static void configure_cet(void) {
     if (structured_extended_feature_flags_ecx.CET_SS) {
         if (first) {
             TRACE("cpu: enabling Shadow Stacks");
+            g_shadow_stack_supported = true;
+        } else {
+            ASSERT(g_shadow_stack_supported);
         }
-
-        // mark that shadow stacks are supported
-        g_shadow_stack_supported = true;
 
         // enable usermode shadow stack
         // TODO: how to enable kernel mode shadow stacks correctly?
         u_cet.SH_STK_EN = 1;
+
+    } else if (!first) {
+        ASSERT(!g_shadow_stack_supported);
     }
 
     first = false;
