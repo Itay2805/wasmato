@@ -4,6 +4,7 @@
 #include "../../runtime/lib/string.h"
 #include "mem/mappings.h"
 #include "phys.h"
+#include "virt.h"
 
 typedef struct free_node {
     struct free_node* next;
@@ -50,6 +51,10 @@ static slab_t* slab_create(mem_alloc_t* alloc) {
     if (slab == nullptr) {
         return nullptr;
     }
+
+    // we mark the page as global because its not going
+    // to be unmapped for a long time most likely
+    virt_make_global(slab);
 
     // setup the metadata
     slab->alloc = alloc;

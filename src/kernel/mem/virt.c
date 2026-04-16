@@ -75,12 +75,36 @@ static void* m_tlb_flush_addresses[64];
  */
 static uint8_t m_tlb_flush_count = 0;
 
+/**
+ * Should we also flush global pages
+ */
+static bool m_tlb_flush_global = false;
+
+typedef struct invpcid_desc {
+    uint64_t pcid : 12;
+    uint64_t : 52;
+    uint64_t addr;
+} PACKED invpcid_desc_t;
+
 void virt_handle_tlb_flush_ipi(void) {
     ASSERT(m_tlb_flush_count != 0);
 
     if (m_tlb_flush_count == 0xFF) {
+        invpcid_desc_t desc = {};
+
         // flush everything by moving the cr3
-        __writecr3(__readcr3());
+        // we use invpcid for those even tho we don't use pcid
+        // mostly because it removes the need
+        if (m_tlb_flush_global) {
+            // flush all contexts with global pages
+            // in theory we would use single context with
+            // global pages if that existed but no such a
+            // thing exists
+            _invpcid(3, &desc);
+        } else {
+            // flush single context without global pages
+            _invpcid(1, &desc);
+        }
 
     } else if (m_tlb_flush_count <= ARRAY_LENGTH(m_tlb_flush_addresses)) {
         // flush the wanted addresses
@@ -93,9 +117,13 @@ void virt_handle_tlb_flush_ipi(void) {
     }
 }
 
-static void tlb_invl_queue(void* addr) {
+static void tlb_invl_queue(void* addr, bool is_global) {
     // might as well flush it normally on our core
     __invlpg(addr);
+
+    if (is_global) {
+        m_tlb_flush_global = true;
+    }
 
     // if no more space just flush everything
     if (m_tlb_flush_count >= ARRAY_LENGTH(m_tlb_flush_addresses)) {
@@ -114,7 +142,10 @@ static void tlb_invl_queue(void* addr) {
 static void tlb_invl_commit(void) {
     if (m_tlb_flush_count != 0) {
         ipi_broadcast(IPI_REASON_TLB_FLUSH);
+
+        // reset the context
         m_tlb_flush_count = 0;
+        m_tlb_flush_global = false;
     }
 }
 
@@ -132,6 +163,8 @@ static uint64_t* virt_get_next_level(uint64_t* entry, bool allocate, bool kernel
             return nullptr;
         }
         memset(phys, 0, PAGE_SIZE);
+
+        // TODO: mark as page table
 
         *entry = direct_to_phys(phys) | IA32_PG_P | IA32_PG_RW | (kernel ? 0 : IA32_PG_U);
     }
@@ -163,6 +196,66 @@ static uint64_t* virt_get_pte(void* virt, bool allocate, bool kernel) {
     return &pml1[index1];
 }
 
+err_t virt_make_global(void* virt) {
+    err_t err = NO_ERROR;
+
+    uint64_t* pte = virt_get_pte(virt, false, true);
+    CHECK(pte != nullptr);
+    CHECK((*pte & IA32_PG_G) == 0);
+    *pte |= IA32_PG_G;
+
+cleanup:
+    return err;
+}
+
+err_t virt_remove_global(void* virt) {
+    err_t err = NO_ERROR;
+
+    uint64_t* pte = virt_get_pte(virt, false, true);
+    CHECK(pte != nullptr);
+    CHECK(*pte & IA32_PG_G);
+    *pte &= ~IA32_PG_G;
+
+    // ensure its invalidated
+    tlb_invl_queue(virt, true);
+    tlb_invl_commit();
+
+cleanup:
+    return err;
+}
+
+static err_t virt_map_direct(void* virt) {
+    err_t err = NO_ERROR;
+
+    uint64_t* pte = virt_get_pte(virt, true, true);
+    CHECK_ERROR(pte != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK(*pte == 0);
+
+    // map as direct, by default we don't map as global because these pages will get mapped
+    // and unmapped and practically we don't access them that much (just when allocating)
+    *pte = direct_to_phys(virt) | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX;
+
+cleanup:
+    return err;
+}
+
+static err_t virt_unmap_direct(void* virt) {
+    err_t err = NO_ERROR;
+
+    uint64_t* pte = virt_get_pte(virt, false, false);
+    CHECK(pte != nullptr);
+    CHECK((*pte & IA32_PG_G) == 0);
+
+    CHECK(*pte != 0);
+    tlb_invl_queue(virt, false);
+    *pte = 0;
+
+    tlb_invl_commit();
+
+cleanup:
+    return err;
+}
+
 static bool pte_is_present(uint64_t* pte) {
     bool present = *pte & IA32_PG_P;
     if (!present) {
@@ -185,7 +278,7 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
         if (protection == MAPPING_PROTECTION_RW) new_pte |= IA32_PG_RW | IA32_PG_D;
         *pte = new_pte;
 
-        tlb_invl_queue(virt);
+        tlb_invl_queue(virt, *pte & IA32_PG_G);
     }
 
     tlb_invl_commit();
@@ -202,7 +295,7 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
             continue;
         }
         *pte &= ~IA32_PG_P;
-        tlb_invl_queue(cur);
+        tlb_invl_queue(cur, *pte & IA32_PG_G);
     }
 
     // actually commit to all the cores that we are now unmapped
@@ -219,7 +312,9 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
 
         // free the page if we should
         if (free) {
-            phys_free(phys_to_direct(*pte & PAGING_4K_ADDRESS_MASK), PAGE_SIZE);
+            void* ptr = phys_to_direct(*pte & PAGING_4K_ADDRESS_MASK);
+            ASSERT(!IS_ERROR(virt_map_direct(ptr)));
+            phys_free(ptr, PAGE_SIZE);
         }
 
         // clear the entire pte
@@ -232,9 +327,13 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 INIT_CODE void protect_ro_data(void) {
+    vmar_lock();
+
     TRACE("virt: reprotecting late rodata");
     g_kernel_late_rodata_region.alloc.protection = MAPPING_PROTECTION_RO;
     virt_protect(g_kernel_late_rodata_region.base, g_kernel_late_rodata_region.page_count, MAPPING_PROTECTION_RO);
+
+    vmar_unlock();
 }
 
 void reclaim_init_mem(void) {
@@ -261,11 +360,13 @@ void reclaim_init_mem(void) {
             ASSERT(pte != nullptr);
 
             uint64_t phys = *pte & PAGING_4K_ADDRESS_MASK;
+            tlb_invl_queue(virt, *pte & IA32_PG_G);
             *pte = 0;
-            tlb_invl_queue(virt);
 
             // Return physical page to buddy allocator
-            phys_free(phys_to_direct(phys), PAGE_SIZE);
+            void* ptr = phys_to_direct(phys);
+            virt_map_direct(ptr);
+            phys_free(ptr, PAGE_SIZE);
         }
     }
 
@@ -364,6 +465,7 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
         void* page = phys_alloc(PAGE_SIZE);
         CHECK(page != NULL);
         memset(page, 0, PAGE_SIZE);
+        RETHROW(virt_unmap_direct(page));
         phys = direct_to_phys(page);
 
         // TODO: ensure order of stack faults

@@ -28,25 +28,3 @@ void ipi_broadcast(ipi_reason_t ipi);
  * handle IPI interrupt
  */
 void ipi_handle(void);
-
-/**
- * Allow getting IPIs from kernel mode
- *
- * We essentially move the TPL to be higher than any usermode interrupt
- * and enable interrupts, so only IPIs can fire
- */
-static inline void ipi_enable(void) {
-    __writecr8((INTR_VECTOR_IPI >> 4) - 1);
-    irq_enable();
-}
-
-/**
- * Disable getting IPIs in kernel mode (does
- * not affect usermode)
- *
- * We just disable interrupts and restore the TPL
- */
-static inline void ipi_disable(void) {
-    irq_disable();
-    __writecr8(0);
-}

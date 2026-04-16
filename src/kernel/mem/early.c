@@ -67,18 +67,6 @@ INIT_CODE static void* early_alloc_page(void) {
 // Early mapping utilities
 //----------------------------------------------------------------------------------------------------------------------
 
-/**
- * The bits to set to all kernel entries (except the kernel itself)
- * basically does RW and global
- */
-#define KERNEL_PTE_BITS (IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_PS | IA32_PG_G)
-
-typedef enum map_size {
-    MAP_SIZE_4KB,
-    MAP_SIZE_2MB,
-    MAP_SIZE_1GB,
-} map_size_t;
-
 INIT_CODE static uint64_t* early_virt_get_next_level(uint64_t* entry) {
     if ((*entry & IA32_PG_P) == 0) {
         void* phys = early_alloc_page();
@@ -93,7 +81,7 @@ INIT_CODE static uint64_t* early_virt_get_next_level(uint64_t* entry) {
     return phys_to_direct(*entry & PAGING_4K_ADDRESS_MASK);
 }
 
-INIT_CODE static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, map_size_t size) {
+INIT_CODE static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt) {
     size_t index4 = ((uintptr_t)virt >> 39) & PAGING_INDEX_MASK;
     size_t index3 = ((uintptr_t)virt >> 30) & PAGING_INDEX_MASK;
     size_t index2 = ((uintptr_t)virt >> 21) & PAGING_INDEX_MASK;
@@ -105,14 +93,12 @@ INIT_CODE static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt, map_si
     }
 
     uint64_t* pml3e = &pml3[index3];
-    if (size == MAP_SIZE_1GB) return pml3e;
     uint64_t* pml2 = early_virt_get_next_level(pml3e);
     if (pml2 == nullptr) {
         return nullptr;
     }
 
     uint64_t* pml2e = &pml2[index2];
-    if (size == MAP_SIZE_2MB) return pml2e;
     uint64_t* pml1 = early_virt_get_next_level(pml2e);
     if (pml1 == nullptr) {
         return nullptr;
@@ -148,35 +134,18 @@ INIT_CODE static err_t early_virt_map(
 ) {
     err_t err = NO_ERROR;
 
-    while (num_pages != 0) {
-        // find the best page size we can use to map this
-        map_size_t size = MAP_SIZE_4KB;
-        size_t page_count = 1;
-        CHECK(((uintptr_t)virt % SIZE_4KB) == 0);
-        if (has_1gb_pages() && early_virt_can_map_for_size(virt, phys, num_pages, SIZE_1GB)) {
-            size = MAP_SIZE_1GB;
-            page_count = SIZE_TO_PAGES(SIZE_1GB);
-        } else if (early_virt_can_map_for_size(virt, phys, num_pages, SIZE_2MB)) {
-            size = MAP_SIZE_2MB;
-            page_count = SIZE_TO_PAGES(SIZE_2MB);
-        }
-
-        uint64_t* pte = early_virt_get_pte(pml4, virt, size);
+    for (; num_pages != 0; num_pages--, virt += PAGE_SIZE, phys += PAGE_SIZE) {
+        uint64_t* pte = early_virt_get_pte(pml4, virt);
         CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
         // set the entry as requested
-        uint64_t entry = phys | IA32_PG_P | IA32_PG_A | IA32_PG_G;
-        if (size != MAP_SIZE_4KB) entry |= IA32_PG_PS;
+        uint64_t entry = phys | IA32_PG_P | IA32_PG_A;
         if (protection != MAPPING_PROTECTION_RX) entry |= IA32_PG_NX;
         if (protection == MAPPING_PROTECTION_RW) entry |= IA32_PG_RW | IA32_PG_D;
 
         // and set it
         CHECK(*pte == 0);
         *pte = entry;
-
-        num_pages -= page_count;
-        virt += PAGES_TO_SIZE(page_count);
-        phys += PAGES_TO_SIZE(page_count);
     }
 
 cleanup:
@@ -355,7 +324,7 @@ INIT_CODE static err_t early_map_buddy_bitmap(uint64_t* pml4) {
         void* bitmap_ptr = g_buddy_bitmap_region.base + bitmap_start;
         void* bitmap_end = g_buddy_bitmap_region.base + bitmap_start + bitmap_size;
         for (; bitmap_ptr < bitmap_end; bitmap_ptr += PAGE_SIZE) {
-            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr, SIZE_4KB);
+            uint64_t* pte = early_virt_get_pte(pml4, bitmap_ptr);
             CHECK_ERROR(pte != NULL, ERROR_OUT_OF_MEMORY);
 
             // if not allocated already allocate it now
@@ -367,7 +336,7 @@ INIT_CODE static err_t early_map_buddy_bitmap(uint64_t* pml4) {
                 // map the bitmap in the pte
                 // we are going to mark this as locked as
                 // part of the direct map
-                *pte = direct_to_phys(page) | KERNEL_PTE_BITS;
+                *pte = direct_to_phys(page) | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX | IA32_PG_G;
             }
         }
     }

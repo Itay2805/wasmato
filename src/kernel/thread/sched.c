@@ -393,6 +393,10 @@ INIT_CODE void init_sched_per_core(void) {
 }
 
 INIT_CODE void sched_start_per_core(void) {
+    // ensure irqs are disabled before we
+    // start the scheduler
+    irq_disable();
+
     // start by running the idle threads, just to get into a stable
     // stack, from there we will do the rest
     thread_t* thread = get_scheduler()->idle;

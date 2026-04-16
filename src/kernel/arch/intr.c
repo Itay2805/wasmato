@@ -216,7 +216,7 @@ static void exception_dump_frame(exception_frame_t* frame) {
  * The default exception handler, simply panics...
  */
 noreturn static void panic_exception_handler(exception_frame_t* frame) {
-    ipi_enable();
+    irq_enable();
     spinlock_acquire(&m_exception_lock);
     lapic_send_ipi_all_excluding_self(INTR_VECTOR_PANIC);
     spinlock_release(&m_exception_lock);
@@ -241,9 +241,9 @@ static void swapgs(exception_frame_t* frame) {
 }
 
 static bool page_fault_handler(exception_frame_t* frame) {
-    ipi_enable();
+    irq_enable();
     bool success = !IS_ERROR(virt_handle_page_fault(__readcr2(), frame->error_code));
-    ipi_disable();
+    irq_disable();
     return success;
 }
 

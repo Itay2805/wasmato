@@ -1,6 +1,7 @@
 
 #include <cpuid.h>
 
+#include "lib/assert.h"
 #include "limine_requests.h"
 #include "user/runtime.h"
 #include "acpi/acpi.h"
@@ -9,6 +10,7 @@
 #include "arch/gdt.h"
 #include "arch/intr.h"
 #include "arch/smp.h"
+#include "lib/ipi.h"
 #include "mem/early.h"
 #include "mem/phys.h"
 #include "mem/phys_map.h"
@@ -82,8 +84,10 @@ INIT_CODE static void validate_cpu_features(void) {
     uint32_t a, b, c, d;
 
     CPUID_VERSION_INFO_ECX version_info_ecx = {};
-    ASSERT(__get_cpuid(CPUID_VERSION_INFO, &a, &b, &version_info_ecx.raw, &d));
+    CPUID_VERSION_INFO_EDX version_info_edx = {};
+    ASSERT(__get_cpuid(CPUID_VERSION_INFO, &a, &b, &version_info_ecx.raw, &version_info_edx.raw));
     ASSERT(version_info_ecx.XSAVE, "Missing XSAVE support");
+    ASSERT(version_info_edx.PGE, "Missing PGE support");
 
     // if monitor is supported check that it also has interrupt as break event
     bool has_monitor = false;
@@ -120,6 +124,7 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(structured_extended_feature_flags_ebx.SMAP, "Missing SMAP support");
     ASSERT(structured_extended_feature_flags_ebx.SMEP, "Missing SMEP support");
     ASSERT(structured_extended_feature_flags_ebx.FSGSBASE, "Missing FSGSBASE support");
+    ASSERT(structured_extended_feature_flags_ebx.INVPCID, "Missing INVPCID support");
     ASSERT(structured_extended_feature_flags_ecx.UMIP, "Missing UMIP support");
 
     // if we don't have monitor support ensure
@@ -246,12 +251,19 @@ INIT_CODE static void set_cpu_features(void) {
     __writecr0(CR0_PG | CR0_PE | CR0_MP | CR0_WP);
 
     // PAE - required for long mode
+    // PGE - support for global pages
     // OSFXSR/OSXMMEXCPT - required for SSE
     // XSAVE - using xsave
     // SMAP/SMEP - prevent kernel from accessing usermode memory
     // UMIP - prevent usermode from leaking kernel memory
     // FSGSBASE - allow to use {rd,wr}{gs,fs}base
-    uint32_t cr4 = CR4_PAE | CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT | CR4_SMAP | CR4_SMEP | CR4_UMIP | CR4_FSGSBASE;
+    uint32_t cr4 = 0;
+    cr4 |= CR4_PAE;
+    cr4 |= CR4_PGE;
+    cr4 |= CR4_OSFXSR | CR4_OSXSAVE | CR4_OSXMMEXCPT;
+    cr4 |= CR4_SMAP | CR4_SMEP;
+    cr4 |= CR4_UMIP;
+    cr4 |= CR4_FSGSBASE;
     __writecr4(cr4);
 
     // setup the efer
@@ -297,6 +309,11 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     // and now we can init
     init_lapic_per_core();
     init_timers_per_core();
+
+    // we need irqs to be enabled so ipis will work,
+    // must be done before we allocate memory
+    irq_enable();
+
     init_sched_per_core();
 
     // we are done
@@ -386,11 +403,15 @@ OMIT_ENDBR INIT_CODE void _start() {
     CHECK(g_limine_mp_request.response != NULL);
     struct limine_mp_response* response = g_limine_mp_request.response;
 
+    // setup pcpu for the rest of the system
+    RETHROW(init_pcpu(g_limine_mp_request.response->cpu_count));
+
     g_cpu_count = response->cpu_count;
     TRACE("smp: Starting CPUs (%zu)", g_cpu_count);
 
-    // setup pcpu for the rest of the system
-    RETHROW(init_pcpu(g_limine_mp_request.response->cpu_count));
+    // we need to allow interrupts so ipis from other
+    // cores will work
+    irq_enable();
 
     for (size_t i = 0; i < g_cpu_count; i++) {
         if (response->cpus[i]->lapic_id == response->bsp_lapic_id) {
@@ -410,7 +431,6 @@ OMIT_ENDBR INIT_CODE void _start() {
         cpu_relax();
     }
     TRACE("smp: Finished SMP startup");
-    TRACE("smp: Starting usermode");
 
     // perform the last increment to let the rest of
     // the cores enter usermode

@@ -18,7 +18,7 @@ cflags-kernel-y += -isystem $(CLANG_RESOURCE_DIR)/include
 cflags-kernel-y += -Isrc/kernel
 cflags-kernel-y += -Ilib/limine-protocol/include
 
-cflags-kernel-y += -mshstk -mxsaveopt
+cflags-kernel-y += -mshstk -mxsaveopt -minvpcid
 
 # we need the runtime for the kernel to work
 ccodeps-kernel-y += $(BUILD)/runtime
