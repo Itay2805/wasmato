@@ -4,6 +4,11 @@
 /**
  * Initialize early allocator
  */
+INIT_CODE err_t early_init_direct_map(void);
+
+/**
+ * Initialize early allocator
+ */
 INIT_CODE err_t init_early_mem(void);
 
 /**

@@ -71,7 +71,7 @@ INIT_CODE static void set_extended_state_features(void) {
     } else {
         ASSERT(first_xcr0 == xcr0);
     }
-    __builtin_ia32_xsetbv(0, xcr0);
+    _xsetbv(0, xcr0);
 
     first = false;
 }
@@ -379,6 +379,15 @@ OMIT_ENDBR INIT_CODE void _start() {
     set_cpu_features();
     set_cpu_id();
 
+    // This must run before memory init because it accesses acpi tables
+    // which we don't map ourselves into the direct map (as they are not
+    // needed by the kernel later on), but limine does map them properly.
+    // the early direct map init just ensures we have the direct map base
+    // somewhere
+    RETHROW(early_init_direct_map());
+    RETHROW(init_acpi_tables());
+    RETHROW(init_tsc_early());
+
     //
     // setup the basic memory management
     //
@@ -388,13 +397,9 @@ OMIT_ENDBR INIT_CODE void _start() {
     RETHROW(init_phys_map());
     init_vmar_alloc();
 
-    // we need acpi for some early sleep primitives
-    RETHROW(init_acpi_tables());
-
     // timer subsystem init, we need to start by calibrating the TSC, following
     // by setting up the lapic (including calibration if we don't have TSC deadline)
     // followed by actually setting the timers properly
-    RETHROW(init_tsc());
     RETHROW(init_lapic());
     init_timers_per_core();
 

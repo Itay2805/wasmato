@@ -11,8 +11,6 @@
  */
 #define ACPI_TIMER_FREQUENCY  3579545
 
-INIT_DATA static size_t m_rsdp_size;
-
 /**
  * The timer port
  */
@@ -48,9 +46,6 @@ INIT_CODE err_t init_acpi_tables() {
 
     CHECK(g_limine_rsdp_request.response != NULL);
     acpi_rsdp_t* rsdp = g_limine_rsdp_request.response->address;
-
-    // calculate the size nicely
-    m_rsdp_size = rsdp->revision >= 2 ? rsdp->length : 20;
 
     // save up the rsdp for future use
     CHECK(rsdp->signature == ACPI_RSDP_SIGNATURE);

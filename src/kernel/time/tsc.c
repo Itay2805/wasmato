@@ -61,7 +61,7 @@ INIT_CODE static uint64_t quick_acpi_timer_calibrate(void) {
 //     return deltatsc / ((pm2 * 1000000000LL) / 3579545);
 // }
 
-INIT_CODE err_t init_tsc(void) {
+INIT_CODE err_t init_tsc_early(void) {
     err_t err = NO_ERROR;
 
     g_tsc_freq_hz = quick_acpi_timer_calibrate();
