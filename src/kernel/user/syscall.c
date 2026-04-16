@@ -93,14 +93,6 @@ static void copy_string_from_user(void* dst, uintptr_t src, size_t max_size) {
     user_access_disable();
 }
 
-static void copy_from_user(void* dst, uintptr_t src, size_t size) {
-    assert_user_range(src, size);
-
-    user_access_enable();
-    memcpy(dst, (void*)src, size);
-    user_access_disable();
-}
-
 static void copy_to_user(uintptr_t dst, void* src, size_t size) {
     assert_user_range(dst, size);
 

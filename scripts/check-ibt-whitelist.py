@@ -41,7 +41,8 @@ WHITELIST: set[str] = {
     "runtime_thread_entry_thunk",
 
     # printf character callback
-    "putchar_wrapper",
+    "debug_print_cb",
+    "sprintf_cb",
 }
 
 WHITELIST_DEBUG = {

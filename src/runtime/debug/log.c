@@ -10,13 +10,6 @@ static char* debug_print_cb(const char* buf, void* user, int len) {
     return user;
 }
 
-static size_t strlen(const char* s) {
-    const char *a = s;
-    for (; *s; s++) {}
-    return s - a;
-}
-
-
 void debug_print(const char* fmt, ...) {
     char buffer[STB_SPRINTF_MIN];
     va_list ap = {};
