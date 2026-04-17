@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "mem/vmar.h"
 #include "uapi/syscall.h"
 
 #include <stdatomic.h>

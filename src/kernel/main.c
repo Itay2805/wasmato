@@ -2,6 +2,7 @@
 #include <cpuid.h>
 
 #include "lib/assert.h"
+#include "lib/except.h"
 #include "limine_requests.h"
 #include "user/runtime.h"
 #include "acpi/acpi.h"
@@ -304,6 +305,7 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     set_cpu_features();
     switch_page_table();
     pcpu_init_per_core(info->extra_argument);
+    RETHROW(init_tss_stacks());
     init_tss();
     init_idt();
 
@@ -358,6 +360,7 @@ OMIT_ENDBR INIT_CODE void _start() {
     // having interrupts and a valid GDT already
     //
     init_gdt();
+    init_early_tss_stacks();
     init_tss();
     init_idt();
 
@@ -383,6 +386,10 @@ OMIT_ENDBR INIT_CODE void _start() {
     RETHROW(init_virt());
     RETHROW(init_phys_map());
     init_vmar_alloc();
+
+    // now that we have the VMAR subsystem we can 
+    // allocate proper stacks
+    RETHROW(init_tss_stacks());
 
     // timer subsystem init, we need to start by calibrating the TSC, following
     // by setting up the lapic (including calibration if we don't have TSC deadline)

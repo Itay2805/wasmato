@@ -27,40 +27,6 @@ INIT_CODE static uint64_t quick_acpi_timer_calibrate(void) {
     return (end_tsc - start_tsc) * 9861;
 }
 
-/**
- * Read both the tsc and the ref, this ensures that we don't have a
- * deviation that is too big which could come from an interrupt or
- * nmi or god knows what
- */
-// INIT_CODE static uint64_t tsc_read_refs(uint64_t* p) {
-//     uint64_t thresh = (g_tsc_freq_hz / 1000) >> 5;
-//     for (int i = 0; i < 5; i++) {
-//         uint64_t t1 = get_tsc();
-//         *p = acpi_get_timer_tick();
-//         uint64_t t2 = get_tsc();
-//         if ((t2 - t1) < thresh) {
-//             return t2;
-//         }
-//     }
-//     return UINT64_MAX;
-// }
-
-/**
- * Given two ACPI timer refs, and the delta between the tsc from the reading
- * of the first and second ref, calculate the tsc frequency
- */
-// INIT_CODE static uint64_t tsc_calc_acpi_timer_ref(uint64_t deltatsc, uint64_t pm1, uint64_t pm2) {
-//     if (pm1 == 0 || pm2 == 0) {
-//         return UINT64_MAX;
-//     }
-//
-//     if (pm2 < pm1) {
-//         pm2 += 1 << 24;
-//     }
-//     pm2 -= pm1;
-//     return deltatsc / ((pm2 * 1000000000LL) / 3579545);
-// }
-
 INIT_CODE err_t init_tsc_early(void) {
     err_t err = NO_ERROR;
 

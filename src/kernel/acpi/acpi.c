@@ -111,16 +111,3 @@ cleanup:
 INIT_CODE uint32_t acpi_get_timer_tick() {
     return __indword(m_acpi_timer_port);
 }
-
-INIT_CODE void acpi_stall(uint64_t microseconds) {
-    uint32_t delay = (microseconds * ACPI_TIMER_FREQUENCY) / 1000000u;
-    uint32_t times = delay >> 22;
-    delay &= BIT22 - 1;
-    do {
-        uint32_t ticks = acpi_get_timer_tick() + delay;
-        delay = BIT22;
-        while (((ticks - acpi_get_timer_tick()) & BIT23) == 0) {
-            cpu_relax();
-        }
-    } while (times-- > 0);
-}

@@ -1,7 +1,12 @@
 #include "gdt.h"
 
+#include "lib/defs.h"
+#include "lib/except.h"
+#include "mem/stack.h"
 #include "sync/spinlock.h"
 #include "lib/pcpu.h"
+#include "lib/printf.h"
+#include <stdint.h>
 
 typedef struct tss64 {
     uint32_t reserved_1;
@@ -103,6 +108,8 @@ INIT_DATA static spinlock_t m_tss_lock = SPINLOCK_INIT;
 
 /**
  * The tss of the core
+ * NOTE: this is not static because its accessed from the syscall entry stub
+ *       for setting the kernel stack
  */
 __attribute__((aligned(16)))
 CPU_LOCAL tss64_t m_tss = {};
@@ -111,15 +118,10 @@ CPU_LOCAL tss64_t m_tss = {};
  * per-cpu stacks to use, for special interrupts
  */
 __attribute__((aligned(16)))
-static CPU_LOCAL char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
+INIT_DATA static char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
 
 INIT_CODE void init_tss(void) {
     tss64_t* tss = pcpu_get_pointer(&m_tss);
-
-    // the ists
-    for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
-        tss->ist[ist] = (uintptr_t)pcpu_get_pointer(&m_stacks[ist]) + SIZE_4KB - 16;
-    }
 
     spinlock_acquire(&m_tss_lock);
 
@@ -136,6 +138,38 @@ INIT_CODE void init_tss(void) {
     asm volatile ("ltr %%ax" : : "a"(GDT_TSS) : "memory");
 
     spinlock_release(&m_tss_lock);
+}
+
+INIT_CODE void init_early_tss_stacks(void) {
+    // just for the early init use hard-coded stacks
+    for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
+        m_tss.ist[ist] = (uintptr_t)&m_stacks[ist] + SIZE_4KB - 16;
+    }
+}
+
+INIT_CODE err_t init_tss_stacks(void) {
+    err_t err = NO_ERROR;
+
+    // allocate proper kernel stacks for this, they can be small
+    for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
+        // choose a proper name for the stack
+        char name[64] = {};
+        switch (ist) {
+            case TSS_IST_DF: snprintf(name, sizeof(name), "stack-df-%d", get_cpu_id()); break;
+            case TSS_IST_NMI: snprintf(name, sizeof(name), "stack-nmi-%d", get_cpu_id()); break;
+            case TSS_IST_DB: snprintf(name, sizeof(name), "stack-db-%d", get_cpu_id()); break;
+            case TSS_IST_MCE: snprintf(name, sizeof(name), "stack-mce-%d", get_cpu_id()); break;
+            default: CHECK_FAIL();
+        }
+
+        // allocate and set the stack
+        stack_alloc_t alloc = {};
+        RETHROW(stack_alloc(&alloc, name, SIZE_4KB, false));
+        m_tss.ist[ist] = (uintptr_t)alloc.stack;
+    }
+
+cleanup:
+    return err;
 }
 
 void tss_set_rsp0(void* rsp) {
