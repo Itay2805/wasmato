@@ -317,6 +317,30 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
     }
 }
 
+err_t virt_setup_shadow_stack(void* virt) {
+    err_t err = NO_ERROR;
+
+    // allocate the page
+    uint64_t* page = phys_alloc(PAGE_SIZE);
+    CHECK_ERROR(page != nullptr, ERROR_OUT_OF_MEMORY);
+
+    // setup the supervisor token
+    *page = (uintptr_t)page;
+
+    // remove it from the direct map
+    virt_unmap_direct(page);
+
+    // map the entry correctly, needs to be a readonly
+    // with dirty bit set page
+    uint64_t* pte = virt_get_pte(virt, true, true);
+    CHECK_ERROR(pte != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK(*pte == 0);
+    *pte = direct_to_phys(page) | IA32_PG_P | IA32_PG_NX | IA32_PG_A | IA32_PG_D;
+
+cleanup:
+    return err;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Init memory reclamation
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

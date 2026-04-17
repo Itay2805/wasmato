@@ -45,3 +45,5 @@ typedef struct interrupt_frame {
 } interrupt_frame_t;
 
 INIT_CODE void init_idt(void);
+
+INIT_CODE void init_idt_stacks(void);

@@ -305,7 +305,6 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     set_cpu_features();
     switch_page_table();
     pcpu_init_per_core(info->extra_argument);
-    RETHROW(init_tss_stacks());
     init_tss();
     init_idt();
 
@@ -318,6 +317,12 @@ OMIT_ENDBR INIT_CODE static void smp_entry(struct limine_mp_info* info) {
     // we need irqs to be enabled so ipis will work,
     // must be done before we allocate memory
     irq_enable();
+
+    // now that interrupts are enabled we can safely
+    // setup the stacks and then update the IDT to
+    // use them
+    RETHROW(init_tss_stacks());
+    init_idt_stacks();
 
     init_sched_per_core();
 
@@ -360,7 +365,6 @@ OMIT_ENDBR INIT_CODE void _start() {
     // having interrupts and a valid GDT already
     //
     init_gdt();
-    init_early_tss_stacks();
     init_tss();
     init_idt();
 
@@ -390,6 +394,7 @@ OMIT_ENDBR INIT_CODE void _start() {
     // now that we have the VMAR subsystem we can 
     // allocate proper stacks
     RETHROW(init_tss_stacks());
+    init_idt_stacks();
 
     // timer subsystem init, we need to start by calibrating the TSC, following
     // by setting up the lapic (including calibration if we don't have TSC deadline)

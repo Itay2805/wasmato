@@ -79,14 +79,14 @@ thread_t* thread_create(thread_entry_t entry_point, void* arg, thread_flags_t fl
 
     // allocate the stacks
     stack_alloc_t kernel_stack;
-    RETHROW(stack_alloc(&kernel_stack, thread->name, SIZE_4KB, false));
+    RETHROW(stack_alloc(&kernel_stack, thread->name, SIZE_4KB, STACK_ALLOC_FILL));
     thread->kernel_stack = kernel_stack.stack;
     thread->kernel_ssp = kernel_stack.shadow_stack;
 
     // allocate the stacks
     if (flags & THREAD_FLAG_USER) {
         stack_alloc_t user_stack;
-        RETHROW(stack_alloc(&user_stack, thread->name, SIZE_32KB, true));
+        RETHROW(stack_alloc(&user_stack, thread->name, SIZE_32KB, STACK_ALLOC_USER));
         thread->user_stack = user_stack.stack;
         thread->user_ssp = user_stack.shadow_stack;
     }

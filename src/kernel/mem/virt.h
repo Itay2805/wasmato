@@ -61,6 +61,11 @@ void virt_protect(void* virt, size_t page_count, mapping_protection_t protection
 void virt_unmap(void* virt, size_t page_count, bool free);
 
 /**
+ * Sets up a page as a shadow stack with supervisor token
+ */
+err_t virt_setup_shadow_stack(void* virt);
+
+/**
  * Handle a TLB flush ipi
  */
 void virt_handle_tlb_flush_ipi(void);

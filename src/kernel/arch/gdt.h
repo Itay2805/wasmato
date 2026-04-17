@@ -60,9 +60,6 @@ STATIC_ASSERT(TSS_IST_MAX < 7);
 INIT_CODE void init_gdt(void);
 
 INIT_CODE void init_tss(void);
-
-INIT_CODE void init_early_tss_stacks(void);
-
 INIT_CODE err_t init_tss_stacks(void);
 
 void tss_set_rsp0(void* rsp);

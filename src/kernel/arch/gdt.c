@@ -8,6 +8,8 @@
 #include "lib/printf.h"
 #include <stdint.h>
 
+#include "lib/string.h"
+
 typedef struct tss64 {
     uint32_t reserved_1;
     uint64_t rsp0;
@@ -114,12 +116,6 @@ INIT_DATA static spinlock_t m_tss_lock = SPINLOCK_INIT;
 __attribute__((aligned(16)))
 CPU_LOCAL tss64_t m_tss = {};
 
-/**
- * per-cpu stacks to use, for special interrupts
- */
-__attribute__((aligned(16)))
-INIT_DATA static char m_stacks[TSS_IST_MAX][SIZE_4KB] = {};
-
 INIT_CODE void init_tss(void) {
     tss64_t* tss = pcpu_get_pointer(&m_tss);
 
@@ -140,13 +136,6 @@ INIT_CODE void init_tss(void) {
     spinlock_release(&m_tss_lock);
 }
 
-INIT_CODE void init_early_tss_stacks(void) {
-    // just for the early init use hard-coded stacks
-    for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
-        m_tss.ist[ist] = (uintptr_t)&m_stacks[ist] + SIZE_4KB - 16;
-    }
-}
-
 INIT_CODE err_t init_tss_stacks(void) {
     err_t err = NO_ERROR;
 
@@ -162,9 +151,11 @@ INIT_CODE err_t init_tss_stacks(void) {
             default: CHECK_FAIL();
         }
 
-        // allocate and set the stack
+        // allocate and set the stack, we are going to pre-fault it to enasure
+        // it is available when we get something that needs to use it
         stack_alloc_t alloc = {};
-        RETHROW(stack_alloc(&alloc, name, SIZE_4KB, false));
+        RETHROW(stack_alloc(&alloc, name, SIZE_4KB, STACK_ALLOC_FILL));
+
         m_tss.ist[ist] = (uintptr_t)alloc.stack;
     }
 

@@ -1,5 +1,6 @@
 #include "stack.h"
 
+#include "virt.h"
 #include "arch/intrin.h"
 #include "mem/mappings.h"
 #include "mem/vmar.h"
@@ -8,8 +9,9 @@
 
 LATE_RO bool g_shadow_stack_supported = false;
 
-err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, bool user) {
+err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, stack_alloc_flag_t flags) {
     err_t err = NO_ERROR;
+    bool user = flags & STACK_ALLOC_USER;
     vmar_t* top_vmar = user ? &g_user_memory : &g_kernel_memory;
 
     vmar_lock();
@@ -18,8 +20,7 @@ err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, bool user
     size_t total_pages = SIZE_TO_PAGES(size) + 2;
 
     // and another range with its own guard for the shadow stack
-    // TODO: kernel shadow stacks support
-    if (user && g_shadow_stack_supported) {
+    if (g_shadow_stack_supported) {
         total_pages += SIZE_TO_PAGES(size) + 1;
     }
 
@@ -60,6 +61,28 @@ err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, bool user
     // give the name to the top level entry
     vmar_set_name(guard_region, name);
     guard_region->locked = true;
+
+    // for kernel shadow stack pages we need to ensure we have a
+    // supervisor shadow stack token ready, so fill it properly
+    // right away
+    if (!user && shadow_stack != nullptr) {
+        RETHROW(virt_setup_shadow_stack(shadow_stack->base));
+    }
+
+    // ensure the stack is fully allocated from the start
+    // if we want it to be available from teh get-go
+    if (flags & STACK_ALLOC_FILL) {
+        uint32_t ec = user ? IA32_PF_EC_USER : 0;
+        for (void* addr = stack->base; addr < vmar_end(stack); addr += PAGE_SIZE) {
+            RETHROW(virt_handle_page_fault((uintptr_t)addr, ec));
+        }
+
+        if (shadow_stack != nullptr) {
+            for (void* addr = shadow_stack->base; addr < vmar_end(shadow_stack); addr += PAGE_SIZE) {
+                RETHROW(virt_handle_page_fault((uintptr_t)addr, ec | IA32_PF_EC_SHSTK));
+            }
+        }
+    }
 
     // return both stacks
     alloc->stack = vmar_end(stack) + 1;
@@ -109,9 +132,8 @@ void stack_free(void* ptr, bool user) {
     }
 
     // ensure we found the entries at all
-    // TODO: kernel shadow stacks
     ASSERT(found_stack);
-    if (user && g_shadow_stack_supported) {
+    if (g_shadow_stack_supported) {
         ASSERT(found_shadow_stack);
     } else {
         ASSERT(!found_shadow_stack);
