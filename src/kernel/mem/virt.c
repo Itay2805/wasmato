@@ -1,6 +1,7 @@
 #include "virt.h"
 
 #include "direct.h"
+#include "mem/vmar.h"
 #include "phys.h"
 #include "stack.h"
 #include "arch/gdt.h"
@@ -196,32 +197,26 @@ static uint64_t* virt_get_pte(void* virt, bool allocate, bool kernel) {
     return &pml1[index1];
 }
 
-err_t virt_make_global(void* virt) {
-    err_t err = NO_ERROR;
-
+void virt_make_global(void* virt) {
     uint64_t* pte = virt_get_pte(virt, false, true);
-    CHECK(pte != nullptr);
-    CHECK((*pte & IA32_PG_G) == 0);
+    ASSERT(pte != nullptr);
+    ASSERT((*pte & IA32_PG_G) == 0);
     *pte |= IA32_PG_G;
-
-cleanup:
-    return err;
 }
 
-err_t virt_remove_global(void* virt) {
-    err_t err = NO_ERROR;
+void virt_remove_global(void* virt) {
+    vmar_lock();
 
     uint64_t* pte = virt_get_pte(virt, false, true);
-    CHECK(pte != nullptr);
-    CHECK(*pte & IA32_PG_G);
+    ASSERT(pte != nullptr);
+    ASSERT(*pte & IA32_PG_G);
     *pte &= ~IA32_PG_G;
 
     // ensure its invalidated
     tlb_invl_queue(virt, true);
     tlb_invl_commit();
 
-cleanup:
-    return err;
+    vmar_unlock();
 }
 
 static err_t virt_map_direct(void* virt) {

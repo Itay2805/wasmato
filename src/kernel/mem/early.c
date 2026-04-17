@@ -107,26 +107,6 @@ INIT_CODE static uint64_t* early_virt_get_pte(uint64_t* pml4, void* virt) {
     return &pml1[index1];
 }
 
-INIT_CODE static bool has_1gb_pages(void) {
-    static bool inited = false;
-    static bool has_1gb_pages = false;
-
-    if (!inited) {
-        // check if we have 1gb pages
-        uint32_t a, b, c, d;
-        if (__get_cpuid(CPUID_EXTENDED_CPU_SIG, &a, &b, &c, &d)) {
-            CPUID_EXTENDED_CPU_SIG_EDX edx = { .raw = d };
-            has_1gb_pages = edx.PAGE_1GB;
-        }
-    }
-
-    return has_1gb_pages;
-}
-
-INIT_CODE static bool early_virt_can_map_for_size(void* virt, uintptr_t phys, size_t num_pages, size_t size) {
-    return ((uintptr_t)virt % size) == 0 && (phys % size) == 0 && num_pages >= SIZE_TO_PAGES(size);
-}
-
 INIT_CODE static err_t early_virt_map(
     uint64_t* pml4,
     void* virt, uint64_t phys, size_t num_pages,
@@ -219,14 +199,6 @@ INIT_CODE err_t early_init_direct_map(void) {
     CHECK(g_limine_hhdm_request.response != NULL);
     void* direct_map_base = (void*)g_limine_hhdm_request.response->offset;
 
-    // ensure we can have the alignment we need for the direct map
-    // to properly use large pages whenever possible
-    if (has_1gb_pages()) {
-        CHECK(((uintptr_t)direct_map_base % SIZE_1GB) == 0);
-    } else {
-        CHECK(((uintptr_t)direct_map_base % SIZE_2MB) == 0);
-    }
-
     // Setup the vmar of the direct map, this will take into account the KASLR
     // provided by the bootloader
     g_direct_map_region.base = direct_map_base;
@@ -304,7 +276,7 @@ INIT_CODE static err_t early_map_buddy_bitmap(uint64_t* pml4) {
 
     // reserve space for the bitmap itself, we need to ensure we
     // can fit the entire physical address space in it
-    uint64_t top_address = 1ULL << get_physical_address_bits();
+    uint64_t top_address = early_get_top_address();
     size_t total_bitmap_size = ALIGN_UP(DIV_ROUND_UP(DIV_ROUND_UP(top_address, PAGE_SIZE), 8), PAGE_SIZE);
     g_buddy_bitmap_region.page_count = SIZE_TO_PAGES(total_bitmap_size);
     CHECK_ERROR(vmar_reserve_static(&g_kernel_memory, &g_buddy_bitmap_region), ERROR_OUT_OF_MEMORY);

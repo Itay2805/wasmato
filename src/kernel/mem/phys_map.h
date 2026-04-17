@@ -72,8 +72,3 @@ typedef err_t (*phys_map_cb_t)(void* ctx, phys_map_type_t type, uint64_t start, 
 err_t phys_map_iterate(phys_map_cb_t cb, void* ctx);
 
 void phys_map_dump(void);
-
-/**
- * The amount of physical hardware space we have
- */
-uint8_t get_physical_address_bits(void);

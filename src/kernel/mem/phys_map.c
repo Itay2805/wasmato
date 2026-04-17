@@ -205,6 +205,16 @@ INIT_DATA static const phys_map_type_t m_limine_memmap_type[] = {
     [LIMINE_MEMMAP_RESERVED_MAPPED] = PHYS_MAP_FIRMWARE_RESERVED,
 };
 
+
+static uint8_t get_physical_address_bits(void) {
+    CPUID_VIR_PHY_ADDRESS_SIZE_EAX eax = {};
+    uint32_t b, c, d;
+    if (__get_cpuid(CPUID_VIR_PHY_ADDRESS_SIZE, &eax.raw, &b, &c, &d)) {
+        return eax.PHYS_ADDR_SIZE;
+    }
+    return 0;
+}
+
 INIT_CODE err_t init_phys_map(void) {
     err_t err = NO_ERROR;
 
@@ -281,13 +291,4 @@ static err_t phys_dump_entry(void* ctx, phys_map_type_t type, uint64_t start, si
 void phys_map_dump(void) {
     TRACE("memory: Physical memory map:");
     (void)phys_map_iterate(phys_dump_entry, NULL);
-}
-
-uint8_t get_physical_address_bits(void) {
-    CPUID_VIR_PHY_ADDRESS_SIZE_EAX eax = {};
-    uint32_t b, c, d;
-    if (__get_cpuid(CPUID_VIR_PHY_ADDRESS_SIZE, &eax.raw, &b, &c, &d)) {
-        return eax.PHYS_ADDR_SIZE;
-    }
-    return 0;
 }

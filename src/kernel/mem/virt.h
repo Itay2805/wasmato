@@ -28,12 +28,12 @@ static inline void user_access_disable(void) {
 /**
  * Mark a global page as marked
  */
-err_t virt_make_global(void* virt);
+void virt_make_global(void* virt);
 
 /**
  * Remove the global-page marking from a page
  */
-err_t virt_remove_global(void* virt);
+void virt_remove_global(void* virt);
 
 /**
  * Check if an address is mapped currently, using the actual
