@@ -55,6 +55,8 @@ WHITELIST_DEBUG = {
     "dummy_copy",
     "dummy_propagate",
     "timer_less",
+    "phys_map_less",
+    "phys_map_cmp_contains",
 }
 
 # Non-function linker/section-marker symbols that may share an address with a

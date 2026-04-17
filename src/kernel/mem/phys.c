@@ -309,9 +309,9 @@ INIT_CODE err_t reclaim_bootloader_memory(void) {
     TRACE("memory: Reclaiming bootloader memory");
     while (true) {
         // search for the next entry to reclaim
-        phys_map_entry_t* entry;
         phys_map_entry_t* to_reclaim = NULL;
-        list_for_each_entry(entry, &g_phys_map, link) {
+        for (rb_node_t* n = rb_first(&g_phys_map); n != NULL; n = rb_next(n)) {
+            phys_map_entry_t* entry = rb_entry(n, phys_map_entry_t, node);
             if (entry->type == PHYS_MAP_BOOTLOADER_RECLAIMABLE) {
                 to_reclaim = entry;
                 break;

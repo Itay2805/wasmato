@@ -8,7 +8,7 @@
 #include "arch/cpuid.h"
 
 
-list_t g_phys_map = LIST_INIT(&g_phys_map);
+rb_root_t g_phys_map = RB_ROOT;
 spinlock_t g_phys_map_lock = SPINLOCK_INIT;
 
 /**
@@ -16,151 +16,97 @@ spinlock_t g_phys_map_lock = SPINLOCK_INIT;
  */
 static mem_alloc_t m_phys_map_alloc;
 
-static void phys_map_insert_new_entry(list_entry_t* link, uint64_t start, uint64_t end, phys_map_type_t type, bool next) {
-    // allocate an entry
+static __always_inline bool phys_map_less(struct rb_node* a, const struct rb_node* b) {
+    const phys_map_entry_t* ea = rb_entry(a, phys_map_entry_t, node);
+    const phys_map_entry_t* eb = rb_entry(b, phys_map_entry_t, node);
+    return ea->start < eb->start;
+}
+
+// rb_find comparator: locate the entry whose [start, end] contains `*key`
+static int phys_map_cmp_contains(const void* key, const struct rb_node* n) {
+    uint64_t addr = *(const uint64_t*)key;
+    const phys_map_entry_t* entry = rb_entry(n, phys_map_entry_t, node);
+    if (addr < entry->start) return -1;
+    if (addr > entry->end)   return 1;
+    return 0;
+}
+
+static phys_map_entry_t* phys_map_insert_new_entry(uint64_t start, uint64_t end, phys_map_type_t type) {
     phys_map_entry_t* entry = mem_alloc(&m_phys_map_alloc);
     ASSERT(entry != NULL);
 
-    // set it up
     entry->type = type;
     entry->start = start;
     entry->end = end;
-    if (next) {
-        list_add(link, &entry->link);
-    } else {
-        list_add_tail(link, &entry->link);
-    }
+    rb_add(&entry->node, &g_phys_map, phys_map_less);
+    return entry;
 }
 
 static void phys_map_remove_old_entry(phys_map_entry_t* entry) {
-    // remove from the linked list
-    list_del(&entry->link);
+    rb_erase(&entry->node, &g_phys_map);
     mem_free(&m_phys_map_alloc, entry);
 }
 
 void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length) {
     uint64_t end = start + length - 1;
 
-    list_entry_t* link = g_phys_map.next;
-    while (link != &g_phys_map) {
-        phys_map_entry_t* entry = containerof(link, phys_map_entry_t, link);
-        link = link->next;
+    // Locate the existing entry that covers `start` (O(log n)).
+    //
+    // After the initial full-range insert, the tree always covers the entire
+    // physical address space, so every subsequent convert falls into this
+    // branch with a single containing entry. The NULL case only fires for the
+    // very first call (empty tree) or for ranges outside the currently-mapped
+    // span (which the caller is responsible for keeping contiguous).
+    rb_node_t* found = rb_find(&start, &g_phys_map, phys_map_cmp_contains);
+    phys_map_entry_t* entry;
 
-        //
-        // ---------------------------------------------------
-        // |  +----------+   +------+   +------+   +------+  |
-        // ---|m_phys_map|---|Entry1|---|Entry2|---|Entry3|---
-        //    +----------+ ^ +------+   +------+   +------+
-        //                 |
-        //              +------+
-        //              |EntryX|
-        //              +------+
-        //
-        if (entry->start > end) {
-            if ((entry->start == end + 1) && (entry->type == type)) {
-                entry->start = start;
-                return;
-            }
+    if (found == NULL) {
+        entry = phys_map_insert_new_entry(start, end, type);
+    } else {
+        entry = rb_entry(found, phys_map_entry_t, node);
+        ASSERT(entry->end >= end, "phys_map: partial overlap not supported");
 
-            phys_map_insert_new_entry(&entry->link, start, end, type, false);
+        if (entry->type == type) {
             return;
         }
 
-        if ((entry->start <= start) && (entry->end >= end)) {
-            if (entry->type != type) {
-                if (entry->start < start) {
-                    //
-                    // ---------------------------------------------------
-                    // |  +----------+   +------+   +------+   +------+  |
-                    // ---|m_phys_map|---|Entry1|---|EntryX|---|Entry3|---
-                    //    +----------+   +------+ ^ +------+   +------+
-                    //                            |
-                    //                         +------+
-                    //                         |EntryA|
-                    //                         +------+
-                    //
-                    phys_map_insert_new_entry(&entry->link, entry->start, start - 1, entry->type, false);
-                }
+        // Shrink `entry` down to the new range FIRST so the split pieces
+        // we insert below don't momentarily share the same `start` key.
+        uint64_t orig_start = entry->start;
+        uint64_t orig_end = entry->end;
+        phys_map_type_t orig_type = entry->type;
+        entry->start = start;
+        entry->end = end;
+        entry->type = type;
 
-                if (entry->end > end) {
-                    //
-                    // ---------------------------------------------------
-                    // |  +----------+   +------+   +------+   +------+  |
-                    // ---|m_phys_map|---|Entry1|---|EntryX|---|Entry3|---
-                    //    +----------+   +------+   +------+ ^ +------+
-                    //                                       |
-                    //                                    +------+
-                    //                                    |EntryZ|
-                    //                                    +------+
-                    //
-                    phys_map_insert_new_entry(&entry->link, end + 1, entry->end, entry->type, true);
-                }
-
-                //
-                // Update this node
-                //
-                entry->start = start;
-                entry->end = end;
-                entry->type = type;
-
-                //
-                // Check adjacent
-                //
-                list_entry_t* next_link = entry->link.next;
-                if (next_link != &g_phys_map) {
-                    phys_map_entry_t* next_entry = containerof(next_link, phys_map_entry_t, link);
-                    //
-                    // ---------------------------------------------------
-                    // |  +----------+   +------+   +-----------------+  |
-                    // ---|m_phys_map|---|Entry1|---|EntryX     Entry3|---
-                    //    +----------+   +------+   +-----------------+
-                    //
-                    if ((entry->type == next_entry->type) && (entry->end + 1 == next_entry->start)) {
-                        entry->end = next_entry->end;
-                        phys_map_remove_old_entry(next_entry);
-                    }
-                }
-
-                list_entry_t* prev_link = entry->link.prev;
-                if (prev_link != &g_phys_map) {
-                    phys_map_entry_t* prev_entry = containerof(prev_link, phys_map_entry_t, link);
-                    //
-                    // ---------------------------------------------------
-                    // |  +----------+   +-----------------+   +------+  |
-                    // ---|m_phys_map|---|Entry1     EntryX|---|Entry3|---
-                    //    +----------+   +-----------------+   +------+
-                    //
-                    if ((prev_entry->type == entry->type) && (prev_entry->end + 1 == entry->start)) {
-                        prev_entry->end = entry->end;
-                        phys_map_remove_old_entry(entry);
-                    }
-                }
-            }
-
-            return;
+        if (orig_start < start) {
+            phys_map_insert_new_entry(orig_start, start - 1, orig_type);
+        }
+        if (orig_end > end) {
+            phys_map_insert_new_entry(end + 1, orig_end, orig_type);
         }
     }
 
-    //
-    // ---------------------------------------------------
-    // |  +----------+   +------+   +------+   +------+  |
-    // ---|m_phys_map|---|Entry1|---|Entry2|---|Entry3|---
-    //    +----------+   +------+   +------+   +------+ ^
-    //                                                  |
-    //                                               +------+
-    //                                               |EntryX|
-    //                                               +------+
-    //
-    link = g_phys_map.prev;
-    if (link != &g_phys_map) {
-        phys_map_entry_t* entry = containerof(link, phys_map_entry_t, link);
-        if ((entry->end + 1 == start) && (entry->type == type)) {
-            entry->end = end;
-            return;
+    // Coalesce with same-type, contiguous neighbours. Check prev first (may
+    // replace `entry`), then check the survivor's next.
+    rb_node_t* prev_node = rb_prev(&entry->node);
+    if (prev_node != NULL) {
+        phys_map_entry_t* prev = rb_entry(prev_node, phys_map_entry_t, node);
+        if (prev->type == entry->type && prev->end + 1 == entry->start) {
+            prev->end = entry->end;
+            phys_map_remove_old_entry(entry);
+            entry = prev;
         }
     }
 
-    phys_map_insert_new_entry(&g_phys_map, start, end, type, false);
+    rb_node_t* next_node = rb_next(&entry->node);
+    if (next_node != NULL) {
+        phys_map_entry_t* next = rb_entry(next_node, phys_map_entry_t, node);
+        if (entry->type == next->type && entry->end + 1 == next->start) {
+            entry->end = next->end;
+            phys_map_remove_old_entry(next);
+        }
+    }
 }
 
 void phys_map_convert(phys_map_type_t type, uint64_t start, size_t length) {
@@ -177,15 +123,13 @@ err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
     uint64_t top_address = 0;
     CHECK(!__builtin_add_overflow(start, length, &top_address));
 
-    phys_map_entry_t* entry;
-    list_for_each_entry(entry, &g_phys_map, link) {
-        if (entry->start <= start && top_address < entry->end) {
-            *type = entry->type;
-            goto cleanup;
-        }
-    }
+    rb_node_t* found = rb_find(&start, &g_phys_map, phys_map_cmp_contains);
+    CHECK_ERROR(found != NULL, ERROR_NOT_FOUND);
 
-    CHECK_FAIL_ERROR(ERROR_NOT_FOUND);
+    phys_map_entry_t* entry = rb_entry(found, phys_map_entry_t, node);
+    CHECK_ERROR(top_address < entry->end, ERROR_NOT_FOUND);
+
+    *type = entry->type;
 
 cleanup:
     spinlock_release(&g_phys_map_lock);
@@ -250,8 +194,8 @@ err_t phys_map_iterate(phys_map_cb_t cb, void* ctx) {
 
     spinlock_acquire(&g_phys_map_lock);
 
-    phys_map_entry_t* entry;
-    list_for_each_entry(entry, &g_phys_map, link) {
+    for (rb_node_t* n = rb_first(&g_phys_map); n != NULL; n = rb_next(n)) {
+        phys_map_entry_t* entry = rb_entry(n, phys_map_entry_t, node);
         err = cb(ctx, entry->type, entry->start, (entry->end - entry->start) + 1);
         if (err == END_ITERATION) {
             break;

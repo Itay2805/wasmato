@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 #include "lib/except.h"
-#include "lib/list.h"
+#include "lib/rbtree/rbtree.h"
 #include "sync/spinlock.h"
 
 typedef enum phys_map_type {
@@ -27,8 +27,8 @@ typedef enum phys_map_type {
 } phys_map_type_t;
 
 typedef struct phys_map_entry {
-    // link list of entire memory map
-    list_entry_t link;
+    // node in the memory map rbtree
+    rb_node_t node;
 
     // the actual range
     uint64_t start;
@@ -37,10 +37,9 @@ typedef struct phys_map_entry {
 } phys_map_entry_t;
 
 /**
- * The linked list of memory map ranges, sorted by
- * address
+ * The rbtree of memory map ranges, keyed by start address
  */
-extern list_t g_phys_map;
+extern rb_root_t g_phys_map;
 
 /**
  * Lock to protect the physical memory map
