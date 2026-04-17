@@ -114,6 +114,29 @@ INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align) {
     list_add(&m_allocators, &alloc->link);
 }
 
+INIT_CODE void mem_lock(mem_alloc_t* alloc) {
+    spinlock_acquire(&alloc->lock);
+
+    // we are about to turn this read-only, clear
+    // all free pages from it
+    while (!list_is_empty(&alloc->empty)) {
+        slab_t* slab = list_first_entry(&alloc->empty, slab_t, link);
+        list_del(&slab->link);
+        virt_remove_global(slab);
+        phys_free(slab, PAGE_SIZE);
+    }
+
+    slab_t* slab;
+    list_for_each_entry(slab, &alloc->full, link) {
+        virt_protect(slab, 1, MAPPING_PROTECTION_RO);
+    }
+    list_for_each_entry(slab, &alloc->partial, link) {
+        virt_protect(slab, 1, MAPPING_PROTECTION_RO);
+    }
+
+    spinlock_release(&alloc->lock);
+}
+
 void* mem_alloc(mem_alloc_t* alloc) {
     spinlock_acquire(&alloc->lock);
 

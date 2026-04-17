@@ -32,7 +32,7 @@ static int phys_map_cmp_contains(const void* key, const struct rb_node* n) {
 }
 
 static phys_map_entry_t* phys_map_insert_new_entry(uint64_t start, uint64_t end, phys_map_type_t type) {
-    phys_map_entry_t* entry = mem_alloc(&m_phys_map_alloc);
+    phys_map_entry_t* entry = mem_calloc(&m_phys_map_alloc);
     ASSERT(entry != NULL);
 
     entry->type = type;

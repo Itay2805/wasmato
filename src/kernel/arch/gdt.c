@@ -9,6 +9,9 @@
 #include <stdint.h>
 
 #include "lib/string.h"
+#include "mem/alloc.h"
+#include "mem/mappings.h"
+#include "mem/vmar.h"
 
 typedef struct tss64 {
     uint32_t reserved_1;
@@ -116,6 +119,8 @@ INIT_DATA static spinlock_t m_tss_lock = SPINLOCK_INIT;
 __attribute__((aligned(16)))
 CPU_LOCAL tss64_t m_tss = {};
 
+LATE_RO mem_alloc_t m_ssp_table_alloc = {};
+
 INIT_CODE void init_tss(void) {
     tss64_t* tss = pcpu_get_pointer(&m_tss);
 
@@ -139,6 +144,21 @@ INIT_CODE void init_tss(void) {
 INIT_CODE err_t init_tss_stacks(void) {
     err_t err = NO_ERROR;
 
+    // if we have shadow pages supported, then allocate an SSP Table
+    // for the ISTs
+    uint64_t* ssp_table = nullptr;
+    if (g_shadow_stack_supported) {
+        // the first core also ensures that we have the ssp table
+        // alloc actually setup and ready to allocate entries
+        if (get_cpu_id() == 0) {
+            mem_alloc_init(&m_ssp_table_alloc, sizeof(uintptr_t) * 8, 8);
+        }
+
+        // allocate and set the table
+        ssp_table = mem_calloc(&m_ssp_table_alloc);
+        __wrmsr(MSR_IA32_INTERRUPT_SSP_TABLE_ADDR, (uintptr_t)ssp_table);
+    }
+
     // allocate proper kernel stacks for this, they can be small
     for (tss_ist_t ist = 0; ist < TSS_IST_MAX; ist++) {
         // choose a proper name for the stack
@@ -157,10 +177,18 @@ INIT_CODE err_t init_tss_stacks(void) {
         RETHROW(stack_alloc(&alloc, name, SIZE_4KB, STACK_ALLOC_FILL));
 
         m_tss.ist[ist] = (uintptr_t)alloc.stack;
+
+        if (ssp_table != nullptr) {
+            ssp_table[ist + 1] = (uintptr_t)alloc.shadow_stack;
+        }
     }
 
 cleanup:
     return err;
+}
+
+INIT_CODE void protect_ssp_tables() {
+    mem_lock(&m_ssp_table_alloc);
 }
 
 void tss_set_rsp0(void* rsp) {

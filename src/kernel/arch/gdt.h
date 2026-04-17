@@ -62,4 +62,6 @@ INIT_CODE void init_gdt(void);
 INIT_CODE void init_tss(void);
 INIT_CODE err_t init_tss_stacks(void);
 
+INIT_CODE void protect_ssp_tables();
+
 void tss_set_rsp0(void* rsp);

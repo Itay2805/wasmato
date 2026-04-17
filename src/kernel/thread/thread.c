@@ -61,9 +61,8 @@ thread_t* thread_create(thread_entry_t entry_point, void* arg, thread_flags_t fl
     err_t err = NO_ERROR;
 
     // allocate the thread itself
-    thread_t* thread = mem_alloc(&m_thread_alloc);
+    thread_t* thread = mem_calloc(&m_thread_alloc);
     CHECK_ERROR(thread != nullptr, ERROR_OUT_OF_MEMORY);
-    memset(thread, 0, m_thread_alloc.object_size);
     thread->flags = flags;
 
     // start with ref count of one

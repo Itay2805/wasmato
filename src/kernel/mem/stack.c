@@ -62,15 +62,21 @@ err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, stack_all
     vmar_set_name(guard_region, name);
     guard_region->locked = true;
 
-    // for kernel shadow stack pages we need to ensure we have a
-    // supervisor shadow stack token ready, so fill it properly
-    // right away
-    if (!user && shadow_stack != nullptr) {
-        RETHROW(virt_setup_shadow_stack(shadow_stack->base));
+    // return both stacks
+    alloc->stack = vmar_end(stack) + 1;
+    if (shadow_stack != nullptr) {
+        void* ssp = vmar_end(shadow_stack) + 1 - 8;
+
+        // for kernel shadow stacks we need to also
+        // setup the supervisor shadow stack token
+        if (!user) {
+            RETHROW(virt_setup_shadow_stack_token(ssp));
+        }
+
+        alloc->shadow_stack = ssp;
     }
 
-    // ensure the stack is fully allocated from the start
-    // if we want it to be available from teh get-go
+    // pre-fault the stack ranges if we want to
     if (flags & STACK_ALLOC_FILL) {
         uint32_t ec = user ? IA32_PF_EC_USER : 0;
         for (void* addr = stack->base; addr < vmar_end(stack); addr += PAGE_SIZE) {
@@ -78,17 +84,10 @@ err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, stack_all
         }
 
         if (shadow_stack != nullptr) {
-            for (void* addr = shadow_stack->base; addr < vmar_end(shadow_stack); addr += PAGE_SIZE) {
+            for (void *addr = shadow_stack->base; addr < vmar_end(shadow_stack); addr += PAGE_SIZE) {
                 RETHROW(virt_handle_page_fault((uintptr_t)addr, ec | IA32_PF_EC_SHSTK));
             }
         }
-    }
-
-    // return both stacks
-    alloc->stack = vmar_end(stack) + 1;
-    if (shadow_stack != nullptr) {
-        void* ssp = vmar_end(shadow_stack) + 1 - 8;
-        alloc->shadow_stack = ssp;
     }
 
 cleanup:

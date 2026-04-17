@@ -5,7 +5,6 @@
 
 #include "sync/spinlock.h"
 #include "lib/list.h"
-#include "../../runtime/lib/string.h"
 
 typedef struct mem_alloc {
     /**
@@ -57,8 +56,13 @@ typedef struct mem_alloc {
 
 INIT_CODE void mem_alloc_init(mem_alloc_t* alloc, size_t size, size_t align);
 
+/**
+ * Lock the entire pages to be read-only
+ */
+INIT_CODE void mem_lock(mem_alloc_t* alloc);
+
 void* mem_alloc(mem_alloc_t* alloc);
 
 void* mem_calloc(mem_alloc_t* alloc);
 
-void mem_free(mem_alloc_t* slab, void* p);
+void mem_free(mem_alloc_t* alloc, void* p);

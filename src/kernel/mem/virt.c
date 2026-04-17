@@ -317,15 +317,16 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
     }
 }
 
-err_t virt_setup_shadow_stack(void* virt) {
+err_t virt_setup_shadow_stack_token(void* virt) {
     err_t err = NO_ERROR;
 
     // allocate the page
-    uint64_t* page = phys_alloc(PAGE_SIZE);
+    void* page = phys_alloc(PAGE_SIZE);
     CHECK_ERROR(page != nullptr, ERROR_OUT_OF_MEMORY);
 
-    // setup the supervisor token
-    *page = (uintptr_t)page;
+    // setup the shadow stack token
+    void** ssp_token = page + ((uintptr_t)virt & PAGE_MASK);
+    *ssp_token = virt;
 
     // remove it from the direct map
     virt_unmap_direct(page);

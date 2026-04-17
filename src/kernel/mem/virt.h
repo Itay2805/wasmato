@@ -63,7 +63,7 @@ void virt_unmap(void* virt, size_t page_count, bool free);
 /**
  * Sets up a page as a shadow stack with supervisor token
  */
-err_t virt_setup_shadow_stack(void* virt);
+err_t virt_setup_shadow_stack_token(void* virt);
 
 /**
  * Handle a TLB flush ipi
