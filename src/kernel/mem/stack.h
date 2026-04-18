@@ -22,11 +22,10 @@ typedef enum stack_alloc_flag {
     STACK_ALLOC_USER = BIT0,
 
     /**
-     * Allocate all the stack pages right away
-     * so no faults will happen on the access
-     * to it
+     * Entry is allocated for an IST
+     * and not for a normal thread
      */
-    STACK_ALLOC_FILL = BIT1,
+    STACK_ALLOC_IST = BIT1,
 } stack_alloc_flag_t;
 
 err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, stack_alloc_flag_t flags);

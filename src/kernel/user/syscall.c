@@ -3,6 +3,7 @@
 #include "uapi/syscall.h"
 
 #include <stdatomic.h>
+#include <stdint.h>
 
 #include "limine_requests.h"
 #include "runtime.h"
@@ -18,49 +19,6 @@
 #include "mem/virt.h"
 #include "thread/sched.h"
 #include "thread/wait.h"
-
-typedef struct syscall_frame {
-    uint64_t r11;
-    union {
-        uint64_t arg4;
-        uint64_t r10;
-    };
-    union {
-        uint64_t arg6;
-        uint64_t r9;
-    };
-    union {
-        uint64_t arg5;
-        uint64_t r8;
-    };
-    union {
-        uint64_t arg1;
-        uint64_t rdi;
-    };
-    union {
-        uint64_t arg2;
-        uint64_t rsi;
-    };
-    union {
-        uint64_t arg3;
-        uint64_t result2;
-        uint64_t rdx;
-    };
-    uint64_t rcx;
-    union {
-        uint64_t syscall;
-        uint64_t result;
-        uint64_t rax;
-    };
-} syscall_frame_t;
-
-/**
- * Per-cpu scratch slot used by the syscall asm stub to stash
- * the user rsp while the kernel handler runs. The handler
- * mirrors it into thread->user_rsp so a context switch inside
- * the syscall is safe.
- */
-CPU_LOCAL uint64_t m_user_rsp_scratch;
 
 /**
  * are we done with early memory
@@ -196,41 +154,36 @@ cleanup:
     return err;
 }
 
-OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
+OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t arg2, uint64_t rip, uint64_t arg3, uint64_t arg4) {
     err_t err = NO_ERROR;
+    uint64_t result = 0;
 
-    // mirror the user rsp from the per-cpu scratch slot into
-    // the thread so a context switch mid-syscall preserves it
-    thread_t* thread = get_current_thread();
-    thread->user_rsp = (void*)m_user_rsp_scratch;
-    irq_enable();
-
-    switch (frame->syscall) {
+    switch (syscall) {
         case SYSCALL_DEBUG_PRINT: {
-            assert_user_range(frame->arg1, frame->arg2);
+            assert_user_range(arg1, arg2);
             user_access_enable();
-            debug_print_raw((const char*)frame->arg1, frame->arg2);
+            debug_print_raw((const char*)arg1, arg2);
             user_access_disable();
         } break;
 
         case SYSCALL_HEAP_ALLOC: {
             vmar_lock();
-            vmar_t* region = vmar_allocate(&g_user_memory, frame->arg1, nullptr);
+            vmar_t* region = vmar_allocate(&g_user_memory, arg1, nullptr);
             if (region != nullptr) {
                 vmar_set_name(region, "heap");
             }
             vmar_unlock();
 
             if (region == NULL) {
-                frame->result = 0;
+                result = 0;
             } else {
-                frame->result = (uintptr_t)region->base;
+                result = (uintptr_t)region->base;
             }
         } break;
 
         case SYSCALL_HEAP_FREE: {
             vmar_lock();
-            vmar_t* mapping = vmar_find_mapping(&g_user_memory, (void*)frame->arg1);
+            vmar_t* mapping = vmar_find_mapping(&g_user_memory, (void*)arg1);
             CHECK(mapping != nullptr);
             CHECK(mapping->parent == &g_user_memory);
             CHECK(mapping->type == VMAR_TYPE_ALLOC);
@@ -241,23 +194,23 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
 
         case SYSCALL_JIT_ALLOC: {
             void* ptr = nullptr;
-            err = handle_jit_alloc(frame->arg1, frame->arg2, &ptr);
+            err = handle_jit_alloc(arg1, arg2, &ptr);
             if (err == ERROR_OUT_OF_MEMORY) {
-                frame->result = 0;
+                result = 0;
             } else if (!IS_ERROR(err)) {
-                frame->result = (uintptr_t)ptr;
+                result = (uintptr_t)ptr;
             } else {
                 RETHROW(err);
             }
         } break;
 
         case SYSCALL_JIT_LOCK_PROTECTION: {
-            handle_jit_lock_protection((void*)frame->arg1);
+            handle_jit_lock_protection((void*)arg1);
         } break;
 
         case SYSCALL_JIT_FREE: {
             vmar_lock();
-            vmar_t* region = vmar_find_mapping(&g_user_code_region, (void*)frame->arg1);
+            vmar_t* region = vmar_find_mapping(&g_user_code_region, (void*)arg1);
             CHECK(region != nullptr);
             vmar_free(region);
             vmar_unlock();
@@ -267,27 +220,27 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
             // create the new thread
             thread_t* thread = thread_create(
                 runtime_thread_entry_thunk,
-                (void*)frame->arg1,
+                (void*)arg1,
                 THREAD_FLAG_USER,
                 ""
             );
 
             // fail if the thread creation failed
             if (thread == nullptr) {
-                frame->result = false;
+                result = false;
             } else {
-                frame->result = true;
+                result = true;
             }
 
             // copy the name from the user
-            copy_string_from_user(thread->name, frame->arg2, sizeof(thread->name));
+            copy_string_from_user(thread->name, arg2, sizeof(thread->name));
 
             // start the thread
             thread_start(thread);
         } break;
 
         case SYSCALL_THREAD_SLEEP: {
-            thread_sleep(frame->arg1);
+            thread_sleep(arg1);
         } break;
 
         case SYSCALL_THREAD_EXIT: {
@@ -295,30 +248,30 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
         } break;
 
         case SYSCALL_ATOMIC_WAIT32: {
-            assert_user_range(frame->arg1, sizeof(uint32_t));
-            atomic_wait((void*)frame->arg1, WAIT_KEY_UINT32, frame->arg2, frame->arg3);
+            assert_user_range(arg1, sizeof(uint32_t));
+            atomic_wait((void*)arg1, WAIT_KEY_UINT32, arg2, arg3);
         } break;
 
         case SYSCALL_ATOMIC_WAIT64: {
-            assert_user_range(frame->arg1, sizeof(uint64_t));
-            atomic_wait((void*)frame->arg1, WAIT_KEY_UINT64, frame->arg2, frame->arg3);
+            assert_user_range(arg1, sizeof(uint64_t));
+            atomic_wait((void*)arg1, WAIT_KEY_UINT64, arg2, arg3);
         } break;
 
         case SYSCALL_ATOMIC_NOTIFY: {
-            assert_user_range(frame->arg1, sizeof(uint32_t));
-            frame->result = atomic_notify((void*)frame->arg1, frame->arg2);
+            assert_user_range(arg1, sizeof(uint32_t));
+            result = atomic_notify((void*)arg1, arg2);
         } break;
 
         case SYSCALL_EARLY_GET_INITRD_SIZE: {
             CHECK(!m_early_done);
             struct limine_file* file = g_limine_module_request.response->modules[0];
-            frame->result = file->size;
+            result = file->size;
         } break;
 
         case SYSCALL_EARLY_GET_INITRD: {
             CHECK(!m_early_done);
             struct limine_file* file = g_limine_module_request.response->modules[0];
-            copy_to_user(frame->arg1, file->address, file->size);
+            copy_to_user(arg1, file->address, file->size);
         } break;
 
         case SYSCALL_EARLY_DONE: {
@@ -328,18 +281,13 @@ OMIT_ENDBR void syscall_handler(syscall_frame_t* frame) {
         } break;
 
         default:
-            ASSERT(false, "syscall: Unknown syscall: %ld", frame->syscall);
+            ASSERT(false, "syscall: Unknown syscall: %ld", syscall);
     }
 
 cleanup:
-    // disable interrupts
-    irq_disable();
-
     ASSERT(!IS_ERROR(err), "syscall: error while performing syscall");
 
-    // hand the (possibly updated after a context switch) user rsp
-    // back to the asm stub so sysretq lands on the right stack
-    m_user_rsp_scratch = (uint64_t)thread->user_rsp;
+    return result;
 }
 
 // this is called directly by the stub and no-one else

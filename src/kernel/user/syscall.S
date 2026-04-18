@@ -10,16 +10,21 @@ syscall_entry:
     swapgs
 
     /**
-     * Stash the user stack in a per-cpu scratch slot and
-     * switch to the kernel stack.
+     * The syscall is allowed to touch rax because 
+     * it is only used by the result, so we are using 
+     * it to restore the user ssp while we are setting 
+     * up a kernel ssp. once setup we are going to store
+     * it on the stack
      */
-    movq %rsp, %gs:m_user_rsp_scratch
+    movq %rsp, %rax
     movq %gs:m_tss+4, %rsp
+    pushq %rax
 
     /**
-     * Save only the caller-saved registers.
+     * save regs that have to be restored, only from the 
+     * caller saved list, note we don't need to save rax
+     * because it is always clobbered by the fact 
      */
-    pushq %rax
     pushq %rcx
     pushq %rdx
     pushq %rsi
@@ -30,13 +35,42 @@ syscall_entry:
     pushq %r11
 
     /**
-     * Call the kernel handler
+     * We enable the kernel shadow stack and store 
+     * it aside so we can properly clear it later on
+     * TODO: check if shadow stack is enabled or not
      */
-    movq %rsp, %rdi
-    call syscall_handler
+    setssbsy
+    rdsspq %rax
+    pushq %rax
+
+    /* 
+     * interrupts can now be enabled 
+     */
+    sti
 
     /**
-     * Restore the caller-saved registers
+     * finally call the handler
+     */
+    call syscall_handler
+
+    /* 
+     * disable interrupts as the first 
+     * thing we do
+     */
+    cli
+
+    /**
+     * clear the shadow stack because we no
+     * longer need it, we stashed on the stack
+     * the shadow stack token
+     */
+    popq %rdi
+    clrssbsy (%rdi)
+
+    /**
+     * Restore the caller-saved registers, the other regs
+     * that were modified are restored by the syscall handler
+     * itself. rax will contain the result at this point
      */
     popq %r11
     popq %r10
@@ -46,13 +80,12 @@ syscall_entry:
     popq %rsi
     popq %rdx
     popq %rcx
-    popq %rax
 
     /**
-     * Restore the user stack pointer from the per-cpu
-     * scratch slot.
+     * Restore the user stack pointer from the 
+     * stack because we pushed it before
      */
-    movq %gs:m_user_rsp_scratch, %rsp
+    popq %rsp
 
     /**
      * Restore the user gsbase

@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "arch/intr.h"
+#include "arch/intrin.h"
 #include "arch/smp.h"
 #include "lib/elf64.h"
 #include "lib/pcpu.h"
@@ -196,8 +197,16 @@ LATE_RO static void* m_usermode_entry = nullptr;
 void runtime_thread_entry_thunk(void* arg) {
     thread_t* thread = get_current_thread();
 
+    // must not have interrupts 
+    // enabled in here
+    irq_disable();
+
     // jump to usermode
-    usermode_jump(arg, m_usermode_entry, thread->user_stack);
+    if (g_shadow_stack_supported) {
+        usermode_jump_shstk(arg, m_usermode_entry, thread->user_stack, thread->kernel_ssp_token);
+    } else {
+        usermode_jump(arg, m_usermode_entry, thread->user_stack);
+    }
 }
 
 INIT_CODE err_t runtime_load_and_start(void) {

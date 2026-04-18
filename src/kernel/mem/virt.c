@@ -9,6 +9,7 @@
 #include "arch/paging.h"
 #include "lib/ipi.h"
 #include "sync/spinlock.h"
+#include "thread/thread.h"
 
 /**
  * The kernel top level cr3
@@ -317,7 +318,7 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
     }
 }
 
-err_t virt_setup_shadow_stack_token(void* virt) {
+err_t virt_setup_shadow_stack_token(void* virt, bool thread_entry) {
     err_t err = NO_ERROR;
 
     // allocate the page
@@ -325,8 +326,24 @@ err_t virt_setup_shadow_stack_token(void* virt) {
     CHECK_ERROR(page != nullptr, ERROR_OUT_OF_MEMORY);
 
     // setup the shadow stack token
-    void** ssp_token = page + ((uintptr_t)virt & PAGE_MASK);
-    *ssp_token = virt;
+    uintptr_t* ssp_token = page + ((uintptr_t)virt & PAGE_MASK);
+    if (thread_entry) {
+        // mark the supervisor SSP as busy
+        ssp_token[0] = (uintptr_t)virt | BIT0;
+
+        // the return address for the entry, always the
+        // thread_entry_thunk
+        ssp_token[-1] = (uintptr_t)thread_entry_thunk;
+
+        // the restore token for the context switch
+        ssp_token[-2] = (uintptr_t)virt - 8 | BIT0;
+
+    } else {
+        // mark the supervisor SSP as clear and
+        // no need for anything else to be on the
+        // stack
+        ssp_token[0] = (uintptr_t)virt;
+    }
 
     // remove it from the direct map
     virt_unmap_direct(page);

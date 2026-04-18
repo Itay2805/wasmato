@@ -6,6 +6,7 @@
 #include "mem/vmar.h"
 #include "lib/assert.h"
 #include "lib/rbtree/rbtree.h"
+#include "thread/thread.h"
 
 LATE_RO bool g_shadow_stack_supported = false;
 
@@ -36,9 +37,8 @@ err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, stack_all
     CHECK_ERROR(stack != nullptr, ERROR_OUT_OF_MEMORY);
 
     // allocate the shadow stack (if enabled)
-    // TODO: kernel shadow stacks support
     vmar_t* shadow_stack = nullptr;
-    if (user && g_shadow_stack_supported) {
+    if (g_shadow_stack_supported) {
         shadow_stack = vmar_allocate(guard_region, SIZE_TO_PAGES(size), guard_region->base + shadow_stack_offset);
         CHECK_ERROR(shadow_stack != nullptr, ERROR_OUT_OF_MEMORY);
     }
@@ -67,25 +67,28 @@ err_t stack_alloc(stack_alloc_t* alloc, const char* name, size_t size, stack_all
     if (shadow_stack != nullptr) {
         void* ssp = vmar_end(shadow_stack) + 1 - 8;
 
-        // for kernel shadow stacks we need to also
-        // setup the supervisor shadow stack token
+        // if this is a kernel stack setup the supervisor ssp token
+        // for non-interrupt stacks we also need to mark the stack
+        // as to be prepared for thread entry
         if (!user) {
-            RETHROW(virt_setup_shadow_stack_token(ssp));
+            bool thread_entry = (flags & STACK_ALLOC_IST) == 0;
+            RETHROW(virt_setup_shadow_stack_token(ssp, thread_entry));
         }
 
         alloc->shadow_stack = ssp;
     }
 
-    // pre-fault the stack ranges if we want to
-    if (flags & STACK_ALLOC_FILL) {
-        uint32_t ec = user ? IA32_PF_EC_USER : 0;
+    // for kernel stacks always pre-fault the stacks, this ensures no nested
+    // page faults or anything alike can happen, we have small stacks for
+    // the kernel so that should be fine
+    if (!user) {
         for (void* addr = stack->base; addr < vmar_end(stack); addr += PAGE_SIZE) {
-            RETHROW(virt_handle_page_fault((uintptr_t)addr, ec));
+            RETHROW(virt_handle_page_fault((uintptr_t)addr, 0));
         }
 
         if (shadow_stack != nullptr) {
             for (void *addr = shadow_stack->base; addr < vmar_end(shadow_stack); addr += PAGE_SIZE) {
-                RETHROW(virt_handle_page_fault((uintptr_t)addr, ec | IA32_PF_EC_SHSTK));
+                RETHROW(virt_handle_page_fault((uintptr_t)addr, IA32_PF_EC_SHSTK));
             }
         }
     }

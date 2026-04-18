@@ -10,6 +10,7 @@
 #include "arch/intrin.h"
 #include "lib/atomic.h"
 #include "lib/except.h"
+#include "mem/stack.h"
 #include "user/syscall.h"
 
 typedef enum last_thread_action {
@@ -402,7 +403,7 @@ INIT_CODE void sched_start_per_core(void) {
     thread_t* thread = get_scheduler()->idle;
     atomic_store_relaxed(&thread->state, THREAD_STATE_RUNNING);
     m_current = thread;
-    thread_resume(thread);
+    thread_bootstrap(thread);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

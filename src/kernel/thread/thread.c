@@ -78,9 +78,12 @@ thread_t* thread_create(thread_entry_t entry_point, void* arg, thread_flags_t fl
 
     // allocate the stacks
     stack_alloc_t kernel_stack;
-    RETHROW(stack_alloc(&kernel_stack, thread->name, SIZE_4KB, STACK_ALLOC_FILL));
+    RETHROW(stack_alloc(&kernel_stack, thread->name, SIZE_4KB, 0));
     thread->kernel_stack = kernel_stack.stack;
-    thread->kernel_ssp = kernel_stack.shadow_stack;
+    if (g_shadow_stack_supported) {
+        thread->kernel_ssp = kernel_stack.shadow_stack - 16;
+        thread->kernel_ssp_token = kernel_stack.shadow_stack;
+    }
 
     // allocate the stacks
     if (flags & THREAD_FLAG_USER) {
@@ -150,7 +153,6 @@ void thread_sleep(size_t ms) {
 }
 
 void do_thread_switch(thread_t* to, thread_t* from);
-noreturn void do_thread_resume(thread_t* to);
 
 static void save_thread_context(thread_t* thread) {
     // save the shadow stack
@@ -171,6 +173,7 @@ static void restore_thread_context(thread_t* thread) {
     // restore the shadow stack
     if (g_shadow_stack_supported) {
         __wrmsr(MSR_IA32_PL3_SSP, (uintptr_t)thread->user_ssp);
+        __wrmsr(MSR_IA32_PL0_SSP, (uintptr_t)thread->kernel_ssp_token);
     }
 
     // restore fs/gs base
@@ -190,7 +193,15 @@ void thread_switch(thread_t* to, thread_t* from) {
     do_thread_switch(to, from);
 }
 
-void thread_resume(thread_t* thread) {
+INIT_CODE noreturn void do_thread_bootstrap_shstk(thread_t* to);
+INIT_CODE noreturn void do_thread_bootstrap(thread_t* to);
+
+INIT_CODE void thread_bootstrap(thread_t* thread) {
     restore_thread_context(thread);
-    do_thread_resume(thread);
+    if (g_shadow_stack_supported) {
+        // perform the shadow stack bootstap
+        do_thread_bootstrap_shstk(thread);
+    } else {
+        do_thread_bootstrap(thread);
+    }
 }

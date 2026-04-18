@@ -19,6 +19,13 @@ exception_common_thunk:
     // clear direction
     cld
 
+    // Reserve 16 bytes between the (exception, error_code) slots and the GPR
+    // saves: the low 8 bytes hold the SSP captured via rdsspq below, and the
+    // high 8 bytes are padding that keeps the stack 16-byte aligned before the
+    // CALL into exception_common_handler.
+    subq $16, %rsp
+    .cfi_adjust_cfa_offset 16
+
     // push all gprs
     pushq %rdi
     .cfi_adjust_cfa_offset 8
@@ -79,6 +86,14 @@ exception_common_thunk:
     pushq %r15
     .cfi_adjust_cfa_offset 8
     .cfi_rel_offset r15, 0
+
+    // Capture the shadow-stack pointer as-of exception entry, before any CALL
+    // moves it. On CPUs where shadow stacks are disabled at the current CPL,
+    // rdsspq is a NOP and leaves the (pre-zeroed) register unchanged.
+    // rax is already saved above, so clobbering it is safe.
+    xorl %eax, %eax
+    rdsspq %rax
+    movq %rax, 15*8(%rsp)
 
     movq %rsp, %rdi
     call exception_common_handler
@@ -143,8 +158,9 @@ exception_common_thunk:
     .cfi_restore rdi
     .cfi_adjust_cfa_offset -8
 
-    addq $16, %rsp
-    .cfi_adjust_cfa_offset -16
+    // Skip the SSP slot + its padding + exception + error_code.
+    addq $32, %rsp
+    .cfi_adjust_cfa_offset -32
 
     iretq
 .cfi_endproc

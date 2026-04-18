@@ -91,18 +91,10 @@ typedef struct thread {
     void* kernel_ssp;
 
     /**
-     * The user stack-pointer,
+     * The supervisor shadow-stack token
+     * for the kernel stack
      */
-    void* user_rsp;
-
-    /**
-     * The user shadow-stack pointer,
-     */
-    void* user_ssp;
-
-    //
-    // CPU Context
-    //
+    void* kernel_ssp_token;
 
     /**
      * The kernel stack to be used for syscall/interrupts
@@ -110,6 +102,14 @@ typedef struct thread {
      */
     void* kernel_stack;
 
+    /**
+     * The user shadow-stack pointer,
+     */
+    void* user_ssp;
+
+    /**
+     * The vase of the user stack
+     */
     void* user_stack;
 
     uint64_t fs_base;
@@ -199,9 +199,9 @@ void thread_sleep(size_t ms);
 void thread_switch(thread_t* to, thread_t* from);
 
 /**
- * Resumes a thread, ignoring the current context
+ * Bootstrap a thread, starting up the entire scheduling process
  */
-noreturn void thread_resume(thread_t* thread);
+INIT_CODE noreturn void thread_bootstrap(thread_t* thread);
 
 /**
  * The thunk that we should jump to

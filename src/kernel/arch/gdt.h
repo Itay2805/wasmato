@@ -53,6 +53,7 @@ typedef enum tss_ist {
     TSS_IST_NMI,
     TSS_IST_DB,
     TSS_IST_MCE,
+    TSS_IST_CP,
     TSS_IST_MAX,
 } tss_ist_t;
 STATIC_ASSERT(TSS_IST_MAX < 7);

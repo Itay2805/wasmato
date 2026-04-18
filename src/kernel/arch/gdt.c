@@ -164,17 +164,18 @@ INIT_CODE err_t init_tss_stacks(void) {
         // choose a proper name for the stack
         char name[64] = {};
         switch (ist) {
-            case TSS_IST_DF: snprintf(name, sizeof(name), "stack-df-%d", get_cpu_id()); break;
-            case TSS_IST_NMI: snprintf(name, sizeof(name), "stack-nmi-%d", get_cpu_id()); break;
-            case TSS_IST_DB: snprintf(name, sizeof(name), "stack-db-%d", get_cpu_id()); break;
-            case TSS_IST_MCE: snprintf(name, sizeof(name), "stack-mce-%d", get_cpu_id()); break;
+            case TSS_IST_DF: snprintf(name, sizeof(name), "df-%d", get_cpu_id()); break;
+            case TSS_IST_NMI: snprintf(name, sizeof(name), "nmi-%d", get_cpu_id()); break;
+            case TSS_IST_DB: snprintf(name, sizeof(name), "db-%d", get_cpu_id()); break;
+            case TSS_IST_MCE: snprintf(name, sizeof(name), "mce-%d", get_cpu_id()); break;
+            case TSS_IST_CP: snprintf(name, sizeof(name), "cp-%d", get_cpu_id()); break;
             default: CHECK_FAIL();
         }
 
         // allocate and set the stack, we are going to pre-fault it to enasure
         // it is available when we get something that needs to use it
         stack_alloc_t alloc = {};
-        RETHROW(stack_alloc(&alloc, name, SIZE_4KB, STACK_ALLOC_FILL));
+        RETHROW(stack_alloc(&alloc, name, SIZE_4KB, STACK_ALLOC_IST));
 
         m_tss.ist[ist] = (uintptr_t)alloc.stack;
 

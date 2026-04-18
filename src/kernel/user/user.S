@@ -1,5 +1,18 @@
 .section .text
 
+/**
+ * void usermode_jump_shstk(void* arg, void* rip, void* rsp, void* ssp_token);
+ */
+.global usermode_jump_shstk
+usermode_jump_shstk:
+    /**
+     * start by clearing the shadow stack
+     */
+    clrssbsy (%rcx)
+
+/**
+ * void usermode_jump(void* arg, void* rip, void* rsp);
+ */
 .global usermode_jump
 usermode_jump:
     /**

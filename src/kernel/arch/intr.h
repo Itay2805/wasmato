@@ -31,6 +31,15 @@
 #define IA32_PF_EC_SHSTK    BIT6
 #define IA32_PF_EC_SGX      BIT15
 
+// #CP error-code "type" field (low 15 bits of the error code).
+#define IA32_CP_EC_TYPE_MASK    0x7FFF
+#define IA32_CP_EC_NEAR_RET     1
+#define IA32_CP_EC_FAR_RET_IRET 2
+#define IA32_CP_EC_ENDBRANCH    3
+#define IA32_CP_EC_RSTORSSP     4
+#define IA32_CP_EC_SETSSBSY     5
+#define IA32_CP_EC_ENCL         BIT15
+
 #define INTR_VECTOR_TIMER       0x20
 #define INTR_VECTOR_IPI         0xF0
 #define INTR_VECTOR_PANIC       0xF1
