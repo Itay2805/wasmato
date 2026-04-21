@@ -22,6 +22,13 @@ do_thread_switch:
     movq %rsp, (%rsi)
 
     /**
+     * Only switch shadow stacks if the
+     * feature is actually supported
+     */
+    cmpb $0, g_shadow_stack_supported(%rip)
+    je 1f
+
+    /**
      * Get the shadow stack before we do
      * any manipulations
      */
@@ -46,6 +53,7 @@ do_thread_switch:
      */
     subq $8, %rax
     movq %rax, 8(%rsi)
+1:
 
     /**
      * Finally switch to the new real stack

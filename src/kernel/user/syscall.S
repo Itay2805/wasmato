@@ -35,13 +35,17 @@ syscall_entry:
     pushq %r11
 
     /**
-     * We enable the kernel shadow stack and store 
-     * it aside so we can properly clear it later on
-     * TODO: check if shadow stack is enabled or not
+     * We enable the kernel shadow stack and store
+     * it aside so we can properly clear it later on.
+     * Only run the shadow stack opcodes if the
+     * feature is actually supported.
      */
+    cmpb $0, g_shadow_stack_supported(%rip)
+    je 1f
     setssbsy
     rdsspq %rax
     pushq %rax
+1:
 
     /* 
      * interrupts can now be enabled 
@@ -62,10 +66,15 @@ syscall_entry:
     /**
      * clear the shadow stack because we no
      * longer need it, we stashed on the stack
-     * the shadow stack token
+     * the shadow stack token. Only run the
+     * shadow stack opcodes if the feature is
+     * actually supported (matching the setup above).
      */
+    cmpb $0, g_shadow_stack_supported(%rip)
+    je 2f
     popq %rdi
     clrssbsy (%rdi)
+2:
 
     /**
      * Restore the caller-saved registers, the other regs
