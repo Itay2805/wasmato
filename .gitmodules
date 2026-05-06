@@ -4,6 +4,6 @@
 [submodule "lib/limine"]
 	path = lib/limine
 	url = git@github.com:Limine-Bootloader/Limine.git
-[submodule "lib/spidir"]
-	path = lib/spidir
-	url = git@github.com:nmraz/spidir.git
+[submodule "lib/spidir-wasm"]
+	path = lib/spidir-wasm
+	url = git@github.com:Itay2805/spidir-wasm.git

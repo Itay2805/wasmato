@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "lib/log.h"
 #include "mem/vmar.h"
 #include "uapi/syscall.h"
 

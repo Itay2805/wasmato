@@ -4,11 +4,16 @@
 #include "lib/log.h"
 #include "lib/stb_ds.h"
 #include "lib/syscall.h"
-#include "wasm/module.h"
-#include "wasm/jit/jit.h"
+
+#include "wasm_err.h"
+#include "wasm/wasm.h"
+#include "wasm/jit.h"
 
 static void main(void) {
     err_t err = NO_ERROR;
+
+    wasm_module_t module = {};
+    wasm_module_jit_t jit = {};
 
     // ensure we only enter the main function once
     static bool init_once = false;
@@ -27,23 +32,18 @@ static void main(void) {
     // and we can free the main stacks
     sys_early_done();
 
-    // setup the jit
-    wasm_jit_init();
+    // actually load it
+    RETHROW_WASM(wasm_load_module(&module, initrd, initrd_size));
 
-    // load the module
-    wasm_module_t module = {};
-    wasm_jit_t jit = {};
-    RETHROW(wasm_load_module(&module, initrd, initrd_size));
-    RETHROW(wasm_jit_module(&module, &jit));
-
-    TRACE("Exports:");
-    for (int i = 0; i < shlen(module.exports); i++) {
-        TRACE("\t%s(func%d) - %p", module.exports[i].key, module.exports[i].index, wasm_jit_get_function(&jit, module.exports[i].key));
-    }
+    wasm_jit_config_t config = {
+        .optimize = true,
+    };
+    RETHROW_WASM(wasm_module_jit(&module, &jit, &config));
 
 cleanup:
-    wasm_jit_free(&jit);
+    wasm_module_jit_free(&jit);
     wasm_module_free(&module);
+
     (void)err;
 }
 

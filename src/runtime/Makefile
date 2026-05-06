@@ -6,25 +6,27 @@ ldflags-runtime-y += -flto
 ldflags-runtime-y += -nostdlib
 ldflags-runtime-y += -static
 
+COMMON_CFLAGS := -target x86_64-pc-none-elf
+COMMON_CFLAGS += -march=x86-64-v3
+COMMON_CFLAGS += -flto -g
+COMMON_CFLAGS += -fcf-protection=full -fno-jump-tables
+COMMON_CFLAGS += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
+COMMON_CFLAGS += -mcmodel=small
+COMMON_CFLAGS += -nostdlib -nostdinc
+COMMON_CFLAGS += -isystem $(shell $(CC) --print-resource-dir)/include
+
 # common flags
-cflags-runtime-y += -target x86_64-pc-none-elf
+cflags-runtime-y += $(COMMON_CFLAGS)
 cflags-runtime-y += -Wall -Werror -std=gnu23
-cflags-runtime-y += -march=x86-64-v3
-cflags-runtime-y += -flto -g
 cflags-runtime-y += -Isrc/common
 cflags-runtime-y += -fno-omit-frame-pointer -fvisibility=hidden
 cflags-runtime-y += -Wno-unused-label
-
 cflags-runtime-y += -mrdpid
 cflags-runtime-y += -mfsgsbase
-
-cflags-runtime-y += -fcf-protection=full -fno-jump-tables
-
-cflags-runtime-y += -fno-pie -fno-pic -ffreestanding -fno-builtin -static
-cflags-runtime-y += -mcmodel=small
-cflags-runtime-y += -nostdlib -nostdinc
-cflags-runtime-y += -isystem $(shell $(CC) --print-resource-dir)/include
 cflags-runtime-y += -Isrc/runtime
+
+cflags-runtime-y += -Ilib/spidir-wasm/include
+cflags-runtime-y += -Ilib/spidir-wasm/libs/spidir/c-api/include
 
 cflags-runtime-$(OPTIMIZE) += -O3
 
@@ -37,8 +39,9 @@ lddeps-runtime-y += $(RUST_LIBS)
 ldflags-runtime-y += -L$(CARGO_LIBS_PATH)
 ldlibs-runtime-y += rust_libs
 
-# spidir headers
-cflags-runtime-y += -Ilib/spidir/c-api/include
+lddeps-runtime-y += $(LIBWASM)
+ldflags-runtime-y += -L$(LIBWASM_LIBS_PATH)
+ldlibs-runtime-y += wasm
 
 runtime-y += $(shell find src/runtime -name '*.c')
 runtime-y += $(shell find src/common -name '*.c')

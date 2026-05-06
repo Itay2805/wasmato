@@ -54,11 +54,13 @@ PHONY += clean
 clean:
 	$(call cmd,clean)
 	$(MAKE) -C apps clean
+	$(MAKE) -C lib/spidir-wasm clean
 
 include src/rust-libs/Makefile
 include src/runtime/Makefile
 include src/kernel/Makefile
 include makefiles/limine.mk
 include makefiles/initrd.mk
+include makefiles/wasm.mk
 include makefiles/test.mk
 include scripts/build.mk
