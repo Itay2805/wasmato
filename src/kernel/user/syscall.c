@@ -87,9 +87,6 @@ static err_t handle_jit_alloc(size_t rx_page_count, size_t ro_page_count, void**
 
     vmar_lock();
 
-    // must have at least one code page
-    CHECK(rx_page_count != 0);
-
     // ensure the two don't overflow
     size_t total_pages = 0;
     CHECK(!__builtin_add_overflow(rx_page_count, ro_page_count, &total_pages));
@@ -98,18 +95,27 @@ static err_t handle_jit_alloc(size_t rx_page_count, size_t ro_page_count, void**
     // want it close together
     vmar_t* jit_vmar = vmar_reserve(&g_user_code_region, total_pages, nullptr);
     CHECK_ERROR(jit_vmar != nullptr, ERROR_OUT_OF_MEMORY);
-    snprintf(jit_vmar->name, sizeof(jit_vmar->name), "jit");
+    vmar_set_name(jit_vmar, "jit");
+    jit_vmar->subtype = VMAR_SUBTYPE_JIT;
+
+    void* end = jit_vmar->base;
 
     // setup rx pages if any
-    vmar_t* rx_vmar = vmar_allocate(jit_vmar, rx_page_count, jit_vmar->base);
-    CHECK_ERROR(rx_vmar != nullptr, ERROR_OUT_OF_MEMORY);
-    snprintf(rx_vmar->name, sizeof(rx_vmar->name), "code");
+    if (rx_page_count != 0) {
+        vmar_t* rx_vmar = vmar_allocate(jit_vmar, rx_page_count, end);
+        CHECK_ERROR(rx_vmar != nullptr, ERROR_OUT_OF_MEMORY);
+        rx_vmar->subtype = VMAR_SUBTYPE_JIT_RX;
+        vmar_set_name(rx_vmar, "text");
+        end = vmar_end(rx_vmar) + 1;
+    }
 
     // setup ro pages if any
     if (ro_page_count != 0) {
-        vmar_t* ro_vmar = vmar_allocate(jit_vmar, ro_page_count, vmar_end(rx_vmar) + 1);
+        vmar_t* ro_vmar = vmar_allocate(jit_vmar, ro_page_count, end);
         CHECK_ERROR(ro_vmar != nullptr, ERROR_OUT_OF_MEMORY);
-        snprintf(ro_vmar->name, sizeof(ro_vmar->name), "constpool");
+        ro_vmar->subtype = VMAR_SUBTYPE_JIT_RO;
+        vmar_set_name(ro_vmar, "rodata");
+        end = vmar_end(ro_vmar) + 1;
     }
 
     // don't allow to modify the top level vmar
@@ -134,18 +140,25 @@ static err_t handle_jit_lock_protection(void* ptr) {
     vmar_lock();
 
     // get the first region
-    vmar_t* rx_region = vmar_find_mapping(&g_user_code_region, ptr);
-    CHECK(rx_region != nullptr);
+    vmar_t* jit_region = vmar_find(&g_user_code_region, ptr);
+    CHECK(jit_region != nullptr);
+    CHECK(jit_region->type == VMAR_TYPE_REGION);
+    CHECK(jit_region->subtype == VMAR_SUBTYPE_JIT);
 
-    // set the code
-    CHECK(rx_region->parent->base == rx_region->base);
-    vmar_protect(rx_region, MAPPING_PROTECTION_RX);
+    // set the RX region
+    struct rb_node* first = rb_first(&jit_region->region.root);
+    CHECK(first != nullptr);
+    vmar_t* region = rb_entry(first, vmar_t, node);
+    CHECK(region->subtype == VMAR_SUBTYPE_JIT_RX || region->subtype == VMAR_SUBTYPE_JIT_RO);
+    vmar_protect(region, region->subtype == VMAR_SUBTYPE_JIT_RX ? MAPPING_PROTECTION_RX : MAPPING_PROTECTION_RO);
 
-    // set constpool
-    struct rb_node* next = rb_next(&rx_region->node);
+    // set the RO region
+    struct rb_node* next = rb_next(first);
     if (next != nullptr) {
         CHECK(next != nullptr);
         vmar_t* ro_region = rb_entry(next, vmar_t, node);
+        CHECK(region->subtype == VMAR_SUBTYPE_JIT_RX);
+        CHECK(ro_region->subtype == VMAR_SUBTYPE_JIT_RO);
         vmar_protect(ro_region, MAPPING_PROTECTION_RO);
     }
 
@@ -171,6 +184,7 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
             vmar_lock();
             vmar_t* region = vmar_allocate(&g_user_memory, arg1, nullptr);
             if (region != nullptr) {
+                region->subtype = VMAR_SUBTYPE_HEAP;
                 vmar_set_name(region, "heap");
             }
             vmar_unlock();
@@ -188,8 +202,103 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
             CHECK(mapping != nullptr);
             CHECK(mapping->parent == &g_user_memory);
             CHECK(mapping->type == VMAR_TYPE_ALLOC);
+            CHECK(mapping->subtype == VMAR_SUBTYPE_HEAP);
             CHECK(mapping->alloc.protection == MAPPING_PROTECTION_RW);
             vmar_free(mapping);
+            vmar_unlock();
+        } break;
+
+        case SYSCALL_MEM_RESERVE: {
+            vmar_lock();
+
+            // reserve the top level region
+            vmar_t* mapping = vmar_reserve(&g_user_memory, arg1, nullptr);
+            if (mapping != nullptr) {
+                mapping->subtype = VMAR_SUBTYPE_MEM;
+                copy_string_from_user(mapping->name, arg2, sizeof(mapping->name));
+
+                // allocate the bump as a zero sized allocation,
+                // we will grow it as required
+                vmar_t* bump = vmar_allocate(mapping, 0, mapping->base);
+                if (bump != nullptr) {
+                    bump->subtype = VMAR_SUBTYPE_BUMP;
+                    vmar_set_name(bump, "bump");
+                } else {
+                    // failed to map the bump
+                    vmar_free(mapping);
+                    mapping = nullptr;
+                }
+            }
+            vmar_unlock();
+
+            if (mapping == nullptr) {
+                result = 0;
+            } else {
+                result = (uintptr_t)mapping->base;
+            }
+        } break;
+
+        case SYSCALL_MEM_BUMP: {
+            vmar_lock();
+
+            // get the main mapping
+            vmar_t* mapping = vmar_find(&g_user_memory, (void*)arg1);
+            CHECK(mapping != nullptr);
+            CHECK(mapping->base == (void*)arg1);
+            CHECK(mapping->type == VMAR_TYPE_REGION);
+            CHECK(mapping->subtype == VMAR_SUBTYPE_MEM);
+
+            // get the bump region
+            vmar_t* bump = vmar_find(mapping, (void*)arg1);
+            CHECK(bump != nullptr);
+            CHECK(bump->base == (void*)arg1);
+            CHECK(bump->type == VMAR_TYPE_ALLOC);
+            CHECK(bump->subtype == VMAR_SUBTYPE_BUMP);
+
+            // get the total that we want to add and
+            // ensure it even fits inside
+            size_t total_size = 0;
+            CHECK(!__builtin_add_overflow(bump->page_count, arg2, &total_size));
+
+            // assume we failed
+            result = 0;
+
+            if (total_size <= mapping->page_count) {
+                // calculate the end of the new
+                // bump region
+                void* bump_end = vmar_end(bump);
+                void* end = bump_end + PAGES_TO_SIZE(arg2);
+
+                rb_node_t* next = rb_next(&bump->node);
+                if (next != nullptr) {
+                    // we have a next mapping, check it
+                    vmar_t* vmar = rb_entry(next, vmar_t, node);
+                    if (end < vmar->base) {
+                        // there is enough free space in between
+                        // the next region and the current region
+                        bump->page_count += arg2;
+                        result = (uintptr_t)bump_end + 1;
+                    }
+                } else {
+                    // no next mapping, we can map
+                    bump->page_count += arg2;
+                    result = (uintptr_t)bump_end + 1;
+                }
+            }
+
+            vmar_unlock();
+        } break;
+
+        case SYSCALL_MEM_FREE: {
+            vmar_lock();
+
+            vmar_t* mapping = vmar_find(&g_user_memory, (void*)arg1);
+            CHECK(mapping != nullptr);
+            CHECK(mapping->type == VMAR_TYPE_REGION);
+            CHECK(mapping->subtype == VMAR_SUBTYPE_MEM);
+            CHECK(mapping->base == (void*)arg1);
+            vmar_free(mapping);
+
             vmar_unlock();
         } break;
 
@@ -211,8 +320,11 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
 
         case SYSCALL_JIT_FREE: {
             vmar_lock();
-            vmar_t* region = vmar_find_mapping(&g_user_code_region, (void*)arg1);
+            vmar_t* region = vmar_find(&g_user_code_region, (void*)arg1);
             CHECK(region != nullptr);
+            CHECK(region->base == (void*)arg1);
+            CHECK(region->type == VMAR_TYPE_ALLOC);
+            CHECK(region->subtype == VMAR_SUBTYPE_JIT);
             vmar_free(region);
             vmar_unlock();
         } break;

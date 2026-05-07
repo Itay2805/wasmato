@@ -46,6 +46,36 @@ typedef enum vmar_type : uint8_t {
     VMAR_TYPE_SPECIAL,
 } vmar_type_t;
 
+typedef enum vmar_subtype {
+    /**
+     * Generic allocation
+     */
+    VMAR_SUBTYPE_NONE,
+
+    /**
+     * Heap allocation
+     */
+    VMAR_SUBTYPE_HEAP,
+
+    /**
+     * Memory allocation
+     */
+    VMAR_SUBTYPE_MEM,
+
+    /**
+     * Memory bump
+     */
+    VMAR_SUBTYPE_BUMP,
+
+    /**
+     * Jit allocation
+     */
+    VMAR_SUBTYPE_JIT,
+    VMAR_SUBTYPE_JIT_RX,
+    VMAR_SUBTYPE_JIT_RO,
+
+} vmar_subtype_t;
+
 typedef struct vmar {
     /**
      * The node inside the parent region
@@ -72,6 +102,11 @@ typedef struct vmar {
      * The type of the region
      */
     vmar_type_t type;
+
+    /**
+     * The subtype of the allocation
+     */
+    vmar_subtype_t subtype;
 
     /**
      * Is the vmar pinned, meaning it can't
@@ -130,6 +165,10 @@ static inline void vmar_set_name(vmar_t* vmar, const char* name) {
 }
 
 static inline void* vmar_end(const vmar_t* vmar) {
+    if (vmar->page_count == 0) {
+        return vmar->base;
+    }
+
     size_t size = PAGES_TO_SIZE(vmar->page_count) - 1;
     return vmar->base + size;
 }

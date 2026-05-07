@@ -90,6 +90,22 @@ void sys_debug_print(const char* message, size_t message_len) {
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// VMAR management
+//----------------------------------------------------------------------------------------------------------------------
+
+void* sys_mem_reserve(size_t page_count, const char* name) {
+    return (void*)syscall2(SYSCALL_MEM_RESERVE, page_count, name);
+}
+
+void* sys_mem_bump(void* ptr, size_t page_count) {
+    return (void*)syscall2(SYSCALL_MEM_BUMP, ptr, page_count);
+}
+
+void sys_mem_free(void* ptr) {
+    (void)syscall1(SYSCALL_MEM_FREE, ptr);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Heap management
 //----------------------------------------------------------------------------------------------------------------------
 

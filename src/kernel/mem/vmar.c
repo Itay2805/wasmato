@@ -149,7 +149,6 @@ static __always_inline bool vmar_less(struct rb_node* a, const struct rb_node* b
 
 bool vmar_reserve_static(vmar_t* parent, vmar_t* child) {
     assert_vmar_locked();
-    ASSERT(child->page_count != 0);
     ASSERT(parent->type == VMAR_TYPE_REGION);
     ASSERT(!parent->locked);
 
