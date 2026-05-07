@@ -1,3 +1,5 @@
+#include "wasi.h"
+#include "wasm.h"
 #include "alloc/alloc.h"
 #include "lib/assert.h"
 #include "lib/except.h"
@@ -9,11 +11,17 @@
 #include "wasm/wasm.h"
 #include "wasm/jit.h"
 
+static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
+    if (strcmp(module, "wasi_snapshot_preview1") == 0) {
+        return wasip1_resolve_import(name);
+    } else {
+        return nullptr;
+    }
+}
+
 static void main(void) {
     err_t err = NO_ERROR;
-
-    wasm_module_t module = {};
-    wasm_module_jit_t jit = {};
+    wasm_entry_args_t* args = nullptr;
 
     // ensure we only enter the main function once
     static bool init_once = false;
@@ -32,17 +40,30 @@ static void main(void) {
     // and we can free the main stacks
     sys_early_done();
 
-    // actually load it
-    RETHROW_WASM(wasm_load_module(&module, initrd, initrd_size));
+    args = mem_alloc(sizeof(*args));
+    CHECK(args != nullptr);
+    memset(args, 0, sizeof(*args));
 
+    // actually load it
+    RETHROW_WASM(wasm_load_module(&args->module, initrd, initrd_size));
+
+    // jit it
     wasm_jit_config_t config = {
         .optimize = true,
+        .resolve_import = wasm_resolve_import
     };
-    RETHROW_WASM(wasm_module_jit(&module, &jit, &config));
+    RETHROW_WASM(wasm_module_jit(&args->module, &args->jit, &config));
+
+    // start a new thread with it
+    CHECK(sys_thread_create(args, "wasm"));
+    args = nullptr;
 
 cleanup:
-    wasm_module_jit_free(&jit);
-    wasm_module_free(&module);
+    if (args != nullptr) {
+        wasm_module_jit_free(&args->jit);
+        wasm_module_free(&args->module);
+        mem_free(args);
+    }
 
     (void)err;
 }
@@ -56,7 +77,8 @@ void _start(void* arg) {
     if (arg == nullptr) {
         main();
     } else {
-        // TODO: wasm entry point
+        ASSERT(arg != nullptr);
+        wasm_entry_point(arg);
     }
     sys_thread_exit();
 }

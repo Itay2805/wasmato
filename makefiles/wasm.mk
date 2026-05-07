@@ -16,6 +16,12 @@ quiet_cmd_make_libwasm = MAKE    $(LIBWASM)
                               CFLAGS="$(COMMON_CFLAGS)" \
                               V=$(V)
 
-PHONY += $(LIBWASM)
-$(LIBWASM):
+targets += $(LIBWASM)
+
+PHONY += libwasm
+libwasm:
 	$(call cmd,make_libwasm)
+
+$(LIBWASM): libwasm
+	@:
+
