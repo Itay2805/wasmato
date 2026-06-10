@@ -56,4 +56,5 @@ size_t sys_atomic_notify(void* key, size_t count);
 
 size_t sys_early_get_initrd_size(void);
 void sys_early_get_initrd(void* addr);
+uint64_t sys_early_get_tsc_freq(void);
 void sys_early_done(void);

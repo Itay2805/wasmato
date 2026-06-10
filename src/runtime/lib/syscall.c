@@ -180,6 +180,10 @@ void sys_early_get_initrd(void* addr) {
 	(void)syscall1(SYSCALL_EARLY_GET_INITRD, addr);
 }
 
+uint64_t sys_early_get_tsc_freq(void) {
+	return syscall0(SYSCALL_EARLY_GET_TSC_FREQ);
+}
+
 void sys_early_done(void) {
 	(void)syscall0(SYSCALL_EARLY_DONE);
 }

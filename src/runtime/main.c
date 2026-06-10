@@ -11,6 +11,8 @@
 #include "wasm/wasm.h"
 #include "wasm/jit.h"
 
+uint64_t g_tsc_freq_hz = 0;
+
 static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
     if (strcmp(module, "wasi_snapshot_preview1") == 0) {
         return wasip1_resolve_import(name);
@@ -22,6 +24,9 @@ static void* wasm_resolve_import(void* arg, const char* module, const char* name
 static void main(void) {
     err_t err = NO_ERROR;
     wasm_entry_args_t* args = nullptr;
+
+    // initialize the tsc freq so we can sync with it nicely
+    g_tsc_freq_hz = sys_early_get_tsc_freq();
 
     // ensure we only enter the main function once
     static bool init_once = false;

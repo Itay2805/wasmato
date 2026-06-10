@@ -1,5 +1,6 @@
 #include "syscall.h"
 #include "lib/log.h"
+#include "lib/tsc.h"
 #include "mem/vmar.h"
 #include "uapi/syscall.h"
 
@@ -385,6 +386,10 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
             CHECK(!m_early_done);
             struct limine_file* file = g_limine_module_request.response->modules[0];
             copy_to_user(arg1, file->address, file->size);
+        } break;
+
+        case SYSCALL_EARLY_GET_TSC_FREQ: {
+            result = g_tsc_freq_hz;
         } break;
 
         case SYSCALL_EARLY_DONE: {

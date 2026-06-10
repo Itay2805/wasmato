@@ -4,6 +4,7 @@
 #include "arch/intrin.h"
 #include "lib/atomic.h"
 #include "lib/list.h"
+#include "lib/tsc.h"
 #include "sched.h"
 #include "mem/virt.h"
 #include "sync/spinlock.h"

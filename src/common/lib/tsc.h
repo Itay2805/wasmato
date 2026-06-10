@@ -17,13 +17,29 @@ extern uint64_t g_tsc_freq_hz;
  */
 static inline uint64_t get_tsc() { return __builtin_ia32_rdtsc(); }
 
-static inline uint64_t ns_to_tsc(uint64_t ns) { return (ns * g_tsc_freq_hz) / NS_PER_S; }
-static inline uint64_t us_to_tsc(uint64_t us) { return (us * g_tsc_freq_hz) / US_PER_S; }
-static inline uint64_t ms_to_tsc(uint64_t ms) { return (ms * g_tsc_freq_hz) / MS_PER_S; }
+#ifdef __KERNEL__
 
-static inline uint64_t tsc_to_ns(uint64_t ns) { return (ns * NS_PER_S) / g_tsc_freq_hz; }
-static inline uint64_t tsc_to_us(uint64_t us) { return (us * US_PER_S) / g_tsc_freq_hz; }
-static inline uint64_t tsc_to_ms(uint64_t ms) { return (ms * MS_PER_S) / g_tsc_freq_hz; }
+//
+// NOTE: we assume the kernel does not use large numbers so 
+//       using normal 64bit arith is fine
+//
+
+static inline uint64_t ns_to_tsc(uint64_t ns) { return (ns * g_tsc_freq_hz) / NS_PER_S; }
+static inline uint64_t us_to_tsc(uint64_t ns) { return (ns * g_tsc_freq_hz) / US_PER_S; }
+static inline uint64_t ms_to_tsc(uint64_t ns) { return (ns * g_tsc_freq_hz) / MS_PER_S; }
+
+#else
+
+static inline uint64_t ns_to_tsc(uint64_t ns) { return (ns * (unsigned __int128)g_tsc_freq_hz) / NS_PER_S; }
+static inline uint64_t us_to_tsc(uint64_t ns) { return (ns * (unsigned __int128)g_tsc_freq_hz) / US_PER_S; }
+static inline uint64_t ms_to_tsc(uint64_t ns) { return (ns * (unsigned __int128)g_tsc_freq_hz) / MS_PER_S; }
+
+static inline uint64_t tsc_to_ns(uint64_t ns) { return (ns * (unsigned __int128)NS_PER_S) / g_tsc_freq_hz; }
+static inline uint64_t tsc_to_us(uint64_t us) { return (us * (unsigned __int128)US_PER_S) / g_tsc_freq_hz; }
+static inline uint64_t tsc_to_ms(uint64_t ms) { return (ms * (unsigned __int128)MS_PER_S) / g_tsc_freq_hz; }
+
+
+#endif
 
 static inline uint64_t tsc_ns_deadline(uint64_t ns) { return get_tsc() + ns_to_tsc(ns); }
 static inline uint64_t tsc_us_deadline(uint64_t us) { return get_tsc() + us_to_tsc(us); }

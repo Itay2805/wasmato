@@ -20,6 +20,8 @@ cflags-kernel-y += -Ilib/limine-protocol/include
 
 cflags-kernel-y += -mshstk -mxsaveopt -minvpcid -mfsgsbase
 
+cflags-kernel-y += -D__KERNEL__
+
 # we need the runtime for the kernel to work
 ccodeps-kernel-y += $(BUILD)/runtime
 
