@@ -1,6 +1,10 @@
 #include "wasm.h"
 
+#include "uapi/syscall.h"
 #include "wasm/host.h"
+
+#include "lib/tsc.h"
+#include "lib/atomic.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -38,15 +42,17 @@ void wasm_entry_point(wasm_entry_args_t* args) {
     CHECK(memory_base != nullptr);
 
     // prepare the minimal bump
-    CHECK(sys_mem_bump(memory_base, SIZE_TO_PAGES(args->module.memory_min)) != nullptr);
+    CHECK(sys_mem_bump(memory_base, SIZE_TO_PAGES(args->module.memory.min)) != nullptr);
 
-    // copy all the data segments that are needed on start
-    for (int64_t i = 0; i < args->module.data_segments_count; i++) {
-        wasm_data_segment_t* segment = &args->module.data_segments[i];
-        memcpy(memory_base + segment->offset, segment->data, segment->len);
+    // setup the memory of the module
+    wasm_module_init_memory(&args->module, memory_base);
+
+    // start with running the start section, it should always run no matter what
+    if (args->module.start_func >= 0) {
+        args->jit.start_func(memory_base, state_base);
     }
 
-    // find the entry point
+    // now find the actual entry point and call it
     int64_t export = wasm_find_export(&args->module, "_start");
     CHECK(export >= 0);
     CHECK(args->module.exports[export].kind == WASM_EXPORT_FUNC);
@@ -73,7 +79,7 @@ cleanup:
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Host functions required by the wasm runtime
+// Host logging
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static char* debug_print_cb(const char* buf, void* user, int len) {
@@ -101,16 +107,30 @@ void wasm_host_log(wasm_host_log_level_t log_level, const char* fmt, ...) {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Host jit interface
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 size_t wasm_host_page_size(void) {
     return PAGE_SIZE;
 }
 
-void wasm_host_snprintf(char* buffer, size_t len, const char* fmt, ...) {
-    va_list ap = {};
-    va_start(ap, fmt);
-    stbsp_vsnprintf(buffer, len, fmt, ap);
-    va_end(ap);
+void* wasm_host_jit_alloc(size_t rx_page_count, size_t ro_page_count) {
+    return sys_jit_alloc(rx_page_count, ro_page_count);
 }
+
+bool wasm_host_jit_lock(void* ptr, size_t rx_page_count, size_t ro_page_count) {
+    sys_jit_lock_protection(ptr);
+    return true;
+}
+
+void wasm_host_jit_free(void* ptr, size_t rx_page_count, size_t ro_page_count) {
+    sys_jit_free(ptr);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Runtime memory allocation
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void* wasm_host_calloc(size_t nmemb, size_t size) {
     size *= nmemb;
@@ -129,6 +149,10 @@ void wasm_host_free(void* ptr) {
     return mem_free(ptr);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// WASM memory manipulation
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 int32_t wasm_host_memory_size(void* memory_base) {
     ASSERT(!"TODO: wasm_host_memory_size");
     return 0;
@@ -139,15 +163,58 @@ int32_t wasm_host_memory_grow(void* memory_base, int32_t new_page_count) {
     return -1;
 }
 
-void* wasm_host_jit_alloc(size_t rx_page_count, size_t ro_page_count) {
-    return sys_jit_alloc(rx_page_count, ro_page_count);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// WASM atomic handling
+//
+// wait on the given address, the possible return values are:
+// 0 - "ok", woken by another agent in the cluster
+// 1 - "not-equal", the loaded value did not match the expected value
+// 2 - "timed-out", not woken before timeout expired
+//
+// The timeout is in relative nanoseconds, and if its a negative
+// number it should not have any timeout
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+uint32_t wasm_host_atomic_notify(void* ptr, uint32_t count) {
+    // for the kernel 0 means wake all, for wasm it means not waking 
+    // up any threads, so just pass if that happens
+    if (count == 0) {
+        return 0;
+    }
+    return sys_atomic_notify(ptr, count);
 }
 
-bool wasm_host_jit_lock(void* ptr, size_t rx_page_count, size_t ro_page_count) {
-    sys_jit_lock_protection(ptr);
-    return true;
+static uint64_t wasm_atomic_deadline(int64_t timeout) {
+    if (timeout <= 0) {
+        return 0;
+    }
+    return tsc_ns_deadline((uint64_t)timeout);
 }
 
-void wasm_host_jit_free(void* ptr, size_t rx_page_count, size_t ro_page_count) {
-    sys_jit_free(ptr);
+static uint32_t wasm_atomic_woken_result(uint64_t deadline) {
+    if (tsc_check_deadline(deadline)) {
+        return 2; // "not-equal"
+    }
+    return 0; // "ok"
+}
+
+uint32_t wasm_host_atomic_wait_4(_Atomic(uint32_t)* value, uint32_t expected, int64_t timeout) {
+    uint64_t deadline = wasm_atomic_deadline(timeout);
+
+    if (!sys_atomic_wait32(value, expected, deadline)) {
+        return 1; // "not-equal"
+    }
+
+    return wasm_atomic_woken_result(deadline);
+}
+
+uint32_t wasm_host_atomic_wait_8(_Atomic(uint64_t)* value, uint64_t expected, int64_t timeout) {
+    uint64_t deadline = wasm_atomic_deadline(timeout);
+
+    if (!sys_atomic_wait64(value, expected, deadline)) {
+        return 1; // "not-equal"
+    }
+    
+    return wasm_atomic_woken_result(deadline);
 }
