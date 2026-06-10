@@ -52,13 +52,13 @@ WASI_RT_LIB := $(WASI_RT_DIR)/lib/wasm32-unknown-wasi/libclang_rt.builtins.a
 include ../scripts/defs.mk
 
 # Common cflags for all apps
-cflags-y += --target=wasm32-wasip1
+cflags-y += --target=wasm32-wasip1-threads
 cflags-y += --sysroot=$(WASI_SYSROOT)
 cflags-y += -Wall -Werror -std=gnu23
 cflags-y += -flto -g
 cflags-y += -fvisibility=hidden
 
-ldflags-y += --target=wasm32-wasip1
+ldflags-y += --target=wasm32-wasip1-threads
 ldflags-y += --sysroot=$(WASI_SYSROOT)
 ldflags-y += -resource-dir=$(abspath $(WASI_RT_DIR))
 ldflags-y += -flto

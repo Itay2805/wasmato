@@ -1,82 +1,13 @@
-#include "wasm.h"
-
-#include "uapi/syscall.h"
-#include "wasm/host.h"
-
-#include "lib/tsc.h"
-#include "lib/atomic.h"
-
-#include <stddef.h>
-#include <stdint.h>
-#include <stdarg.h>
-#include <stdnoreturn.h>
-
-#include "alloc/alloc.h"
-#include "lib/except.h"
-#include "lib/log.h"
-#include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
+
 #include "uapi/page.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Host runtime
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include <wasm/wasm.h>
+#include <wasm/host.h>
 
-void wasm_entry_point(wasm_entry_args_t* args) {
-    err_t err = NO_ERROR;
-    void* memory_base = nullptr;
-
-    // prepare the state
-    void* state_base = nullptr;
-    if (args->jit.state_size != 0) {
-        state_base = mem_alloc(args->jit.state_size);
-        CHECK(state_base != nullptr);
-        if (args->jit.state_init) {
-            memcpy(state_base, args->jit.state_init, args->jit.state_size);
-        }
-    }
-
-    // prepare the memory region, the entire region is 8gb to ensure full 33bit
-    // access without any need for length checks
-    memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), "wasm-memory");
-    CHECK(memory_base != nullptr);
-
-    // prepare the minimal bump
-    CHECK(sys_mem_bump(memory_base, SIZE_TO_PAGES(args->module.memory.min)) != nullptr);
-
-    // setup the memory of the module
-    wasm_module_init_memory(&args->module, memory_base);
-
-    // start with running the start section, it should always run no matter what
-    if (args->module.start_func >= 0) {
-        args->jit.start_func(memory_base, state_base);
-    }
-
-    // now find the actual entry point and call it
-    int64_t export = wasm_find_export(&args->module, "_start");
-    CHECK(export >= 0);
-    CHECK(args->module.exports[export].kind == WASM_EXPORT_FUNC);
-
-    // validate it has an empty signature
-    uint32_t funcidx = args->module.exports[export].index;
-    CHECK(funcidx >= args->module.imports_count);
-    funcidx -= args->module.imports_count;
-    typeidx_t type = args->module.functions[funcidx];
-    CHECK(args->module.types[type].arg_types_count == 0);
-
-    // and now we can call it
-    void (*start)(void* memory_base, void* state_base) = args->jit.exports[export].func.address;
-    start(memory_base, state_base);
-
-cleanup:
-    mem_free(state_base);
-
-    if (memory_base != nullptr) {
-        sys_mem_free(memory_base);
-    }
-
-    (void)err;
-}
+#include "alloc/alloc.h"
+#include "lib/stb_sprintf.h"
+#include "lib/tsc.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Host logging
@@ -147,20 +78,6 @@ void* wasm_host_realloc(void* ptr, size_t new_size) {
 
 void wasm_host_free(void* ptr) {
     return mem_free(ptr);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// WASM memory manipulation
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int32_t wasm_host_memory_size(void* memory_base) {
-    ASSERT(!"TODO: wasm_host_memory_size");
-    return 0;
-}
-
-int32_t wasm_host_memory_grow(void* memory_base, int32_t new_page_count) {
-    ASSERT(!"TODO: wasm_host_memory_grow");
-    return -1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

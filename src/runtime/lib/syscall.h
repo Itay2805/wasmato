@@ -41,6 +41,7 @@ typedef void (*sys_thread_entry_t)(void* arg);
 bool sys_thread_create(void* arg, const char* name);
 void sys_thread_sleep(size_t ms);
 void sys_thread_exit(void);
+void sys_thread_yield(void);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Futex primitives

@@ -1,29 +1,15 @@
-#include "wasi.h"
-#include "wasm.h"
 #include "alloc/alloc.h"
 #include "lib/assert.h"
 #include "lib/except.h"
 #include "lib/log.h"
-#include "lib/stb_ds.h"
 #include "lib/syscall.h"
 
-#include "wasm_err.h"
-#include "wasm/wasm.h"
-#include "wasm/jit.h"
+#include "wasm/proc.h"
 
 uint64_t g_tsc_freq_hz = 0;
 
-static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
-    if (strcmp(module, "wasi_snapshot_preview1") == 0) {
-        return wasip1_resolve_import(name);
-    } else {
-        return nullptr;
-    }
-}
-
 static void main(void) {
     err_t err = NO_ERROR;
-    wasm_entry_args_t* args = nullptr;
 
     // initialize the tsc freq so we can sync with it nicely
     g_tsc_freq_hz = sys_early_get_tsc_freq();
@@ -45,31 +31,11 @@ static void main(void) {
     // and we can free the main stacks
     sys_early_done();
 
-    args = mem_alloc(sizeof(*args));
-    CHECK(args != nullptr);
-    memset(args, 0, sizeof(*args));
-
-    // actually load it
-    RETHROW_WASM(wasm_load_module(&args->module, initrd, initrd_size));
-
-    // jit it
-    wasm_jit_config_t config = {
-        .optimize = true,
-        .resolve_import = wasm_resolve_import
-    };
-    RETHROW_WASM(wasm_module_jit(&args->module, &args->jit, &config));
-
-    // start a new thread with it
-    CHECK(sys_thread_create(args, "wasm"));
-    args = nullptr;
+    // create the initrd process
+    RETHROW(wasm_create_proc(initrd, initrd_size));
 
 cleanup:
-    if (args != nullptr) {
-        wasm_module_jit_free(&args->jit);
-        wasm_module_free(&args->module);
-        mem_free(args);
-    }
-
+    ASSERT(!IS_ERROR(err), "Failed to start the system");
     (void)err;
 }
 
@@ -83,7 +49,7 @@ void _start(void* arg) {
         main();
     } else {
         ASSERT(arg != nullptr);
-        wasm_entry_point(arg);
+        wasm_thread_start(arg);
     }
     sys_thread_exit();
 }

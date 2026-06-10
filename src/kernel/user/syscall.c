@@ -324,7 +324,7 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
             vmar_t* region = vmar_find(&g_user_code_region, (void*)arg1);
             CHECK(region != nullptr);
             CHECK(region->base == (void*)arg1);
-            CHECK(region->type == VMAR_TYPE_ALLOC);
+            CHECK(region->type == VMAR_TYPE_REGION);
             CHECK(region->subtype == VMAR_SUBTYPE_JIT);
             vmar_free(region);
             vmar_unlock();
@@ -359,6 +359,10 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
 
         case SYSCALL_THREAD_EXIT: {
             thread_exit();
+        } break;
+
+        case SYSCALL_THREAD_YIELD: {
+            scheduler_schedule();
         } break;
 
         case SYSCALL_ATOMIC_WAIT32: {

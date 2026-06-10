@@ -338,7 +338,10 @@ static void vmar_print_tree_rec(vmar_t* region, char* prefix, size_t plen, bool 
     }
 
     uintptr_t start = (uintptr_t)region->base;
-    uintptr_t end = (uintptr_t)(region->base + (PAGES_TO_SIZE(region->page_count) - 1));
+    uintptr_t end = start;
+    if (region->page_count != 0) {
+        end = (uintptr_t)(region->base + (PAGES_TO_SIZE(region->page_count) - 1));
+    }
     debug_print("%s: 0x%08x'%08x-0x%08x'%08x: %ld pages [%s]\n",
         type_str,
         (uint32_t)(start >> 32), (uint32_t)start,
