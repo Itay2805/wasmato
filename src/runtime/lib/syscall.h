@@ -46,8 +46,8 @@ void sys_thread_exit(void);
 // Futex primitives
 //----------------------------------------------------------------------------------------------------------------------
 
-void sys_atomic_wait32(void* key, uint64_t old, uint64_t deadline);
-void sys_atomic_wait64(void* key, uint64_t old, uint64_t deadline);
+bool sys_atomic_wait32(void* key, uint64_t old, uint64_t deadline);
+bool sys_atomic_wait64(void* key, uint64_t old, uint64_t deadline);
 size_t sys_atomic_notify(void* key, size_t count);
 
 //----------------------------------------------------------------------------------------------------------------------

@@ -65,10 +65,13 @@ static bool atomic_check_user_key(void* key, wait_key_size_t size, uint64_t old)
     return result;
 }
 
-static bool wait_queue_prepare(wait_queue_t* queue, wait_queue_entry_t* entry,
-                               void* key, wait_key_size_t key_size,
-                               uint64_t old) {
+static bool wait_queue_prepare(
+    wait_queue_t* queue, wait_queue_entry_t* entry,
+    void* key, wait_key_size_t key_size,
+    uint64_t old
+) {
     spinlock_acquire(&queue->lock);
+
     // Check whether we should really be going to sleep under the wait queue
     // lock. It's important to do this under the queue lock so we don't race
     // against concurrent notifications: anyone who has changed `key` and has
@@ -78,6 +81,7 @@ static bool wait_queue_prepare(wait_queue_t* queue, wait_queue_entry_t* entry,
         spinlock_release(&queue->lock);
         return false;
     }
+
     list_add(&queue->queue, &entry->link);
     spinlock_release(&queue->lock);
     return true;
@@ -97,7 +101,7 @@ INIT_CODE void init_atomic_wait(void) {
     }
 }
 
-void atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline) {
+bool atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline) {
     thread_t* thread = get_current_thread();
     wait_queue_t* queue = get_wait_queue_for_key(key);
 
@@ -115,7 +119,9 @@ void atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadlin
 
     if (!wait_queue_prepare(queue, &entry, key, size, old)) {
         irq_restore(irq_state);
-        return;
+
+        // the state was not-equal
+        return false;
     }
 
     if (deadline == 0) {
@@ -128,6 +134,8 @@ void atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadlin
     wait_queue_finish(queue, &entry);
 
     irq_restore(irq_state);
+
+    return true;
 }
 
 size_t atomic_notify(void* key, size_t count) {

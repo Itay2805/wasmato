@@ -362,12 +362,12 @@ OMIT_ENDBR uint64_t syscall_handler(uint64_t syscall, uint64_t arg1, uint64_t ar
 
         case SYSCALL_ATOMIC_WAIT32: {
             assert_user_range(arg1, sizeof(uint32_t));
-            atomic_wait((void*)arg1, WAIT_KEY_UINT32, arg2, arg3);
+            result = atomic_wait((void*)arg1, WAIT_KEY_UINT32, arg2, arg3);
         } break;
 
         case SYSCALL_ATOMIC_WAIT64: {
             assert_user_range(arg1, sizeof(uint64_t));
-            atomic_wait((void*)arg1, WAIT_KEY_UINT64, arg2, arg3);
+            result = atomic_wait((void*)arg1, WAIT_KEY_UINT64, arg2, arg3);
         } break;
 
         case SYSCALL_ATOMIC_NOTIFY: {

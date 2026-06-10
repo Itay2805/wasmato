@@ -30,8 +30,9 @@ INIT_CODE void init_atomic_wait(void);
  * @param size      [IN] The size of the key
  * @param old       [IN] The current value we expect
  * @param deadline  [IN] The deadline to wait for, 0 for no deadline
+ * @returns true if we went to sleep, false if we failed to compare against the old value
  */
-void atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline);
+bool atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline);
 
 /**
  * Wakes a number of threads currently waiting on `key` via `atomic_wait`.

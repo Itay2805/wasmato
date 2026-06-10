@@ -1,5 +1,6 @@
 #include "syscall.h"
 #include "uapi/syscall.h"
+#include <stdint.h>
 
 #define syscall0(num) \
     ({ \
@@ -155,12 +156,12 @@ void sys_thread_exit(void) {
 // Futex primitives
 //----------------------------------------------------------------------------------------------------------------------
 
-void sys_atomic_wait32(void* key, uint64_t old, uint64_t deadline) {
-	(void)syscall3(SYSCALL_ATOMIC_WAIT32, key, old, deadline);
+bool sys_atomic_wait32(void* key, uint64_t old, uint64_t deadline) {
+	return syscall3(SYSCALL_ATOMIC_WAIT32, key, old, deadline);
 }
 
-void sys_atomic_wait64(void* key, uint64_t old, uint64_t deadline) {
-	(void)syscall3(SYSCALL_ATOMIC_WAIT64, key, old, deadline);
+bool sys_atomic_wait64(void* key, uint64_t old, uint64_t deadline) {
+	return syscall3(SYSCALL_ATOMIC_WAIT64, key, old, deadline);
 }
 
 size_t sys_atomic_notify(void* key, size_t count) {
