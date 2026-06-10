@@ -64,12 +64,19 @@ void wasm_put_proc(wasm_proc_t* proc);
 
 wasm_proc_t* wasm_current_proc(void* state_base);
 
-typedef struct wasm_thread_start_args {
+typedef struct wasm_state {
     /**
-     * The process we are under
+     * The actual process
      */
     wasm_proc_t* proc;
 
+    /**
+     * The actual state
+     */
+    char state[0];
+} wasm_state_t;
+
+typedef struct wasm_thread_start_args {
     /**
      * The TID of the thread, 1 is the first thread, 
      * which does not use the special entry point
@@ -84,9 +91,11 @@ typedef struct wasm_thread_start_args {
     /**
      * The thread's own state base
      */
-    void* state_base;
+    wasm_state_t* state;
 } wasm_thread_start_args_t;
 
 void wasm_thread_start(wasm_thread_start_args_t* args);
+
+void wasm_thread_exit(void* state_base);
 
 err_t wasm_create_proc(void* module, size_t module_size);

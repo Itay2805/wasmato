@@ -14,23 +14,12 @@
 
 #include "sync/mutex.h"
 #include "uapi/page.h"
+#include "wasm/errno.h"
 #include "wasm/jit.h"
 #include "wasm/wasm.h"
 
 #include "wasm_err.h"
 #include "wasi.h"
-
-typedef struct wasm_state {
-    /**
-     * The actual process
-     */
-    wasm_proc_t* proc;
-
-    /**
-     * The actual state
-     */
-    char state[0];
-} wasm_state_t;
 
 wasm_proc_t* wasm_get_proc(wasm_proc_t* proc) {
     atomic_fetch_add_explicit(&proc->ref_count, 1, memory_order_acquire);
@@ -64,36 +53,59 @@ wasm_proc_t* wasm_current_proc(void* state_base) {
     return state->proc;
 }
 
-void wasm_thread_start(wasm_thread_start_args_t* _args) {
-    // get a local copy so we won't need this anymore
-    wasm_thread_start_args_t args = *_args;
-    mem_free(_args);
+void wasm_thread_exit(void* state_base) {
+    // get the actual state
+    wasm_state_t* state = containerof(state_base, wasm_state_t, state);
+    state_base = nullptr;
 
-    if (args.tid == 1) {
+    // we will need the proc
+    wasm_proc_t* proc = state->proc;
+
+    // free the state, since we no longer need it 
+    mem_free(state);
+    state = nullptr;
+
+    // release the proc itself, we don't need it
+    wasm_put_proc(proc);
+    proc = nullptr;
+
+    // finally hard-exit, to ensure that 
+    // everything ends well
+    sys_thread_exit();
+}
+
+void wasm_thread_start(wasm_thread_start_args_t* args) {
+    // get a local copy so we won't need this anymore
+    wasm_state_t* state = args->state;
+    int32_t tid = args->tid;
+    int32_t arg = args->arg;
+    mem_free(args);
+    args = nullptr;
+
+    wasm_proc_t* proc = state->proc;
+
+    if (tid == 1) {
         // if this is the first thread of the process
-        if (args.proc->jit.start_func != nullptr) {
-            args.proc->jit.start_func(args.proc->memory_base, args.state_base);
+        if (proc->jit.start_func != nullptr) {
+            proc->jit.start_func(proc->memory_base, state->state);
         }
 
         // call the entry point (_start)
-        if (args.proc->start != nullptr) {
-            args.proc->start(args.proc->memory_base, args.state_base);
+        if (proc->start != nullptr) {
+            proc->start(proc->memory_base, state->state);
         }
 
     } else {
         // this is a secondary thread, call it
-        ASSERT(args.proc->wasi_thread_start != nullptr);
-        args.proc->wasi_thread_start(args.proc->memory_base, args.state_base, args.tid, args.arg);
+        ASSERT(proc->wasi_thread_start != nullptr);
+        proc->wasi_thread_start(proc->memory_base, state->state, tid, arg);
     }
 
     // free the state
-    mem_free(args.state_base);
-    
-    // release the process, we no longer need it
-    wasm_put_proc(args.proc);
+    wasm_thread_exit(state->state);
 }
 
-static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, uint32_t* out_tid) {
+static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, int32_t* out_tid) {
     err_t err = NO_ERROR;
     wasm_state_t* state = nullptr;
 
@@ -108,19 +120,19 @@ static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, uint32_t* out_t
     CHECK_ERROR(state != nullptr, ERROR_OUT_OF_MEMORY);
     memset(state, 0, state_size);
 
-    // save the proc
-    state->proc = proc;
+    // save the proc, we take a ref to it
+    state->proc = wasm_get_proc(proc);
 
     // if there is an init state, initialize it
     if (proc->jit.state_size != 0) {
         memcpy(state->state, proc->jit.state_init, proc->jit.state_size);
     }
 
-    // the process we are under
-    args->proc = wasm_get_proc(proc);
-
     // generate the new tid, the first thread gets id of 1
-    uint32_t tid = atomic_fetch_add_explicit(&proc->thread_id_gen, 1, memory_order_relaxed) + 1;
+    // TODO: handle tid overflow
+    int32_t tid = (int32_t)(atomic_fetch_add_explicit(&proc->thread_id_gen, 1, memory_order_relaxed) + 1);
+    CHECK_ERROR(tid > 0, ERROR_OUT_OF_MEMORY);
+
     if (tid > 1) {
         // this is a helper thread, ensure we have an entry point
         CHECK(proc->wasi_thread_start != nullptr);
@@ -131,7 +143,7 @@ static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, uint32_t* out_t
     args->arg = arg;
 
     // and the state base
-    args->state_base = state->state;
+    args->state = state;
     state = nullptr;
 
     // and actually create/start the thread
@@ -140,7 +152,7 @@ static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, uint32_t* out_t
 
     // output the tid
     if (out_tid != nullptr) {
-        *out_tid = args->tid;
+        *out_tid = tid;
     }
 
 cleanup:
@@ -150,12 +162,28 @@ cleanup:
     return err;
 }
 
+static int32_t wasi_thread_spawn(void* memory_base, void* state_base, int32_t start_arg) {
+    wasm_proc_t* proc = wasm_current_proc(state_base);
+
+    int32_t tid = 0;
+    err_t err = wasm_create_thread(proc, start_arg, &tid);
+    switch (err) {
+        case NO_ERROR: return tid;
+        case ERROR_OUT_OF_MEMORY: return WASI_ERRNO_NOMEM;
+        default: return WASI_ERRNO_INVAL;
+    }
+}
+
 static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
     if (strcmp(module, "wasi_snapshot_preview1") == 0) {
         return wasip1_resolve_import(name);
-    } else {
-        return nullptr;
+    } else if (strcmp(module, "wasi") == 0) {
+        if (strcmp(name, "thread-spawn") == 0) {
+            return wasi_thread_spawn;
+        }
     }
+    
+    return nullptr;
 }
 
 err_t wasm_create_proc(void* module, size_t module_size) {
@@ -172,8 +200,9 @@ err_t wasm_create_proc(void* module, size_t module_size) {
     // load the module
     RETHROW_WASM(wasm_load_module(&proc->module, module, module_size));
 
-    // allocate the memory, and properly initialize it once
-    proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(proc->module.memory.max), "wasm-memory");
+    // allocate the memory, we need to reserve 8gb to ensure that nothing 
+    // can accidently overflow or exit the range
+    proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), "wasm-memory");
     CHECK_ERROR(proc->memory_base != nullptr, ERROR_OUT_OF_MEMORY);
 
     // perform the initial bump
