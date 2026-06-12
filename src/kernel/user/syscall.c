@@ -3,7 +3,10 @@
 #include "lib/except.h"
 #include "lib/log.h"
 #include "lib/tsc.h"
+#include "mem/direct.h"
+#include "mem/phys_map.h"
 #include "mem/vmar.h"
+#include "uapi/page.h"
 #include "uapi/syscall.h"
 
 #include <stdatomic.h>
@@ -86,11 +89,13 @@ static void handle_sys_debug_print(const char* message, size_t message_len) {
 // VMAR management
 //----------------------------------------------------------------------------------------------------------------------
 
-static void* handle_sys_mem_reserve(size_t page_count, const char* name) {
+static void* handle_sys_mem_reserve(size_t total_page_count, size_t mappable_page_count, const char* name) {
     vmar_lock();
 
+    ASSERT(total_page_count >= mappable_page_count);
+
     // reserve the top level region
-    vmar_t* mapping = vmar_reserve(&g_user_memory, page_count, nullptr);
+    vmar_t* mapping = vmar_reserve(&g_user_memory, total_page_count, nullptr);
     if (mapping == nullptr) {
         vmar_unlock();
         return nullptr;
@@ -100,9 +105,26 @@ static void* handle_sys_mem_reserve(size_t page_count, const char* name) {
     mapping->subtype = VMAR_SUBTYPE_MEM;
     copy_string_from_user(mapping->name, name, sizeof(mapping->name));
 
+    // we sometimes want the mappable range to be smaller 
+    // than the total reserved range, handle that in here
+    vmar_t* bump_parent = mapping;
+    if (total_page_count != mappable_page_count) {
+        vmar_t* mappable = vmar_reserve(mapping, mappable_page_count, mapping->base);
+        if (mappable == nullptr) {
+            vmar_free(mapping);
+            vmar_unlock();
+            return nullptr;
+        }
+
+        mappable->subtype = VMAR_SUBTYPE_MAPPABLE;
+        vmar_set_name(mappable, "mappable");
+
+        bump_parent = mappable;
+    }
+
     // allocate the bump as a zero sized allocation,
     // we will grow it as required
-    vmar_t* bump = vmar_allocate(mapping, 0, mapping->base);
+    vmar_t* bump = vmar_allocate(bump_parent, 0, bump_parent->base);
     if (bump == nullptr) {
         vmar_free(mapping);
         vmar_unlock();
@@ -169,6 +191,61 @@ static void* handle_sys_mem_bump(void* ptr, size_t page_count) {
     vmar_unlock();
 
     return result;
+}
+
+static void* handle_sys_mem_map_phys(void* ptr, uint64_t phys_base, size_t page_count) {
+    ASSERT((phys_base % PAGE_SIZE) == 0);
+
+    // convert the range
+    if (IS_ERROR(phys_map_to_user(phys_base, PAGES_TO_SIZE(page_count)))) {
+        return nullptr;
+    }
+
+    // now we can actually map it 
+    vmar_lock();
+
+    // get the main mapping
+    vmar_t* mapping = vmar_find(&g_user_memory, ptr);
+    ASSERT(mapping != nullptr);
+    ASSERT(mapping->base == ptr);
+    ASSERT(mapping->type == VMAR_TYPE_REGION);
+    ASSERT(mapping->subtype == VMAR_SUBTYPE_MEM);
+
+    // find the mappable range, if needed
+    vmar_t* mappable = vmar_find(mapping, ptr);
+    if (mappable != nullptr && mapping->type == VMAR_TYPE_REGION) {
+        ASSERT(mappable->base == ptr);
+        ASSERT(mappable->subtype == VMAR_SUBTYPE_MAPPABLE);
+    } else {
+        // no mappable region, just the main one
+        mappable = mapping;
+    }
+
+    vmar_t* phys_mapping = vmar_map_phys(mappable, phys_base, page_count, nullptr);
+    if (phys_mapping == nullptr) {
+        vmar_unlock();
+        return nullptr;
+    }
+
+    // and finally return it
+    ptr = phys_mapping->base;
+
+    vmar_unlock();
+
+    return ptr;
+}
+
+static void handle_sys_mem_unmap_phys(void* ptr, size_t page_count) {
+    vmar_lock();
+
+    vmar_t* mapping = vmar_find_mapping(&g_user_memory, ptr);
+    ASSERT(mapping != nullptr);
+    ASSERT(mapping->type == VMAR_TYPE_PHYS);
+    ASSERT(mapping->base == ptr);
+    ASSERT(mapping->page_count == page_count);
+    vmar_free(mapping);
+
+    vmar_unlock();
 }
 
 static void handle_sys_mem_free(void* ptr) {
@@ -414,6 +491,14 @@ INIT_CODE static uint64_t handle_sys_early_get_tsc_freq(void) {
 	return g_tsc_freq_hz;
 }
 
+INIT_CODE static uint64_t handle_sys_early_get_rsdp(void) {
+    if (g_limine_rsdp_request.response != nullptr) {
+        return direct_to_phys(g_limine_rsdp_request.response->address);
+    } else {
+        return 0;
+    }
+}
+
 INIT_CODE static void handle_sys_early_done(void) {
     // ensure all cores have the scheduler
     // enabled properly before we start
@@ -435,8 +520,10 @@ OMIT_ENDBR uint64_t syscall_handler(syscall_t syscall, uint64_t arg1, uint64_t a
         case SYSCALL_DEBUG_PRINT: handle_sys_debug_print((void*)arg1, arg2); break;
         case SYSCALL_HEAP_ALLOC: return (uintptr_t)handle_sys_heap_alloc(arg1); break;
         case SYSCALL_HEAP_FREE: handle_sys_heap_free((void*)arg1); break;
-        case SYSCALL_MEM_RESERVE: return (uintptr_t)handle_sys_mem_reserve(arg1, (void*)arg2); break;
+        case SYSCALL_MEM_RESERVE: return (uintptr_t)handle_sys_mem_reserve(arg1, arg2, (void*)arg3); break;
         case SYSCALL_MEM_BUMP: return (uintptr_t)handle_sys_mem_bump((void*)arg1, arg2); break;
+        case SYSCALL_MEM_MAP_PHYS: return (uintptr_t)handle_sys_mem_map_phys((void*)arg1, arg2, arg3); break;
+        case SYSCALL_MEM_UNMAP_PHYS: handle_sys_mem_unmap_phys((void*)arg1, arg2); break;
         case SYSCALL_MEM_FREE: handle_sys_mem_free((void*)arg1); break;
         case SYSCALL_JIT_ALLOC: return (uintptr_t)handle_sys_jit_alloc(arg1, arg2); break;
         case SYSCALL_JIT_LOCK_PROTECTION: handle_sys_jit_lock_protection((void*)arg1); break;
@@ -462,6 +549,11 @@ OMIT_ENDBR uint64_t syscall_handler(syscall_t syscall, uint64_t arg1, uint64_t a
         case SYSCALL_EARLY_GET_TSC_FREQ: {
             ASSERT(!m_early_done);
             return handle_sys_early_get_tsc_freq();
+        } break;
+
+        case SYSCALL_EARLY_GET_RSDP: {
+            ASSERT(!m_early_done);
+            return handle_sys_early_get_rsdp();
         } break;
 
         case SYSCALL_EARLY_DONE: {

@@ -63,6 +63,11 @@ typedef enum vmar_subtype {
     VMAR_SUBTYPE_MEM,
 
     /**
+     * Memory allocation
+     */
+    VMAR_SUBTYPE_MAPPABLE,
+
+    /**
      * Memory bump
      */
     VMAR_SUBTYPE_BUMP,
@@ -222,10 +227,22 @@ vmar_t* vmar_reserve(vmar_t* parent, size_t page_count, void* addr);
  * @param parent        [IN] The parent region
  * @param page_count    [IN] The amount of pages to allocate
  * @param addr          [IN] Address to reserve, NULL for any address
- * @param pin           [IN] Should the region be pinned
  * @return NULL if out of memory or not space, the vmar otherwise
  */
 vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr);
+
+/**
+ * Similar to reserve but maps virtual memory
+ *
+ * Lock must be taken before entering the function
+ *
+ * @param parent        [IN] The parent region
+ * @param phys_base     [IN] The physical address to map
+ * @param page_count    [IN] The amount of pages to allocate
+ * @param addr          [IN] Address to reserve, NULL for any address
+ * @return NULL if out of memory or not space, the vmar otherwise
+ */
+vmar_t* vmar_map_phys(vmar_t* parent, size_t phys_base, size_t page_count, void* addr);
 
 /**
  * Change the protection of the given region, must be an allocated region

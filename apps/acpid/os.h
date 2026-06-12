@@ -1,11 +1,13 @@
 #pragma once
 
 #include "error.h"
+#include <__header_time.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #include <errno.h>
 #include <pthread.h>
+#include <threads.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -13,7 +15,7 @@
 
 static inline uint64_t get_nanosecond_timer(void) {
     struct timespec ts = {};
-    if (clock_gettime(CLOCK_REALTIME, &ts))
+    if (clock_gettime(CLOCK_MONOTONIC, &ts))
         error("clock_gettime failed");
     return ts.tv_sec * NANOSECONDS_PER_SECOND + ts.tv_nsec;
 }
@@ -53,19 +55,15 @@ static inline void mutex_lock(pthread_mutex_t* mutex) {
 }
 
 static inline bool mutex_lock_timeout(pthread_mutex_t* mutex, uint64_t timeout_ns) {
-    struct timespec spec = {};
-    if (clock_gettime(CLOCK_REALTIME, &spec))
-        error("clock_gettime failed");
+    uint64_t end = get_nanosecond_timer() + timeout_ns;
 
-    spec.tv_nsec += timeout_ns;
-    spec.tv_sec += spec.tv_nsec / NANOSECONDS_PER_SECOND;
-    spec.tv_nsec %= NANOSECONDS_PER_SECOND;
+    do {
+        if (mutex_try_lock(mutex)) {
+            return true;
+        }
+        millisecond_sleep(1);
+    } while (get_nanosecond_timer() < end);
 
-    int err = pthread_mutex_timedlock(mutex, &spec);
-    if (err == 0)
-        return true;
-    if (err != ETIMEDOUT)
-        error("pthread_mutex_clocklock failed");
     return false;
 }
 
@@ -75,8 +73,17 @@ static inline void mutex_unlock(pthread_mutex_t* mutex) {
 }
 
 static inline void condvar_init(pthread_cond_t* var) {
-    if (pthread_cond_init(var, NULL))
+    pthread_condattr_t attr;
+    if (pthread_condattr_init(&attr))
+        error("pthread_condattr_init failed");
+
+    if (pthread_condattr_setclock(&attr, CLOCK_MONOTONIC))
+        error("pthread_condattr_setclock failed");
+
+    if (pthread_cond_init(var, &attr))
         error("pthread_cond_init failed");
+
+    pthread_condattr_destroy(&attr);
 }
 
 static inline void condvar_free(pthread_cond_t* var) {
@@ -101,7 +108,7 @@ static inline bool condvar_wait_timeout(
     uint64_t timeout_ns
 ) {
     struct timespec spec = {};
-    if (clock_gettime(CLOCK_REALTIME, &spec))
+    if (clock_gettime(CLOCK_MONOTONIC, &spec))
         error("clock_gettime failed");
 
     spec.tv_nsec += timeout_ns;

@@ -7,6 +7,7 @@
 
 #include "lib/assert.h"
 #include "lib/atomic.h"
+#include "lib/defs.h"
 #include "lib/except.h"
 #include "lib/list.h"
 #include "lib/log.h"
@@ -20,6 +21,7 @@
 #include "wasm/wasm.h"
 
 #include "wasm_err.h"
+#include "wasmato.h"
 #include "wasi.h"
 
 wasm_proc_t* wasm_get_proc(wasm_proc_t* proc) {
@@ -184,12 +186,16 @@ static int32_t wasi_thread_spawn(void* memory_base, void* state_base, int32_t st
 }
 
 static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
+    wasm_proc_t* proc = arg;
+
     if (strcmp(module, "wasi_snapshot_preview1") == 0) {
         return wasi_resolve_import(name);
     } else if (strcmp(module, "wasi") == 0) {
         if (strcmp(name, "thread-spawn") == 0) {
             return wasi_thread_spawn;
         }
+    } else if (strcmp(module, "wasmato") == 0) {
+        return wasmato_resolve_import(name, proc);
     }
     
     return nullptr;
@@ -197,13 +203,15 @@ static void* wasm_resolve_import(void* arg, const char* module, const char* name
 
 static _Atomic(uint32_t) m_process_id_gen = 0;
 
-err_t wasm_create_proc(void* module, size_t module_size) {
+err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) {
     err_t err = NO_ERROR;
 
     // allocate the new proc
     wasm_proc_t* proc = mem_alloc(sizeof(*proc));
     CHECK_ERROR(proc != nullptr, ERROR_OUT_OF_MEMORY);
     memset(proc, 0, sizeof(*proc));
+
+    proc->type = type;
 
     // set the pid
     proc->process_id = atomic_fetch_add_explicit(&m_process_id_gen, 1, memory_order_relaxed) + 1;
@@ -223,8 +231,10 @@ err_t wasm_create_proc(void* module, size_t module_size) {
     stbsp_snprintf(name, sizeof(name), "%s#%d", module_name, proc->process_id);
 
     // allocate the memory, we need to reserve 8gb to ensure that nothing 
-    // can accidently overflow or exit the range
-    proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), name);
+    // can accidently overflow or exit the range, from the 8gb only the first
+    // 4GB are mappable, because that is all wasm can actually access without 
+    // using the static offset in the mapping
+    proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), SIZE_TO_PAGES(SIZE_4GB), name);
     CHECK_ERROR(proc->memory_base != nullptr, ERROR_OUT_OF_MEMORY);
 
     // perform the initial bump
@@ -239,6 +249,7 @@ err_t wasm_create_proc(void* module, size_t module_size) {
     wasm_jit_config_t config = {
         // the import resolver
         .resolve_import = wasm_resolve_import,
+        .resolve_import_arg = proc,
 
         // we don't need the debug info
         .emit_debug_info = false,

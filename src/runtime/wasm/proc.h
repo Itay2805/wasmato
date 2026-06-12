@@ -6,10 +6,28 @@
 #include <wasm/jit.h>
 
 #include <lib/except.h>
+#include "lib/defs.h"
 #include "sync/mutex.h"
 
+typedef enum wasm_proc_type : uint8_t {
+    /**
+     * Any normal user memory
+     */
+    WASM_PROC_TYPE_USER,
+
+    /**
+     * The ACPID process is allowed to get the rsdp 
+     * and to map any physical memory it wants
+     */
+    WASM_PROC_FLAG_ACPID,
+} wasm_proc_type_t;
 
 typedef struct wasm_proc {
+    /**
+     * Process flags
+     */
+    wasm_proc_type_t type;
+
     /**
      * This is basically the thread count
      */
@@ -99,8 +117,10 @@ typedef struct wasm_thread_start_args {
     wasm_state_t* state;
 } wasm_thread_start_args_t;
 
+extern uint64_t g_acpi_rsdp;
+
 void wasm_thread_start(wasm_thread_start_args_t* args);
 
 void wasm_thread_exit(void* state_base);
 
-err_t wasm_create_proc(void* module, size_t module_size);
+err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size);

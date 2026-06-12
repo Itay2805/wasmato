@@ -13,82 +13,169 @@
 
 uacpi_phys_addr g_rsdp;
 
+__attribute__((import_module("wasmato"), import_name("acpi_get_rsdp"))) 
+uint64_t wasmato_acpi_get_rsdp(void);
+
+
+__attribute__((import_module("wasmato"), import_name("map_phys"))) 
+void* wasmato_map_phys(uint64_t phys_base, size_t size);
+
+__attribute__((import_module("wasmato"), import_name("unmap_phys"))) 
+void wasmato_unmap_phys(void* ptr, size_t size);
+
+
+__attribute__((import_module("wasmato"), import_name("io_read_8"))) 
+uint8_t wasmato_io_read_8(uint16_t port);
+
+__attribute__((import_module("wasmato"), import_name("io_read_16"))) 
+uint16_t wasmato_io_read_16(uint16_t port);
+
+__attribute__((import_module("wasmato"), import_name("io_read_32"))) 
+uint32_t wasmato_io_read_32(uint16_t port);
+
+
+__attribute__((import_module("wasmato"), import_name("io_write_8"))) 
+void wasmato_io_write_8(uint16_t port, uint8_t value);
+
+__attribute__((import_module("wasmato"), import_name("io_write_16"))) 
+void wasmato_io_write_16(uint16_t port, uint16_t value);
+
+__attribute__((import_module("wasmato"), import_name("io_write_32"))) 
+void wasmato_io_write_32(uint16_t port, uint32_t value);
+
+
 uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
-    return UACPI_STATUS_UNIMPLEMENTED;
+    uint64_t rsdp = wasmato_acpi_get_rsdp();
+    if (rsdp == -1) {
+        return UACPI_STATUS_NOT_FOUND;
+    }
+    *out_rsdp_address = rsdp;
+    return UACPI_STATUS_OK;
 }
 
 uacpi_interrupt_state uacpi_kernel_disable_interrupts(void) { return 0; }
 void uacpi_kernel_restore_interrupts(uacpi_interrupt_state state) {}
 
+typedef union io_handle {
+    struct {
+        uint16_t base;
+        uint16_t len;        
+    };
+    uacpi_handle handle;
+} io_handle_t;
+_Static_assert(sizeof(io_handle_t) <= sizeof(uacpi_handle));
+
 uacpi_status uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size len, uacpi_handle* out_handle) {
-    return UACPI_STATUS_UNIMPLEMENTED;
+    // ensure this fits in 16bit, which is what x86 supports
+    uacpi_io_addr top = 0;
+    if (__builtin_add_overflow(base, len, &top)) return UACPI_STATUS_INVALID_ARGUMENT;
+    if (len > UINT16_MAX) return UACPI_STATUS_INVALID_ARGUMENT;
+
+    io_handle_t handle = {
+        .base = base,
+        .len = len
+    };
+    *out_handle = handle.handle;
+
+    return UACPI_STATUS_OK;
 }
 
 void uacpi_kernel_io_unmap(uacpi_handle handle) {}
 
-#define UACPI_IO_READ(bits)                                                \
-    uacpi_status uacpi_kernel_io_read##bits(                               \
-        uacpi_handle handle, uacpi_size offset, uacpi_u##bits *out_value   \
-    )                                                                      \
-    {                                                                      \
-        return UACPI_STATUS_UNIMPLEMENTED;                                 \
-    }
+uacpi_status uacpi_kernel_io_read8(uacpi_handle handle, uacpi_size offset, uacpi_u8 *out_value) {
+    io_handle_t io = { .handle = handle };
+    if (offset >= io.len) return UACPI_STATUS_INVALID_ARGUMENT;
+    *out_value = wasmato_io_read_8(io.base + offset);
+    return UACPI_STATUS_OK;
+}
 
-#define UACPI_IO_WRITE(bits)                                              \
-    uacpi_status uacpi_kernel_io_write##bits(                             \
-        uacpi_handle handle, uacpi_size offset, uacpi_u##bits in_value    \
-    )                                                                     \
-    {                                                                     \
-        return UACPI_STATUS_UNIMPLEMENTED;                                \
-    }
+uacpi_status uacpi_kernel_io_read16(uacpi_handle handle, uacpi_size offset, uacpi_u16 *out_value) {
+    io_handle_t io = { .handle = handle };
+    if (offset >= io.len) return UACPI_STATUS_INVALID_ARGUMENT;
+    *out_value = wasmato_io_read_16(io.base + offset);
+    return UACPI_STATUS_OK;
+}
 
-#define UACPI_PCI_READ(bits)                                         \
-    uacpi_status uacpi_kernel_pci_read##bits(                        \
-        uacpi_handle handle, uacpi_size offset, uacpi_u##bits *value \
-    )                                                                \
-    {                                                                \
-        return UACPI_STATUS_UNIMPLEMENTED;                           \
-    }
+uacpi_status uacpi_kernel_io_read32(uacpi_handle handle, uacpi_size offset, uacpi_u32 *out_value) {
+    io_handle_t io = { .handle = handle };
+    if (offset >= io.len) return UACPI_STATUS_INVALID_ARGUMENT;
+    *out_value = wasmato_io_read_32(io.base + offset);
+    return UACPI_STATUS_OK;
+}
 
-#define UACPI_PCI_WRITE(bits)                                       \
-    uacpi_status uacpi_kernel_pci_write##bits(                      \
-        uacpi_handle handle, uacpi_size offset, uacpi_u##bits value \
-    )                                                               \
-    {                                                               \
-        return UACPI_STATUS_UNIMPLEMENTED;                          \
-    }
+uacpi_status uacpi_kernel_io_write8(uacpi_handle handle, uacpi_size offset, uacpi_u8 in_value) {
+    io_handle_t io = { .handle = handle };
+    if (offset >= io.len) return UACPI_STATUS_INVALID_ARGUMENT;
+    wasmato_io_write_8(io.base + offset, in_value);
+    return UACPI_STATUS_OK;
+}
 
-UACPI_IO_READ(8)
-UACPI_IO_READ(16)
-UACPI_IO_READ(32)
+uacpi_status uacpi_kernel_io_write16(uacpi_handle handle, uacpi_size offset, uacpi_u16 in_value) {
+    io_handle_t io = { .handle = handle };
+    if (offset >= io.len) return UACPI_STATUS_INVALID_ARGUMENT;
+    wasmato_io_write_16(io.base + offset, in_value);
+    return UACPI_STATUS_OK;
+}
 
-UACPI_IO_WRITE(8)
-UACPI_IO_WRITE(16)
-UACPI_IO_WRITE(32)
+uacpi_status uacpi_kernel_io_write32(uacpi_handle handle, uacpi_size offset, uacpi_u32 in_value) {
+    io_handle_t io = { .handle = handle };
+    if (offset >= io.len) return UACPI_STATUS_INVALID_ARGUMENT;
+    wasmato_io_write_32(io.base + offset, in_value);
+    return UACPI_STATUS_OK;
+}
 
-UACPI_PCI_READ(8)
-UACPI_PCI_READ(16)
-UACPI_PCI_READ(32)
+uacpi_status uacpi_kernel_pci_read8(uacpi_handle device, uacpi_size offset, uacpi_u8* value) {
+    printf("TODO: uacpi_kernel_pci_read8\n");
+    return UACPI_STATUS_UNIMPLEMENTED;
+}
 
-UACPI_PCI_WRITE(8)
-UACPI_PCI_WRITE(16)
-UACPI_PCI_WRITE(32)
+uacpi_status uacpi_kernel_pci_read16(uacpi_handle device, uacpi_size offset, uacpi_u16* value) {
+    printf("TODO: uacpi_kernel_pci_read16\n");
+    return UACPI_STATUS_UNIMPLEMENTED;
+}
+
+uacpi_status uacpi_kernel_pci_read32(uacpi_handle device, uacpi_size offset, uacpi_u32* value) {
+    printf("TODO: uacpi_kernel_pci_read32\n");
+    return UACPI_STATUS_UNIMPLEMENTED;
+}
+
+uacpi_status uacpi_kernel_pci_write8(uacpi_handle device, uacpi_size offset, uacpi_u8 value) {
+    printf("TODO: uacpi_kernel_pci_write8\n");
+    return UACPI_STATUS_UNIMPLEMENTED;
+}
+
+uacpi_status uacpi_kernel_pci_write16(uacpi_handle device, uacpi_size offset, uacpi_u16 value) {
+    printf("TODO: uacpi_kernel_pci_write16\n");
+    return UACPI_STATUS_UNIMPLEMENTED;
+}
+
+uacpi_status uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset, uacpi_u32 value) {
+    printf("TODO: uacpi_kernel_pci_write32\n");
+    return UACPI_STATUS_UNIMPLEMENTED;
+}
 
 uacpi_status uacpi_kernel_pci_device_open(uacpi_pci_address address, uacpi_handle* out_handle) {
+    printf("TODO: uacpi_kernel_pci_device_open\n");
     return UACPI_STATUS_UNIMPLEMENTED;
 }
 
 void uacpi_kernel_pci_device_close(uacpi_handle handle) {
+    printf("TODO: uacpi_kernel_pci_device_close\n");
 }
 
 void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
-    return nullptr;
+    void* res = wasmato_map_phys(addr, len);
+    if (res == nullptr) {
+        return UACPI_MAP_FAILED;
+    }
+    return res;
 }
 
 void uacpi_kernel_unmap(void *addr, uacpi_size len) {
+    wasmato_unmap_phys(addr, len);
 }
 
-void *uacpi_kernel_alloc(uacpi_size size) {
+void* uacpi_kernel_alloc(uacpi_size size) {
     if (size == 0)
         error("attempted to allocate zero bytes");
 
@@ -100,8 +187,7 @@ void uacpi_kernel_free(void *mem) {
 }
 
 
-void uacpi_kernel_log(uacpi_log_level level, const uacpi_char *str)
-{
+void uacpi_kernel_log(uacpi_log_level level, const uacpi_char *str) {
     switch (level) {
         default:
         case UACPI_LOG_DEBUG: printf("[?] uacpi: %s", str); break;
@@ -167,8 +253,7 @@ typedef struct {
     size_t counter;
 } event_t;
 
-uacpi_handle uacpi_kernel_create_event(void)
-{
+uacpi_handle uacpi_kernel_create_event(void) {
     event_t* event = calloc(1, sizeof(*event));
     if (event == nullptr) return nullptr;
 
@@ -266,10 +351,12 @@ uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request *req) {
 }
 
 uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interrupt_handler handler, uacpi_handle ctx, uacpi_handle* out_irq_handle) {
+    printf("TODO: uacpi_kernel_install_interrupt_handler\n");
     return UACPI_STATUS_UNIMPLEMENTED;
 }
 
 uacpi_status uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler handler, uacpi_handle irq_handle) {
+    printf("TODO: uacpi_kernel_uninstall_interrupt_handler\n");
     return UACPI_STATUS_UNIMPLEMENTED;
 }
 

@@ -94,12 +94,20 @@ void sys_debug_print(const char* message, size_t message_len) {
 // VMAR management
 //----------------------------------------------------------------------------------------------------------------------
 
-void* sys_mem_reserve(size_t page_count, const char* name) {
-    return (void*)syscall2(SYSCALL_MEM_RESERVE, page_count, name);
+void* sys_mem_reserve(size_t total_page_count, size_t mappable_page_count, const char* name) {
+    return (void*)syscall3(SYSCALL_MEM_RESERVE, total_page_count, mappable_page_count, name);
 }
 
 void* sys_mem_bump(void* ptr, size_t page_count) {
     return (void*)syscall2(SYSCALL_MEM_BUMP, ptr, page_count);
+}
+
+void* sys_mem_map_phys(void* ptr, uint64_t phys_base, size_t page_count) {
+    return (void*)syscall3(SYSCALL_MEM_MAP_PHYS, ptr, phys_base, page_count);
+}
+
+void sys_mem_unmap_phys(void* ptr, size_t page_count) {
+    (void)syscall2(SYSCALL_MEM_UNMAP_PHYS, ptr, page_count);
 }
 
 void sys_mem_free(void* ptr) {
@@ -186,6 +194,10 @@ void sys_early_get_initrd(void* addr) {
 
 uint64_t sys_early_get_tsc_freq(void) {
 	return syscall0(SYSCALL_EARLY_GET_TSC_FREQ);
+}
+
+uint64_t sys_early_get_rsdp(void) {
+	return syscall0(SYSCALL_EARLY_GET_RSDP);
 }
 
 void sys_early_done(void) {

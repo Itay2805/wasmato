@@ -13,7 +13,6 @@ typedef enum phys_map_type {
     PHYS_MAP_BAD_RAM,
     PHYS_MAP_RAM,
 
-    PHYS_MAP_MMIO,
     PHYS_MAP_MMIO_LAPIC,
     PHYS_MAP_MMIO_FRAMEBUFFER,
 
@@ -24,6 +23,8 @@ typedef enum phys_map_type {
 
     PHYS_MAP_BOOTLOADER_RECLAIMABLE,
     PHYS_MAP_KERNEL_RESERVED,
+
+    PHYS_MAP_USER_MAPPED,
 } phys_map_type_t;
 
 typedef struct phys_map_entry {
@@ -57,6 +58,11 @@ INIT_CODE err_t init_phys_map(void);
  */
 void phys_map_convert(phys_map_type_t type, uint64_t start, size_t length);
 void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length);
+
+/**
+ * convert a range as mapped to usermode
+ */
+err_t phys_map_to_user(uint64_t start, size_t length);
 
 /**
  * Get the type of a given range, if it overlaps the function will error

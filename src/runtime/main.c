@@ -40,6 +40,9 @@ static void main(void) {
     CHECK(initrd != nullptr);
     sys_early_get_initrd(initrd);
 
+    // save the RSDP for wasm to access
+    g_acpi_rsdp = sys_early_get_rsdp();
+
     // we can now mark that the early done is over,
     // and we can free the main stacks
     sys_early_done();
@@ -49,7 +52,7 @@ static void main(void) {
     spidir_log_set_max_level(SPIDIR_LOG_LEVEL_WARN);
 
     // create the initrd process
-    RETHROW(wasm_create_proc(initrd, initrd_size));
+    RETHROW(wasm_create_proc(WASM_PROC_FLAG_ACPID, initrd, initrd_size));
 
 cleanup:
     ASSERT(!IS_ERROR(err), "Failed to start the system");

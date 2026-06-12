@@ -5,6 +5,7 @@
 #include "lib/log.h"
 #include "lib/string.h"
 #include "lib/syscall.h"
+#include "lib/tsc.h"
 #include "wasm/errno.h"
 #include "wasm/proc.h"
 #include <stdint.h>
@@ -175,8 +176,18 @@ static wasi_errno_t wasi_clock_time_get(
     wasi_clockid_t id, wasi_timestamp_t precision, 
     wasm_ptr_t _retptr0
 ) {
-    ERROR("TODO: wasi_clock_time_get");
-    return WASI_ERRNO_NOTSUP;    
+    wasi_timestamp_t* retptr0 = memory_base + _retptr0;
+
+    switch (id) {
+        case WASI_CLOCKID_MONOTONIC: {
+            *retptr0 = tsc_to_ns(get_tsc());
+        } break;
+
+        default:
+            return WASI_ERRNO_NOTSUP;
+    }
+
+    return WASI_ERRNO_SUCCESS;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -184,8 +195,6 @@ static wasi_errno_t wasi_clock_time_get(
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static void wasi_proc_exit(void* memory_base, void* state_base, wasi_exitcode_t rval) {
-    wasm_proc_t* proc = wasm_current_proc(state_base);
-
     // TODO: remove this
     TRACE("proc_exit: process exited with 0x%x", rval);
 

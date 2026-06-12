@@ -2,6 +2,7 @@
 
 #include <cpuid.h>
 
+#include "lib/except.h"
 #include "limine.h"
 #include "limine_requests.h"
 #include "alloc.h"
@@ -29,6 +30,11 @@ static int phys_map_cmp_contains(const void* key, const struct rb_node* n) {
     if (addr < entry->start) return -1;
     if (addr > entry->end)   return 1;
     return 0;
+}
+
+static bool phys_map_should_merge(phys_map_entry_t* entry, phys_map_type_t type) {
+    // only merge if matches
+    return entry->type == type;
 }
 
 static phys_map_entry_t* phys_map_insert_new_entry(uint64_t start, uint64_t end, phys_map_type_t type) {
@@ -66,7 +72,7 @@ void phys_map_convert_locked(phys_map_type_t type, uint64_t start, size_t length
         entry = rb_entry(found, phys_map_entry_t, node);
         ASSERT(entry->end >= end, "phys_map: partial overlap not supported");
 
-        if (entry->type == type) {
+        if (!phys_map_should_merge(entry, type)) {
             return;
         }
 
@@ -113,6 +119,40 @@ void phys_map_convert(phys_map_type_t type, uint64_t start, size_t length) {
     spinlock_acquire(&g_phys_map_lock);
     phys_map_convert_locked(type, start, length);
     spinlock_release(&g_phys_map_lock);
+}
+
+err_t phys_map_to_user(uint64_t start, size_t length) {
+    err_t err = NO_ERROR;
+
+    spinlock_acquire(&g_phys_map_lock);
+
+    uint64_t top_address = 0;
+    CHECK(!__builtin_add_overflow(start, length, &top_address));
+
+    rb_node_t* found = rb_find(&start, &g_phys_map, phys_map_cmp_contains);
+    CHECK_ERROR(found != NULL, ERROR_NOT_FOUND);
+
+    phys_map_entry_t* entry = rb_entry(found, phys_map_entry_t, node);
+    CHECK_ERROR(top_address < entry->end, ERROR_NOT_FOUND);
+
+    // ensure its a valid type, for simplicity we allow to 
+    // map the same region multiple times
+    CHECK(
+        entry->type == PHYS_MAP_UNUSED || 
+        entry->type == PHYS_MAP_FIRMWARE_RESERVED ||
+        entry->type == PHYS_MAP_ACPI_RECLAIMABLE ||
+        entry->type == PHYS_MAP_ACPI_NVS ||
+        entry->type == PHYS_MAP_USER_MAPPED
+    );
+    
+    // if its unused convert it to user mapped
+    if (entry->type == PHYS_MAP_UNUSED) {
+        phys_map_convert_locked(PHYS_MAP_USER_MAPPED, start, length);
+    }
+
+cleanup:
+    spinlock_release(&g_phys_map_lock);
+    return err;
 }
 
 err_t phys_map_get_type(uint64_t start, size_t length, phys_map_type_t* type) {
@@ -214,7 +254,6 @@ static const char* m_phys_map_type_str[] = {
     [PHYS_MAP_BAD_RAM] = "Reserved (Bad RAM)",
     [PHYS_MAP_RAM] = "RAM",
 
-    [PHYS_MAP_MMIO] = "MMIO",
     [PHYS_MAP_MMIO_LAPIC] = "MMIO (Local-APIC)",
     [PHYS_MAP_MMIO_FRAMEBUFFER] = "MMIO (Framebuffer)",
 
@@ -225,6 +264,8 @@ static const char* m_phys_map_type_str[] = {
 
     [PHYS_MAP_BOOTLOADER_RECLAIMABLE] = "Reclaimable (Bootloader)",
     [PHYS_MAP_KERNEL_RESERVED] = "Kernel reserved",
+
+    [PHYS_MAP_USER_MAPPED] = "Mapped to usermode",
 };
 
 static err_t phys_dump_entry(void* ctx, phys_map_type_t type, uint64_t start, size_t length) {

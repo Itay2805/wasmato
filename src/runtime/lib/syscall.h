@@ -13,8 +13,10 @@ void sys_debug_print(const char* message, size_t message_len);
 // VMAR management
 //----------------------------------------------------------------------------------------------------------------------
 
-void* sys_mem_reserve(size_t page_count, const char* name);
+void* sys_mem_reserve(size_t total_page_count, size_t mappable_page_count, const char* name);
 void* sys_mem_bump(void* ptr, size_t page_count);
+void* sys_mem_map_phys(void* ptr, uint64_t phys_base, size_t page_count);
+void sys_mem_unmap_phys(void* ptr, size_t page_count);
 void sys_mem_free(void* ptr);
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -58,4 +60,5 @@ size_t sys_atomic_notify(void* key, size_t count);
 size_t sys_early_get_initrd_size(void);
 void sys_early_get_initrd(void* addr);
 uint64_t sys_early_get_tsc_freq(void);
+uint64_t sys_early_get_rsdp(void);
 void sys_early_done(void);

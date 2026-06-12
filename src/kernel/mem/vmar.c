@@ -231,6 +231,29 @@ vmar_t* vmar_allocate(vmar_t* parent, size_t page_count, void* addr) {
     return child;
 }
 
+vmar_t* vmar_map_phys(vmar_t* parent, size_t phys_base, size_t page_count, void* addr) {
+    assert_vmar_locked();
+
+    // allocate a child object
+    vmar_t* child = mem_calloc(&m_vmar_alloc);
+    if (child == nullptr)
+        return nullptr;
+
+    // setup the child object
+    child->type = VMAR_TYPE_PHYS;
+    child->base = addr;
+    child->page_count = page_count;
+    child->phys.phys = phys_base;
+
+    // reserve it
+    if (!vmar_reserve_static(parent, child)) {
+        mem_free(&m_vmar_alloc, child);
+        return nullptr;
+    }
+
+    return child;
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // High level APIs
 //----------------------------------------------------------------------------------------------------------------------
