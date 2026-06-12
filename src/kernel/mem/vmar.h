@@ -148,7 +148,7 @@ typedef struct vmar {
     /**
      * Name to help debug, doesn't need to be too big
      */
-    char name[32];
+    char name[128];
 } vmar_t;
 
 static inline void vmar_set_name_format(vmar_t* vmar, const char* fmt, ...) {

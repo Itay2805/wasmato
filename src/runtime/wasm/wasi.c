@@ -109,10 +109,11 @@ static wasi_errno_t wasi_fd_write(
     wasm_ptr_t _iovs, wasi_size_t iovs_len, 
     wasm_ptr_t _retptr0
 ) {
-    wasi_ciovec_t* iovs = memory_base + _iovs;
+    const wasi_ciovec_t* iovs = memory_base + _iovs;
     wasi_size_t* retptr0 = memory_base + _retptr0;
 
     if (fd != 1 && fd != 2) {
+        WARN("wasi_fd_write: Unknown FD: %d", fd);
         return WASI_ERRNO_BADF;
     }
 
@@ -142,6 +143,7 @@ static wasi_errno_t wasi_fd_fdstat_get(
     // JUST A STUB
     wasi_fdstat_t* retptr0 = memory_base + _retptr0;
     if (fd != 1 && fd != 2) {
+        WARN("wasi_fd_fdstat_get: Unknown FD: %d", fd);
         return WASI_ERRNO_BADF;
     }
     retptr0->fs_filetype = WASI_FILETYPE_CHARACTER_DEVICE;

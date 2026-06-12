@@ -56,6 +56,11 @@ typedef struct wasm_proc {
      */
     _Atomic(uint32_t) thread_id_gen;
 
+    /**
+     * The id of the process
+     */
+    int32_t process_id;
+
     // TODO: thread list?
 } wasm_proc_t;
 

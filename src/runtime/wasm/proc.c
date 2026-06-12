@@ -10,6 +10,7 @@
 #include "lib/except.h"
 #include "lib/list.h"
 #include "lib/log.h"
+#include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
 
 #include "sync/mutex.h"
@@ -146,8 +147,16 @@ static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, int32_t* out_ti
     args->state = state;
     state = nullptr;
 
+    // setup a name
+    char name[128] = "";
+    const char* module_name = "wasm";
+    if (proc->module.module_name != nullptr) {
+        module_name = proc->module.module_name;
+    }
+    stbsp_snprintf(name, sizeof(name), "%s#%d#%d", module_name, proc->process_id, tid);
+
     // and actually create/start the thread
-    CHECK_ERROR(sys_thread_create(args, "wasm"), ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(sys_thread_create(args, name), ERROR_OUT_OF_MEMORY);
     args = nullptr;
 
     // output the tid
@@ -186,6 +195,8 @@ static void* wasm_resolve_import(void* arg, const char* module, const char* name
     return nullptr;
 }
 
+static _Atomic(uint32_t) m_process_id_gen = 0;
+
 err_t wasm_create_proc(void* module, size_t module_size) {
     err_t err = NO_ERROR;
 
@@ -194,15 +205,26 @@ err_t wasm_create_proc(void* module, size_t module_size) {
     CHECK_ERROR(proc != nullptr, ERROR_OUT_OF_MEMORY);
     memset(proc, 0, sizeof(*proc));
 
+    // set the pid
+    proc->process_id = atomic_fetch_add_explicit(&m_process_id_gen, 1, memory_order_relaxed) + 1;
+
     // start with ref count of 1
     proc->ref_count = 1;
 
     // load the module
     RETHROW_WASM(wasm_load_module(&proc->module, module, module_size));
 
+    // the name for the region
+    char name[128] = "";
+    const char* module_name = "wasm";
+    if (proc->module.module_name != nullptr) {
+        module_name = proc->module.module_name;
+    }
+    stbsp_snprintf(name, sizeof(name), "%s#%d", module_name, proc->process_id);
+
     // allocate the memory, we need to reserve 8gb to ensure that nothing 
     // can accidently overflow or exit the range
-    proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), "wasm-memory");
+    proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), name);
     CHECK_ERROR(proc->memory_base != nullptr, ERROR_OUT_OF_MEMORY);
 
     // perform the initial bump

@@ -4,9 +4,22 @@
 #include "lib/log.h"
 #include "lib/syscall.h"
 
+#include <spidir/log.h>
+
 #include "wasm/proc.h"
 
 uint64_t g_tsc_freq_hz = 0;
+
+static void spidir_log_callback(spidir_log_level_t level, const char* module, size_t module_len, const char* message, size_t message_len) {
+    switch (level) {
+        default:
+        case SPIDIR_LOG_LEVEL_TRACE: DEBUG("%.*s: %.*s", (int)module_len, module, (int)message_len, message); break;
+        case SPIDIR_LOG_LEVEL_DEBUG: DEBUG("%.*s: %.*s", (int)module_len, module, (int)message_len, message); break;
+        case SPIDIR_LOG_LEVEL_INFO: TRACE("%.*s: %.*s", (int)module_len, module, (int)message_len, message); break;
+        case SPIDIR_LOG_LEVEL_WARN: WARN("%.*s: %.*s", (int)module_len, module, (int)message_len, message); break;
+        case SPIDIR_LOG_LEVEL_ERROR: ERROR("%.*s: %.*s", (int)module_len, module, (int)message_len, message); break;
+    }
+}
 
 static void main(void) {
     err_t err = NO_ERROR;
@@ -30,6 +43,10 @@ static void main(void) {
     // we can now mark that the early done is over,
     // and we can free the main stacks
     sys_early_done();
+
+    // setup the spidir logging
+    spidir_log_init(spidir_log_callback);
+    spidir_log_set_max_level(SPIDIR_LOG_LEVEL_WARN);
 
     // create the initrd process
     RETHROW(wasm_create_proc(initrd, initrd_size));
