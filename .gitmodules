@@ -7,3 +7,6 @@
 [submodule "lib/spidir-wasm"]
 	path = lib/spidir-wasm
 	url = git@github.com:Itay2805/spidir-wasm.git
+[submodule "apps/libs/uACPI"]
+	path = apps/libs/uACPI
+	url = git@github.com:uACPI/uACPI.git

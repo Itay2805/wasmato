@@ -47,8 +47,8 @@ quiet_cmd_clean = CLEAN   $(BUILD)
       cmd_clean = rm -rf $(BUILD)
 
 # TODO: best way to do this?
-apps/build/init: FORCE
-	$(MAKE) -C apps build/init
+apps/build/acpid: FORCE
+	$(MAKE) -C apps build/acpid
 
 PHONY += clean
 clean:

@@ -176,7 +176,7 @@ static int32_t wasi_thread_spawn(void* memory_base, void* state_base, int32_t st
 
 static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
     if (strcmp(module, "wasi_snapshot_preview1") == 0) {
-        return wasip1_resolve_import(name);
+        return wasi_resolve_import(name);
     } else if (strcmp(module, "wasi") == 0) {
         if (strcmp(name, "thread-spawn") == 0) {
             return wasi_thread_spawn;

@@ -2,4 +2,4 @@
 
 #include <stdint.h>
 
-void* wasip1_resolve_import(const char* name);
+void* wasi_resolve_import(const char* name);

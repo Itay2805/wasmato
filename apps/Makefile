@@ -57,11 +57,15 @@ cflags-y += --sysroot=$(WASI_SYSROOT)
 cflags-y += -Wall -Werror -std=gnu23
 cflags-y += -flto -g
 cflags-y += -fvisibility=hidden
+cflags-y += -Iinclude
 
 ldflags-y += --target=wasm32-wasip1-threads
 ldflags-y += --sysroot=$(WASI_SYSROOT)
 ldflags-y += -resource-dir=$(abspath $(WASI_RT_DIR))
 ldflags-y += -flto
+
+# allow an unlimited memory size
+ldflags-y += -Wl,--max-memory=4294967296
 
 cflags-$(OPTIMIZE) += -O3
 
@@ -100,7 +104,8 @@ $(WASI_SYSROOT_STAMP): FORCE
 
 targets += $(WASI_SYSROOT_STAMP)
 
-include init/Makefile
+include acpid/Makefile
+include libs/Makefile
 include ../scripts/build.mk
 
 # Ensure sysroot + compiler-rt builtins are staged before any bin is linked.
