@@ -48,7 +48,7 @@ quiet_cmd_clean = CLEAN   $(BUILD)
 
 # TODO: best way to do this?
 apps/build/acpid: FORCE
-	$(MAKE) -C apps build/acpid
+	$(MAKE) -C apps build/acpid DEBUG=$(DEBUG) OPTIMIZE=$(OPTIMIZE)
 
 PHONY += clean
 clean:

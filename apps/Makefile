@@ -64,6 +64,10 @@ ldflags-y += --sysroot=$(WASI_SYSROOT)
 ldflags-y += -resource-dir=$(abspath $(WASI_RT_DIR))
 ldflags-y += -flto
 
+# everything depends on the sysroot
+ccodeps-y += $(WASI_RT_LIB)
+ccodeps-y += $(WASI_SYSROOT_STAMP)
+
 # allow an unlimited memory size
 ldflags-y += -Wl,--max-memory=4294967296
 
