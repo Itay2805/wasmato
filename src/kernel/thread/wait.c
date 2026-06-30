@@ -119,6 +119,9 @@ bool atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadlin
     const bool irq_state = irq_save();
 
     if (!wait_queue_prepare(queue, &entry, key, size, old)) {
+        // We are going to abort our parking, we need to go back to RUNNING.
+        atomic_store_relaxed(&thread->state, THREAD_STATE_RUNNING);
+
         irq_restore(irq_state);
 
         // the state was not-equal

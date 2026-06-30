@@ -28,8 +28,8 @@ typedef void (*thread_entry_t)(void* arg);
  *    |     |
  *    ^     V
  *    +- RUNNING -> DEAD
- *    |     |
- *    ^     V
+ *    |    ^|
+ *    ^    |V
  *    +- PARKING
  *    |     |
  *    ^     V
@@ -37,8 +37,9 @@ typedef void (*thread_entry_t)(void* arg);
  *
  * - IDLE -> READY: performed non-atomically by `thread_start` (should happen at most once).
  *
- * - READY -> RUNNING: performed non-atomically only by the run queue in which the thread is
- *   currently waiting to run.
+ * - READY -> RUNNING: performed non-atomically by the run queue in which the thread is
+ *   currently waiting to run; may happen as a result of a race while doing PARKING -> RUNNING
+ *   by a thread aborting a park.
  *
  * - RUNNING -> DEAD: performed non-atomically by the scheduler when the thead calls `thread_exit`
  *   (can happen at most once).
@@ -54,6 +55,9 @@ typedef void (*thread_entry_t)(void* arg);
  * - PARKING -> READY: performed as an atomic CAS by `scheduler_try_unpark` to abort an in-progress
  *   park operation; may race against the scheduler's PARKING -> PARKED transition and concurrent
  *   `scheduler_try_unpark` calls.
+ *
+ * - PARKING -> RUNNING: performed non-atomically only by the thread itself when parking as been aborted;
+ *   may race against PARKING -> READY transitions performed by concurrent `scheduler_try_unpark` calls.
  *
  * - PARKED -> READY: performed as an atomic CAS by `scheduler_try_unpark` to unpark a thread; may
  *   race against concurrent `scheduler_try_unpark` calls.
