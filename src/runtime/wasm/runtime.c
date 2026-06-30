@@ -119,7 +119,12 @@ static uint32_t wasm_atomic_woken_result(uint64_t deadline) {
 uint32_t wasm_host_atomic_wait_4(_Atomic(uint32_t)* value, uint32_t expected, int64_t timeout) {
     uint64_t deadline = wasm_atomic_deadline(timeout);
 
-    if (!sys_atomic_wait32(value, expected, deadline)) {
+    wait_entry_t entry = {
+        .key = value,
+        .key_size = WAIT_KEY_UINT32,
+        .old = expected
+    };
+    if (!sys_atomic_wait(&entry, 1, deadline)) {
         return 1; // "not-equal"
     }
 
@@ -129,7 +134,12 @@ uint32_t wasm_host_atomic_wait_4(_Atomic(uint32_t)* value, uint32_t expected, in
 uint32_t wasm_host_atomic_wait_8(_Atomic(uint64_t)* value, uint64_t expected, int64_t timeout) {
     uint64_t deadline = wasm_atomic_deadline(timeout);
 
-    if (!sys_atomic_wait64(value, expected, deadline)) {
+    wait_entry_t entry = {
+        .key = value,
+        .key_size = WAIT_KEY_UINT64,
+        .old = expected
+    };
+    if (!sys_atomic_wait(&entry, 1, deadline)) {
         return 1; // "not-equal"
     }
     

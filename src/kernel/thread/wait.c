@@ -2,12 +2,15 @@
 #include <stdint.h>
 
 #include "arch/intrin.h"
+#include "lib/assert.h"
 #include "lib/atomic.h"
 #include "lib/list.h"
 #include "lib/tsc.h"
 #include "sched.h"
 #include "mem/virt.h"
 #include "sync/spinlock.h"
+#include "uapi/wait.h"
+#include "user/syscall.h"
 
 #define WAIT_HASH_SHIFT 8
 #define WAIT_HASH_SIZE (1 << WAIT_HASH_SHIFT)
@@ -67,10 +70,13 @@ static bool atomic_check_user_key(void* key, wait_key_size_t size, uint64_t old)
 }
 
 static bool wait_queue_prepare(
-    wait_queue_t* queue, wait_queue_entry_t* entry,
-    void* key, wait_key_size_t key_size,
+    wait_queue_entry_t* entry,
+    wait_key_size_t key_size,
     uint64_t old
 ) {
+    void* key = entry->key;
+    wait_queue_t* queue = get_wait_queue_for_key(key);
+
     spinlock_acquire(&queue->lock);
 
     // Check whether we should really be going to sleep under the wait queue
@@ -88,7 +94,9 @@ static bool wait_queue_prepare(
     return true;
 }
 
-static void wait_queue_finish(wait_queue_t* queue, wait_queue_entry_t* entry) {
+static void wait_queue_finish(wait_queue_entry_t* entry) {
+    wait_queue_t* queue = get_wait_queue_for_key(entry->key);
+
     spinlock_acquire(&queue->lock);
     if (entry->link.next != nullptr) {
         list_del(&entry->link);
@@ -102,30 +110,48 @@ INIT_CODE void init_atomic_wait(void) {
     }
 }
 
-bool atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadline) {
+bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
+    ASSERT(count > 0);
+    ASSERT(count < MAX_WAIT_ENTRIES);
+    assert_user_range(entries, sizeof(wait_entry_t) * count);
+
     thread_t* thread = get_current_thread();
-    wait_queue_t* queue = get_wait_queue_for_key(key);
+    size_t queued = 0;
+    bool success = true;
 
     // Start parking now. Any unpark requests that catch `state` at this value or later will
     // cause the `scheduler_schedule` below to return. Note that this value will be made
     // visible to potential notifiers by the wait queue's lock.
     atomic_store_relaxed(&thread->state, THREAD_STATE_PARKING);
 
-    wait_queue_entry_t entry = {
-        .thread = thread,
-        .key = key,
-    };
+    wait_queue_entry_t wait_entries[MAX_WAIT_ENTRIES];
 
     const bool irq_state = irq_save();
 
-    if (!wait_queue_prepare(queue, &entry, key, size, old)) {
-        // We are going to abort our parking, we need to go back to RUNNING.
-        atomic_store_relaxed(&thread->state, THREAD_STATE_RUNNING);
+    for (queued = 0; queued < count; queued++) {
+        // read the entry
+        user_access_enable();
+        wait_entry_t entry = entries[queued];
+        user_access_disable();
 
-        irq_restore(irq_state);
+        // make sure thek key is in usermode
+        size_t key_size_bytes = entry.key_size == WAIT_KEY_UINT32 ? sizeof(uint32_t) : sizeof(uint64_t);
+        assert_user_range(entry.key, key_size_bytes);
 
-        // the state was not-equal
-        return false;
+        // setup the entry
+        wait_entries[queued] = (wait_queue_entry_t){
+            .key = entry.key,
+            .thread = thread
+        };
+
+        if (!wait_queue_prepare(&wait_entries[queued], entry.key_size, entry.old)) {
+            // We are going to abort our parking, we need to go back to RUNNING.
+            atomic_store_relaxed(&thread->state, THREAD_STATE_RUNNING);
+
+            // the state was not-equal
+            success = false;
+            goto unpark;
+        }
     }
 
     if (deadline == 0) {
@@ -134,12 +160,15 @@ bool atomic_wait(void* key, wait_key_size_t size, uint64_t old, uint64_t deadlin
         scheduler_schedule_deadline(deadline);
     }
 
-    // remove ourselves from the wait queue
-    wait_queue_finish(queue, &entry);
+unpark:
+    // remove ourselves from all the wait queues
+    for (size_t i = 0; i < queued; i++) {
+        wait_queue_finish(&wait_entries[i]);
+    }
 
     irq_restore(irq_state);
 
-    return true;
+    return success;
 }
 
 size_t atomic_notify(void* key, size_t count) {

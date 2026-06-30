@@ -26,13 +26,14 @@
 #include "mem/virt.h"
 #include "thread/sched.h"
 #include "thread/wait.h"
+#include "uapi/wait.h"
 
 /**
  * are we done with early memory
  */
 LATE_RO static bool m_early_done = false;
 
-static void assert_user_range(const void* addr, size_t size) {
+void assert_user_range(const void* addr, size_t size) {
     uintptr_t end;
     ASSERT(addr >= g_user_memory.base);
     ASSERT(!__builtin_add_overflow((uintptr_t)addr, size, &end));
@@ -459,14 +460,8 @@ static void handle_sys_thread_yield(void) {
 // Futex primitives
 //----------------------------------------------------------------------------------------------------------------------
 
-static bool handle_sys_atomic_wait32(void* key, uint64_t old, uint64_t deadline) {
-    assert_user_range(key, sizeof(uint32_t));
-    return atomic_wait(key, WAIT_KEY_UINT32, old, deadline);
-}
-
-static bool handle_sys_atomic_wait64(void* key, uint64_t old, uint64_t deadline) {
-    assert_user_range(key, sizeof(uint64_t));
-    return atomic_wait(key, WAIT_KEY_UINT64, old, deadline);
+static bool handle_sys_atomic_wait(wait_entry_t* wait_entries, size_t count, uint64_t deadline) {
+    return atomic_wait(wait_entries, count, deadline);
 }
 
 static size_t handle_sys_atomic_notify(void* key, size_t count) {
@@ -532,8 +527,7 @@ OMIT_ENDBR uint64_t syscall_handler(syscall_t syscall, uint64_t arg1, uint64_t a
         case SYSCALL_THREAD_SLEEP: handle_sys_thread_sleep(arg1); break;
         case SYSCALL_THREAD_EXIT: handle_sys_thread_exit(); break;
         case SYSCALL_THREAD_YIELD: handle_sys_thread_yield(); break;
-        case SYSCALL_ATOMIC_WAIT32: return handle_sys_atomic_wait32((void*)arg1, arg2, arg3); break;
-        case SYSCALL_ATOMIC_WAIT64: return handle_sys_atomic_wait64((void*)arg1, arg2, arg3); break;
+        case SYSCALL_ATOMIC_WAIT: return handle_sys_atomic_wait((void*)arg1, arg2, arg3); break;
         case SYSCALL_ATOMIC_NOTIFY: return handle_sys_atomic_notify((void*)arg1, arg2); break;
 
         case SYSCALL_EARLY_GET_INITRD_SIZE: {

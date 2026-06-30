@@ -1,5 +1,6 @@
 #pragma once
 
+#include "uapi/wait.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -49,8 +50,7 @@ void sys_thread_yield(void);
 // Futex primitives
 //----------------------------------------------------------------------------------------------------------------------
 
-bool sys_atomic_wait32(void* key, uint64_t old, uint64_t deadline);
-bool sys_atomic_wait64(void* key, uint64_t old, uint64_t deadline);
+bool sys_atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline);
 size_t sys_atomic_notify(void* key, size_t count);
 
 //----------------------------------------------------------------------------------------------------------------------
