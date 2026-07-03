@@ -24,6 +24,7 @@
 #include "time/tsc.h"
 #include "user/syscall.h"
 #include "time/timer.h"
+#include "lib/sp.h"
 
 /**
  * For waiting until all cpus are finished initializing
@@ -88,6 +89,7 @@ INIT_CODE static void validate_cpu_features(void) {
     CPUID_VERSION_INFO_EDX version_info_edx = {};
     ASSERT(__get_cpuid(CPUID_VERSION_INFO, &a, &b, &version_info_ecx.raw, &version_info_edx.raw));
     ASSERT(version_info_ecx.XSAVE, "Missing XSAVE support");
+    ASSERT(version_info_ecx.RDRAND, "Missing RDRAND support");
     ASSERT(version_info_edx.PGE, "Missing PGE support");
 
     // if monitor is supported check that it also has interrupt as break event
@@ -127,6 +129,7 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(structured_extended_feature_flags_ebx.FSGSBASE, "Missing FSGSBASE support");
     ASSERT(structured_extended_feature_flags_ebx.INVPCID, "Missing INVPCID support");
     ASSERT(structured_extended_feature_flags_ecx.UMIP, "Missing UMIP support");
+    ASSERT(structured_extended_feature_flags_ebx.RDSEED, "Missing RDSEED support");
 
     // if we don't have monitor support ensure
     // we have at least waitpkg
@@ -372,6 +375,9 @@ OMIT_ENDBR INIT_CODE void _start() {
     // Setup the cpu features
     //
     set_cpu_features();
+
+    // now that we verified we have rdrand we can setup the stack protector stuff
+    init_stack_protector();
 
     // This must run before memory init because it accesses acpi tables
     // which we don't map ourselves into the direct map (as they are not
