@@ -76,3 +76,43 @@ typedef struct acpi_facp {
     uint8_t _reserved6;
     uint32_t flags;
 } PACKED acpi_facp_t;
+
+#define ACPI_MADT_SIGNATURE SIGNATURE_32('A', 'P', 'I', 'C')
+
+typedef struct acpi_madt_header {
+    acpi_description_header_t header;
+    uint32_t local_apic_address;
+    uint32_t flags;
+} PACKED acpi_madt_header_t;
+
+#define ACPI_PROCESSOR_LOCAL_APIC           0x00
+#define ACPI_IO_APIC                        0x01
+#define ACPI_INTERRUPT_SOURCE_OVERRIDE      0x02
+#define ACPI_NON_MASKABLE_INTERRUPT_SOURCE  0x03
+#define ACPI_LOCAL_APIC_NMI                 0x04
+#define ACPI_LOCAL_APIC_ADDRESS_OVERRIDE    0x05
+#define ACPI_IO_SAPIC                       0x06
+#define ACPI_PROCESSOR_LOCAL_SAPIC          0x07
+#define ACPI_PLATFORM_INTERRUPT_SOURCES     0x08
+
+typedef struct acpi_io_apic {
+    uint8_t type;
+    uint8_t length;
+    uint8_t io_apic_id;
+    uint8_t : 8;
+    uint32_t io_apic_address;
+    uint32_t gsi_base;
+} PACKED acpi_io_apic_t;
+
+typedef struct {
+    uint8_t type;
+    uint8_t length;
+    uint8_t bus;
+    uint8_t source;
+    uint32_t gsi;
+    uint16_t flags;
+} PACKED acpi_interrupt_source_override_t;
+
+#define ACPI_POLARITY      (3 << 0)
+#define ACPI_TRIGGER_MODE  (3 << 2)
+

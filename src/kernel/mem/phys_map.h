@@ -14,6 +14,7 @@ typedef enum phys_map_type {
     PHYS_MAP_RAM,
 
     PHYS_MAP_MMIO_LAPIC,
+    PHYS_MAP_MMIO_IOAPIC,
     PHYS_MAP_MMIO_FRAMEBUFFER,
 
     PHYS_MAP_FIRMWARE_RESERVED,

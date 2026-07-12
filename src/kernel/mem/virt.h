@@ -43,6 +43,11 @@ void virt_remove_global(void* virt);
 bool virt_is_mapped(uintptr_t virt);
 
 /**
+ * Map something into the direct map right now
+ */
+err_t virt_map_direct(void* virt, bool mmio);
+
+/**
  * Change the protections of a given memory range
  *
  * @param virt          [IN] The virtual start address

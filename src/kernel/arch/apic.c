@@ -46,15 +46,15 @@
 
 typedef union {
     struct {
-        uint32_t SpuriousVector          : 8;  ///< Spurious Vector.
-        uint32_t SoftwareEnable          : 1;  ///< APIC Software Enable/Disable.
-        uint32_t FocusProcessorChecking  : 1;  ///< Focus Processor Checking.
-        uint32_t Reserved0               : 2;  ///< Reserved.
-        uint32_t EoiBroadcastSuppression : 1;  ///< EOI-Broadcast Suppression.
-        uint32_t Reserved1               : 19; ///< Reserved.
+        uint32_t spurious_vector : 8;
+        uint32_t software_enable : 1;
+        uint32_t focus_processor_checking : 1;
+        uint32_t : 2;
+        uint32_t eoi_broadcast_suppression : 1;
+        uint32_t : 19;
     };
     uint32_t packed;
-} LOCAL_APIC_SVR;
+} PACKED LOCAL_APIC_SVR;
 
 typedef union {
     struct {
@@ -64,7 +64,7 @@ typedef union {
         uint32_t : 28;
     };
     uint32_t packed;
-} LOCAL_APIC_DCR;
+} PACKED LOCAL_APIC_DCR;
 
 typedef union {
     struct {
@@ -79,7 +79,7 @@ typedef union {
         uint32_t : 15;
     };
     uint32_t packed;
-} LOCAL_APIC_LVT_LINT;
+} PACKED LOCAL_APIC_LVT_LINT;
 
 typedef union {
     struct {
@@ -92,7 +92,7 @@ typedef union {
         uint32_t : 13;
     };
     uint32_t packed;
-} LOCAL_APIC_LVT_TIMER;
+} PACKED LOCAL_APIC_LVT_TIMER;
 
 typedef union {
     struct {
@@ -108,7 +108,7 @@ typedef union {
         uint32_t : 12;
     };
     uint32_t packed;
-} LOCAL_APIC_ICR_LOW;
+} PACKED LOCAL_APIC_ICR_LOW;
 
 typedef union {
     struct {
@@ -116,7 +116,7 @@ typedef union {
         uint32_t destination : 8;
     };
     uint32_t packed;
-} LOCAL_APIC_ICR_HIGH;
+} PACKED LOCAL_APIC_ICR_HIGH;
 
 /**
  * Are we using x2APIC mode
@@ -137,6 +137,15 @@ LATE_RO static uint8_t* m_xapic_base = NULL;
  * The frequency of the lapic timer
  */
 static uint64_t m_lapic_timer_freq = 0;
+
+static uint32_t lapic_read(size_t offset) {
+    if (m_x2apic_mode) {
+        __asm__("" ::: "memory");
+        return __rdmsr((offset >> 4) + X2APIC_MSR_BASE_ADDRESS);
+    } else {
+        return *((uint32_t*)(m_xapic_base + offset));
+    }
+}
 
 static void lapic_write(size_t offset, uint32_t value) {
     if (m_x2apic_mode) {
@@ -236,8 +245,8 @@ INIT_CODE err_t init_lapic_per_core(void) {
 
     // set the spurious vector
     LOCAL_APIC_SVR svr = {
-        .SpuriousVector = INTR_VECTOR_SPURIOUS,
-        .SoftwareEnable = 1
+        .spurious_vector = INTR_VECTOR_SPURIOUS,
+        .software_enable = 1
     };
     lapic_write(XAPIC_SPURIOUS_VECTOR_OFFSET, svr.packed);
 
@@ -284,6 +293,14 @@ INIT_CODE err_t init_lapic_per_core(void) {
 
 cleanup:
     return err;
+}
+
+INIT_CODE uint32_t lapic_get_id(void) {
+    uint32_t apic_id = lapic_read(XAPIC_ID_OFFSET);
+    if (!m_x2apic_mode) {
+        apic_id >>= 24;
+    }
+    return apic_id;
 }
 
 void lapic_eoi(void) {

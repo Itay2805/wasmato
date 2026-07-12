@@ -32,4 +32,9 @@ INIT_CODE err_t pcpu_init_per_core(int cpu_id);
 /**
  * Gets the id of the current cpu
  */
-int get_cpu_id();
+int get_cpu_id(void);
+
+/**
+ * Get the APIC id of the given core
+ */
+uint32_t get_apic_id_of(int cpu_id);

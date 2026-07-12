@@ -255,6 +255,7 @@ static const char* m_phys_map_type_str[] = {
     [PHYS_MAP_RAM] = "RAM",
 
     [PHYS_MAP_MMIO_LAPIC] = "MMIO (Local-APIC)",
+    [PHYS_MAP_MMIO_IOAPIC] = "MMIO (IO-APIC)",
     [PHYS_MAP_MMIO_FRAMEBUFFER] = "MMIO (Framebuffer)",
 
     [PHYS_MAP_FIRMWARE_RESERVED] = "Reserved (Firmware)",

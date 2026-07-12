@@ -10,6 +10,7 @@
 #include "lib/ipi.h"
 #include "sync/spinlock.h"
 #include "thread/thread.h"
+#include "uapi/mapping.h"
 
 /**
  * The kernel top level cr3
@@ -220,7 +221,7 @@ void virt_remove_global(void* virt) {
     vmar_unlock();
 }
 
-static err_t virt_map_direct(void* virt) {
+err_t virt_map_direct(void* virt, bool mmio) {
     err_t err = NO_ERROR;
 
     uint64_t* pte = virt_get_pte(virt, true, true);
@@ -229,7 +230,15 @@ static err_t virt_map_direct(void* virt) {
 
     // map as direct, by default we don't map as global because these pages will get mapped
     // and unmapped and practically we don't access them that much (just when allocating)
-    *pte = direct_to_phys(virt) | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX;
+    uint64_t new_pte = direct_to_phys(virt) | IA32_PG_P | IA32_PG_D | IA32_PG_A | IA32_PG_RW | IA32_PG_NX;
+
+    if (mmio) {
+        // this is an mmio entry, we want no caching and 
+        // we want global since this won't get unmapped
+        new_pte |= IA32_PG_CACHE_UCM | IA32_PG_G;
+    }
+
+    *pte = new_pte;
 
 cleanup:
     return err;
@@ -309,7 +318,7 @@ void virt_unmap(void* virt, size_t page_count, bool free) {
         // free the page if we should
         if (free) {
             void* ptr = phys_to_direct(*pte & PAGING_4K_ADDRESS_MASK);
-            ASSERT(!IS_ERROR(virt_map_direct(ptr)));
+            ASSERT(!IS_ERROR(virt_map_direct(ptr, false)));
             phys_free(ptr, PAGE_SIZE);
         }
 
@@ -402,7 +411,7 @@ void reclaim_init_mem(void) {
 
             // Return physical page to buddy allocator
             void* ptr = phys_to_direct(phys);
-            virt_map_direct(ptr);
+            virt_map_direct(ptr, false);
             phys_free(ptr, PAGE_SIZE);
         }
     }
@@ -514,13 +523,18 @@ err_t virt_handle_page_fault(uintptr_t addr, uint32_t code) {
 
     // setup the pte, we assume it can't be executable so mark as NX right away
     uint64_t new_pte = phys | IA32_PG_P | IA32_PG_NX | IA32_PG_A;
-
+    
     // if the mapping is not in kernel then mark as user, otherwise
     // mark as global (assuming we never free kernel addresses)
     if (!kernel)
         new_pte |= IA32_PG_U;
     else
         new_pte |= IA32_PG_G;
+
+    // check if the mapping should be uncached
+    if (mapping->type == VMAR_TYPE_PHYS) {
+        new_pte |= IA32_PG_CACHE_UCM;
+    }
 
     // check if the mapping should be writable
     if (

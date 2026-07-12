@@ -41,6 +41,8 @@
 #define IA32_CP_EC_ENCL         BIT15
 
 #define INTR_VECTOR_TIMER       0x20
+#define INTR_VECTOR_FIRST       0x21
+#define INTR_VECTOR_LAST        0xEF
 #define INTR_VECTOR_IPI         0xF0
 #define INTR_VECTOR_PANIC       0xF1
 #define INTR_VECTOR_SPURIOUS    0xFF
@@ -56,3 +58,5 @@ typedef struct interrupt_frame {
 INIT_CODE void init_idt(void);
 
 INIT_CODE void init_idt_stacks(void);
+
+INIT_CODE void intr_set_handler(uint8_t vector, void* func);

@@ -1,6 +1,8 @@
 #include "acpi.h"
 #include "acpi_tables.h"
 
+#include "irq/ioapic.h"
+#include "lib/except.h"
 #include "limine_requests.h"
 #include "arch/paging.h"
 #include "mem/direct.h"
@@ -40,6 +42,59 @@ typedef struct address64 {
 typedef struct address32 {
     uint32_t value;
 } PACKED address32_t;
+
+static INIT_CODE err_t acpi_parse_madt(acpi_madt_header_t* madt) {
+    err_t err = NO_ERROR;
+
+    uint8_t* data = (uint8_t*)(madt + 1);                
+    int64_t bytes_left = madt->header.length - sizeof(acpi_madt_header_t);
+    while (bytes_left >= 2) {
+        uint8_t type = data[0];
+        uint8_t length = data[1];
+
+        CHECK(length <= bytes_left);
+        CHECK(length >= 2);
+
+        if (type == ACPI_IO_APIC) {
+            CHECK(length == sizeof(acpi_io_apic_t));
+            acpi_io_apic_t* io_apic = (acpi_io_apic_t*)data;
+            RETHROW(ioapic_add(io_apic->io_apic_address, io_apic->gsi_base));
+
+        } else if (type == ACPI_INTERRUPT_SOURCE_OVERRIDE) {
+            CHECK(length == sizeof(acpi_interrupt_source_override_t));
+            acpi_interrupt_source_override_t* iso = (acpi_interrupt_source_override_t*)data;
+
+            CHECK(iso->bus == 0); // ISA bus
+            ioapic_polarity_t polarity = IOAPIC_ACTIVE_HIGH;
+            ioapic_trigger_mode_t trigger_mode = IOAPIC_EDGE_TRIGGERED;
+
+            switch ((iso->flags >> ACPI_POLARITY) & 0b11) {
+                case 0b00: break;
+                case 0b01: polarity = IOAPIC_ACTIVE_HIGH; break;
+                case 0b10: CHECK_FAIL("Invalid ACPI ISO polarity"); break;
+                case 0b11: polarity = IOAPIC_ACTIVE_LOW; break;
+                default: __builtin_unreachable();
+            }
+            
+            switch ((iso->flags >> ACPI_TRIGGER_MODE) & 0b11) {
+                case 0b00: break;
+                case 0b01: trigger_mode = IOAPIC_EDGE_TRIGGERED; break;
+                case 0b10: CHECK_FAIL("Invalid ACPI ISO polarity"); break;
+                case 0b11: trigger_mode = IOAPIC_LEVEL_TRIGGERED; break;
+                default: __builtin_unreachable();
+            }
+
+            RETHROW(ioapic_add_override(iso->source, iso->gsi, polarity, trigger_mode));
+        }
+
+        data += length;
+        bytes_left -= length;
+    }
+
+
+cleanup:
+    return err;
+}
 
 INIT_CODE err_t init_acpi_tables() {
     err_t err = NO_ERROR;
@@ -93,7 +148,14 @@ INIT_CODE err_t init_acpi_tables() {
                 RETHROW(validate_acpi_table(table));
                 facp = (acpi_facp_t*)table;
             } break;
-            default: break;
+
+            case ACPI_MADT_SIGNATURE: {
+                RETHROW(validate_acpi_table(table));
+                RETHROW(acpi_parse_madt((acpi_madt_header_t*)table));
+            } break;
+
+            default: 
+                break;
         }
     }
 

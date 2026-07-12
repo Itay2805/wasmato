@@ -1,6 +1,8 @@
 
 #include <cpuid.h>
 
+#include "irq/ioapic.h"
+#include "irq/irq.h"
 #include "lib/assert.h"
 #include "lib/except.h"
 #include "limine_requests.h"
@@ -406,6 +408,8 @@ OMIT_ENDBR INIT_CODE void _start() {
     // by setting up the lapic (including calibration if we don't have TSC deadline)
     // followed by actually setting the timers properly
     RETHROW(init_lapic());
+    RETHROW(init_ioapic());
+    init_irq_handling();
     init_timers_per_core();
 
     // thread related init

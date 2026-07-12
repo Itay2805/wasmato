@@ -16,6 +16,11 @@ INIT_CODE err_t init_lapic(void);
 INIT_CODE err_t init_lapic_per_core(void);
 
 /**
+ * Get the APIC id of the current core
+ */
+INIT_CODE uint32_t lapic_get_id(void);
+
+/**
  * Request an EOI signal to be sent
  */
 void lapic_eoi(void);

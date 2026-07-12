@@ -5,7 +5,7 @@
 #include <stdatomic.h>
 
 typedef enum kernel_object_type : uint8_t {
-    KERNEL_OBJECT_TYPE_INVALID,
+    KERNEL_OBJECT_TYPE_IRQ,
 } kernel_object_type_t;
 
 typedef struct kernel_object {

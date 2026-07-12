@@ -1,5 +1,6 @@
 #include "pcpu.h"
 
+#include "arch/apic.h"
 #include "arch/intrin.h"
 #include "arch/paging.h"
 #include "lib/printf.h"
@@ -14,6 +15,11 @@ extern char __stop_pcpu_data[];
  * The id of the current cpu
  */
 static CPU_LOCAL int m_cpu_id;
+
+/**
+ * The APIC id of the current cpu
+ */
+static CPU_LOCAL int m_apic_id;
 
 /**
  * The local cpu base, for ease of access
@@ -80,12 +86,19 @@ INIT_CODE err_t pcpu_init_per_core(int cpu_id) {
     // setup the cpu id and fs base of the current cpu
     m_cpu_id = cpu_id;
 
+    // setup the apic id of the current core
+    m_apic_id = lapic_get_id();
+
 cleanup:
     return err;
 }
 
-int get_cpu_id() {
+int get_cpu_id(void) {
     return m_cpu_id;
+}
+
+uint32_t get_apic_id_of(int cpu_id) {
+    return *(uint32_t*)pcpu_get_pointer_of(&m_apic_id, cpu_id);
 }
 
 void* pcpu_get_pointer(__seg_gs void* ptr) {
