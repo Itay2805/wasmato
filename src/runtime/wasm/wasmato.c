@@ -57,6 +57,14 @@ static void wasmato_io_write_32(void* memory_base, void* state_base, uint16_t po
     __outdword(port, value);
 }
 
+static void wasmato_irq_create_ioapic(void* memory_base, void* state_base, uint32_t irq) {
+    TRACE("TODO: wasmato_irq_create_ioapic");
+}
+
+static void wasmato_irq_unmask(void* memory_base, void* state_base, int fd) {
+    TRACE("TODO: wasmato_irq_unmask");
+}
+
 void* wasmato_resolve_import(const char* name, wasm_proc_t* proc) {
     if (proc->type == WASM_PROC_FLAG_ACPID) {
         if (strcmp(name, "acpi_get_rsdp") == 0) return wasmato_acpi_get_rsdp;
@@ -68,6 +76,9 @@ void* wasmato_resolve_import(const char* name, wasm_proc_t* proc) {
         if (strcmp(name, "io_write_8") == 0) return wasmato_io_write_8;
         if (strcmp(name, "io_write_16") == 0) return wasmato_io_write_16;
         if (strcmp(name, "io_write_32") == 0) return wasmato_io_write_32;
+        if (strcmp(name, "io_write_32") == 0) return wasmato_io_write_32;
+        if (strcmp(name, "irq_create_ioapic") == 0) return wasmato_irq_create_ioapic;
+        if (strcmp(name, "irq_unmask") == 0) return wasmato_irq_unmask;
     }
     return nullptr;
 }

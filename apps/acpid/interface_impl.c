@@ -1,12 +1,18 @@
 #include "error.h"
 #include "os.h"
 #include "trace.h"
+#include "uacpi/acpi.h"
+#include "uacpi/tables.h"
+#include <__header_poll.h>
+#include <__header_unistd.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <poll.h>
 #include <uacpi/kernel_api.h>
 #include <uacpi/status.h>
 #include <uacpi/types.h>
@@ -43,6 +49,12 @@ void wasmato_io_write_16(uint16_t port, uint16_t value);
 __attribute__((import_module("wasmato"), import_name("io_write_32"))) 
 void wasmato_io_write_32(uint16_t port, uint32_t value);
 
+
+__attribute__((import_module("wasmato"), import_name("irq_create_ioapic"))) 
+int wasmato_irq_create_ioapic(uint32_t irq);
+
+__attribute__((import_module("wasmato"), import_name("irq_unmask"))) 
+void wasmato_irq_unmask(int fd);
 
 uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
     uint64_t rsdp = wasmato_acpi_get_rsdp();
@@ -124,43 +136,85 @@ uacpi_status uacpi_kernel_io_write32(uacpi_handle handle, uacpi_size offset, uac
     return UACPI_STATUS_OK;
 }
 
-uacpi_status uacpi_kernel_pci_read8(uacpi_handle device, uacpi_size offset, uacpi_u8* value) {
-    printf("TODO: uacpi_kernel_pci_read8\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
-}
-
-uacpi_status uacpi_kernel_pci_read16(uacpi_handle device, uacpi_size offset, uacpi_u16* value) {
-    printf("TODO: uacpi_kernel_pci_read16\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
-}
-
-uacpi_status uacpi_kernel_pci_read32(uacpi_handle device, uacpi_size offset, uacpi_u32* value) {
-    printf("TODO: uacpi_kernel_pci_read32\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
-}
-
-uacpi_status uacpi_kernel_pci_write8(uacpi_handle device, uacpi_size offset, uacpi_u8 value) {
-    printf("TODO: uacpi_kernel_pci_write8\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
-}
-
-uacpi_status uacpi_kernel_pci_write16(uacpi_handle device, uacpi_size offset, uacpi_u16 value) {
-    printf("TODO: uacpi_kernel_pci_write16\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
-}
-
-uacpi_status uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset, uacpi_u32 value) {
-    printf("TODO: uacpi_kernel_pci_write32\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
-}
-
 uacpi_status uacpi_kernel_pci_device_open(uacpi_pci_address address, uacpi_handle* out_handle) {
-    printf("TODO: uacpi_kernel_pci_device_open\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
+    // TODO: use pcid instead once we get it
+
+    // get the MCFG table
+    uacpi_table table;
+    uacpi_status status = uacpi_table_find_by_signature(ACPI_MCFG_SIGNATURE, &table);
+    if (uacpi_unlikely_error(status)) return status;
+
+    struct acpi_mcfg* mcfg = table.ptr;
+    size_t count = mcfg->hdr.length - sizeof(*mcfg);
+    uint64_t phys_addr = -1;
+    for (int i = 0; i < count; i++) {
+        struct acpi_mcfg_allocation* alloc = &mcfg->entries[i];
+
+        // match the segment
+        if (alloc->segment != address.segment)
+            break;
+
+        if (alloc->start_bus <= address.bus && address.bus <= alloc->end_bus) {
+            // the bus matches! calculate the address
+            phys_addr = alloc->address + ((address.bus - alloc->start_bus) << 20 | address.device << 15 | address.function << 12);
+            break;
+        }
+    }
+
+    // if we could not find the device then just give up
+    if (phys_addr == -1) {
+        return UACPI_STATUS_NOT_FOUND;
+    }
+
+    // map it
+    void* mapping = uacpi_kernel_map(phys_addr, 4096);
+    if (mapping == UACPI_MAP_FAILED) {
+        return UACPI_STATUS_OUT_OF_MEMORY;
+    }
+
+    *out_handle = mapping;
+
+    return UACPI_STATUS_OK;
 }
 
 void uacpi_kernel_pci_device_close(uacpi_handle handle) {
-    printf("TODO: uacpi_kernel_pci_device_close\n");
+    uacpi_kernel_unmap(handle, 4096);
+}
+
+uacpi_status uacpi_kernel_pci_read8(uacpi_handle device, uacpi_size offset, uacpi_u8* value) {
+    if (offset >= (4096 - 1)) return UACPI_STATUS_INVALID_ARGUMENT;
+    *value = *(volatile uint8_t*)(device + offset);
+    return UACPI_STATUS_OK;
+}
+
+uacpi_status uacpi_kernel_pci_read16(uacpi_handle device, uacpi_size offset, uacpi_u16* value) {
+    if (offset >= (4096 - 2)) return UACPI_STATUS_INVALID_ARGUMENT;
+    *value = *(volatile uint16_t*)(device + offset);
+    return UACPI_STATUS_OK;
+}
+
+uacpi_status uacpi_kernel_pci_read32(uacpi_handle device, uacpi_size offset, uacpi_u32* value) {
+    if (offset >= (4096 - 4)) return UACPI_STATUS_INVALID_ARGUMENT;
+    *value = *(volatile uint32_t*)(device + offset);
+    return UACPI_STATUS_OK;
+}
+
+uacpi_status uacpi_kernel_pci_write8(uacpi_handle device, uacpi_size offset, uacpi_u8 value) {
+    if (offset >= (4096 - 1)) return UACPI_STATUS_INVALID_ARGUMENT;
+    *(volatile uint8_t*)(device + offset) = value;
+    return UACPI_STATUS_OK;
+}
+
+uacpi_status uacpi_kernel_pci_write16(uacpi_handle device, uacpi_size offset, uacpi_u16 value) {
+    if (offset >= (4096 - 2)) return UACPI_STATUS_INVALID_ARGUMENT;
+    *(volatile uint16_t*)(device + offset) = value;
+    return UACPI_STATUS_OK;
+}
+
+uacpi_status uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset, uacpi_u32 value) {
+    if (offset >= (4096 - 4)) return UACPI_STATUS_INVALID_ARGUMENT;
+    *(volatile uint32_t*)(device + offset) = value;
+    return UACPI_STATUS_OK;
 }
 
 void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
@@ -350,9 +404,67 @@ uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request *req) {
     return UACPI_STATUS_OK;
 }
 
+typedef struct interrupt_handler {
+    uacpi_interrupt_handler handler;
+    uacpi_handle ctx;
+    pthread_t thread;
+    int fd;
+} interrupt_handler_t;
+
+static void* interrupt_thread(void* ctx) {
+    interrupt_handler_t* intr = ctx;
+
+    struct pollfd intrfd = {
+        .fd = intr->fd,
+        .events = POLLIN
+    };
+
+    while (intr->fd >= 0) {
+        // poll the fd to wait for an interrupt
+        intrfd.revents = 0;
+        int ready = poll(&intrfd, 1, -1);
+        if (ready < 0)
+            break;
+
+        if (intrfd.revents & POLLNVAL)
+            break;
+
+        if (intrfd.revents & POLLIN) {
+            // run the handler
+            intr->handler(intr->ctx);
+
+            // tell the runtime we finished handling the event
+            wasmato_irq_unmask(intr->fd);
+        }        
+    }
+
+    return NULL;
+}
+
 uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interrupt_handler handler, uacpi_handle ctx, uacpi_handle* out_irq_handle) {
-    printf("TODO: uacpi_kernel_install_interrupt_handler\n");
-    return UACPI_STATUS_UNIMPLEMENTED;
+    // request an interrupt from the kernel
+    int fd = wasmato_irq_create_ioapic(irq);
+    if (fd < 0) {
+        ERROR("Failed to create IRQ for #%d", irq);
+        return UACPI_STATUS_INTERNAL_ERROR;
+    }
+
+    // setup the struct
+    interrupt_handler_t* handle = malloc(sizeof(interrupt_handler_t));
+    if (handle == nullptr) {
+        close(fd);
+        return UACPI_STATUS_OUT_OF_MEMORY;
+    }
+    handle->handler = handler;
+    handle->ctx = ctx;
+    handle->fd = fd;
+
+    // start the thread
+    if (pthread_create(&handle->thread, NULL, interrupt_thread, handle)) {
+        return UACPI_STATUS_INTERNAL_ERROR;
+    }
+
+    return UACPI_STATUS_OK;
 }
 
 uacpi_status uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler handler, uacpi_handle irq_handle) {
