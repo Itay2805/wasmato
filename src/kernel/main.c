@@ -414,7 +414,6 @@ OMIT_ENDBR INIT_CODE void _start() {
 
     // thread related init
     init_threads();
-    init_atomic_wait();
     init_sched_per_core();
 
     // setup the runtime

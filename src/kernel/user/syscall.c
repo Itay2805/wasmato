@@ -465,8 +465,8 @@ static bool handle_sys_atomic_wait(wait_entry_t* wait_entries, size_t count, uin
     return atomic_wait(wait_entries, count, deadline);
 }
 
-static size_t handle_sys_atomic_notify(void* key, size_t count) {
-    return atomic_notify(key, count);
+static size_t handle_sys_atomic_notify(void* key, uint64_t mask, size_t count) {
+    return atomic_notify(key, mask, count);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -537,7 +537,7 @@ OMIT_ENDBR uint64_t syscall_handler(syscall_t syscall, uint64_t arg1, uint64_t a
         case SYSCALL_THREAD_EXIT: handle_sys_thread_exit(); break;
         case SYSCALL_THREAD_YIELD: handle_sys_thread_yield(); break;
         case SYSCALL_ATOMIC_WAIT: return handle_sys_atomic_wait((void*)arg1, arg2, arg3); break;
-        case SYSCALL_ATOMIC_NOTIFY: return handle_sys_atomic_notify((void*)arg1, arg2); break;
+        case SYSCALL_ATOMIC_NOTIFY: return handle_sys_atomic_notify((void*)arg1, arg2, arg3); break;
         case SYSCALL_HANDLE_CLOSE: handle_sys_handle_close(arg1); break;
 
         case SYSCALL_EARLY_GET_INITRD_SIZE: {

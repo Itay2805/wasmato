@@ -51,7 +51,7 @@ void sys_thread_yield(void);
 //----------------------------------------------------------------------------------------------------------------------
 
 bool sys_atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline);
-size_t sys_atomic_notify(void* key, size_t count);
+size_t sys_atomic_notify(void* key, uint64_t mask, size_t count);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Handle

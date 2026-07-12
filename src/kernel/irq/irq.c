@@ -11,11 +11,13 @@
 #include "lib/log.h"
 #include "lib/pcpu.h"
 #include "mem/alloc.h"
+#include "mem/virt.h"
 #include "sync/spinlock.h"
 #include "thread/sched.h"
 #include "thread/wait.h"
-#include "uapi/irq.h"
+#include "uapi/wait.h"
 #include "user/object.h"
+#include <stdatomic.h>
 
 typedef struct irq_dispatcher {
     /**
@@ -60,7 +62,7 @@ void interrupt_unmask(irq_t* irq) {
     }    
 }
 
-irq_t* irq_create(irq_waiter_t* waiter, int cpu_id) {
+irq_t* irq_create(int cpu_id) {
     irq_t* irq = mem_alloc(&m_irq_alloc);
     if (irq == nullptr) {
         return nullptr;
@@ -72,7 +74,6 @@ irq_t* irq_create(irq_waiter_t* waiter, int cpu_id) {
 
     irq->type = IRQ_TYPE_UNREGISTERED;
     irq->cpu_id = cpu_id;
-    irq->waiter = waiter;
 
     // acquire the spinlock of the given cpu
     irq_dispatcher_t* dispatcher = get_irq_dispatcher_of(cpu_id);
@@ -110,10 +111,6 @@ void irq_free(irq_t* irq) {
     dispatcher->table[irq->vector - INTR_VECTOR_FIRST] = nullptr;
     irq_mask(irq);
     irq_spinlock_release(&dispatcher->lock, irq_state);
-
-    // And now wakeup the waiters so they can know the irq is dead
-    atomic_store_release(irq->waiter, IRQ_WAITER_DEAD);
-    atomic_notify(irq->waiter, 0);
     
     // and we can free it
     mem_free(&m_irq_alloc, irq);
@@ -128,9 +125,22 @@ static void irq_dispatch(uint8_t index) {
         // mask the interrupt so it won't fire again
         irq_mask(irq);
 
-        // And now wakeup the waiters so they can handle it
-        atomic_store_release(irq->waiter, IRQ_WAITER_WAKEUP);
-        atomic_notify(irq->waiter, 0);
+        void* wait_key = irq->wait_key;
+        uint64_t wait_mask = irq->wait_mask;
+        wait_key_size_t wait_key_size = irq->wait_key_size;
+
+        // For IRQs the abi is to OR the mask with the key itself, that way usermode 
+        // can decide on which bits it want to be enabled from an IRQ firing up
+        user_access_enable();
+        if (wait_key_size == WAIT_KEY_UINT32) {
+            atomic_fetch_or_explicit((_Atomic(uint32_t)*)wait_key, wait_mask, memory_order_release);
+        } else {
+            atomic_fetch_or_explicit((_Atomic(uint64_t)*)wait_key, wait_mask, memory_order_release);
+        }
+        user_access_disable();
+
+        // wakeup with the mask
+        atomic_notify(wait_key, wait_mask, 0);
 
     } else {
         WARN("irq: got #%d on cpu #%d with no handler attached", index, get_cpu_id());

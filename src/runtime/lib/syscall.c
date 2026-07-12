@@ -173,8 +173,8 @@ bool sys_atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
 	return syscall3(SYSCALL_ATOMIC_WAIT, entries, count, deadline);
 }
 
-size_t sys_atomic_notify(void* key, size_t count) {
-	return syscall2(SYSCALL_ATOMIC_NOTIFY, key, count);
+size_t sys_atomic_notify(void* key, uint64_t mask, size_t count) {
+	return syscall3(SYSCALL_ATOMIC_NOTIFY, key, mask, count);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

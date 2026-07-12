@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/defs.h"
-#include "uapi/irq.h"
+#include "uapi/wait.h"
 #include "user/object.h"
 
 #include <stdint.h>
@@ -44,10 +44,11 @@ typedef struct irq {
     uint32_t cpu_id;
 
     /**
-     * The pointer for the 
-     * notification to send
+     * The wait parameters
      */
-    irq_waiter_t* waiter;
+    void* wait_key;
+    uint64_t wait_mask;
+    wait_key_size_t wait_key_size;
 
     /**
      * The type of interrupt this is
@@ -69,7 +70,7 @@ INIT_CODE void init_irq_handling(void);
  * Create a new interrupt object, will already allocate a vector, 
  * will not register it yet 
  */
-irq_t* irq_create(irq_waiter_t* waiter, int cpu_id);
+irq_t* irq_create(int cpu_id);
 
 /**
  * Free the IRQ, unregistering it properly

@@ -26,14 +26,14 @@ typedef struct wait_queue {
     /**
      * The queue itself
      */
-    list_t queue;
+    struct wait_queue_entry* head;
 } wait_queue_t;
 
 typedef struct wait_queue_entry {
     /**
      * Link in the wait queue
      */
-    list_entry_t link;
+    struct wait_queue_entry* next;
 
     /**
      * The thread that is waiting
@@ -44,6 +44,11 @@ typedef struct wait_queue_entry {
      * The key that the thread is waiting for
      */
     void* key;
+
+    /** 
+     * Mask to apply on the key when checking it
+     */
+    uint64_t mask;
 } wait_queue_entry_t;
 
 static wait_queue_t m_wait_hash[WAIT_HASH_SIZE];
@@ -89,25 +94,30 @@ static bool wait_queue_prepare(
         return false;
     }
 
-    list_add(&queue->queue, &entry->link);
+    entry->next = queue->head;
+    queue->head = entry;
     spinlock_release(&queue->lock);
     return true;
 }
 
-static void wait_queue_finish(wait_queue_entry_t* entry) {
-    wait_queue_t* queue = get_wait_queue_for_key(entry->key);
+static void wait_queue_finish(wait_queue_entry_t* remove) {
+    wait_queue_t* queue = get_wait_queue_for_key(remove->key);
 
     spinlock_acquire(&queue->lock);
-    if (entry->link.next != nullptr) {
-        list_del(&entry->link);
-    }
-    spinlock_release(&queue->lock);
-}
 
-INIT_CODE void init_atomic_wait(void) {
-    for (size_t i = 0; i < WAIT_HASH_SIZE; i++) {
-        list_init(&m_wait_hash[i].queue);
+    wait_queue_entry_t** indirect = &queue->head;
+    while (*indirect != nullptr) {
+        wait_queue_entry_t* entry = *indirect;
+
+        if (entry == remove) {
+            *indirect = entry->next;
+            break;
+        } else {
+            indirect = &((*indirect)->next);
+        }
     }
+
+    spinlock_release(&queue->lock);
 }
 
 bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
@@ -141,6 +151,7 @@ bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
         // setup the entry
         wait_entries[queued] = (wait_queue_entry_t){
             .key = entry.key,
+            .mask = entry.mask,
             .thread = thread
         };
 
@@ -171,7 +182,7 @@ unpark:
     return success;
 }
 
-size_t atomic_notify(void* key, size_t count) {
+size_t atomic_notify(void* key, uint64_t mask, size_t count) {
     wait_queue_t* queue = get_wait_queue_for_key(key);
 
     bool irq_state = irq_save();
@@ -179,12 +190,12 @@ size_t atomic_notify(void* key, size_t count) {
 
     // iterate the loop to find all the keys that match
     size_t woken = 0;
-    wait_queue_entry_t* entry = nullptr;
-    wait_queue_entry_t* tmp = nullptr;
-    list_for_each_entry_safe(entry, tmp, &queue->queue, link) {
-        if (entry->key == key) {
-            // remove from the list
-            list_del(&entry->link);
+    wait_queue_entry_t** indirect = &queue->head;
+    while (*indirect != nullptr) {
+        wait_queue_entry_t* entry = *indirect;
+
+        if (entry->key == key && (entry->mask & mask)) {
+            *indirect = entry->next;
 
             if (scheduler_try_unpark(entry->thread)) {
                 woken++;
@@ -194,6 +205,8 @@ size_t atomic_notify(void* key, size_t count) {
             if (count != 0 && count == woken) {
                 break;
             }
+        } else {
+            indirect = &((*indirect)->next);
         }
     }
 

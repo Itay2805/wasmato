@@ -16,5 +16,6 @@ typedef enum wait_key_size {
 typedef struct wait_entry {
     void* key;
     uint64_t old;
+    uint64_t mask;
     wait_key_size_t key_size;
 } wait_entry_t;

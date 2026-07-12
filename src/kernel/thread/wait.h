@@ -6,8 +6,6 @@
 #include "lib/defs.h"
 #include "uapi/wait.h"
 
-INIT_CODE void init_atomic_wait(void);
-
 /**
  * Atomically checks that every entry's `key` still contains its expected `old`
  * value and then parks the current thread until it is either woken by an
@@ -36,7 +34,8 @@ bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline);
  * Wakes a number of threads currently waiting on `key` via `atomic_wait`.
  *
  * @param key       [IN] The key to wake
+ * @param key       [IN] The mask to wake
  * @param count     [IN] The number of threads to wake, 0 for all
  * @return The number of threads woken
  */
-size_t atomic_notify(void* key, size_t count);
+size_t atomic_notify(void* key, uint64_t mask, size_t count);

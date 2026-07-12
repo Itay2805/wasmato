@@ -2,6 +2,7 @@
 
 #include "uapi/page.h"
 
+#include <stdint.h>
 #include <wasm/wasm.h>
 #include <wasm/host.h>
 
@@ -99,7 +100,7 @@ uint32_t wasm_host_atomic_notify(void* ptr, uint32_t count) {
     if (count == 0) {
         return 0;
     }
-    return sys_atomic_notify(ptr, count);
+    return sys_atomic_notify(ptr, UINT64_MAX, count);
 }
 
 static uint64_t wasm_atomic_deadline(int64_t timeout) {
@@ -122,7 +123,8 @@ uint32_t wasm_host_atomic_wait_4(_Atomic(uint32_t)* value, uint32_t expected, in
     wait_entry_t entry = {
         .key = value,
         .key_size = WAIT_KEY_UINT32,
-        .old = expected
+        .old = expected,
+        .mask = UINT64_MAX
     };
     if (!sys_atomic_wait(&entry, 1, deadline)) {
         return 1; // "not-equal"
@@ -137,7 +139,8 @@ uint32_t wasm_host_atomic_wait_8(_Atomic(uint64_t)* value, uint64_t expected, in
     wait_entry_t entry = {
         .key = value,
         .key_size = WAIT_KEY_UINT64,
-        .old = expected
+        .old = expected,
+        .mask = UINT64_MAX
     };
     if (!sys_atomic_wait(&entry, 1, deadline)) {
         return 1; // "not-equal"
