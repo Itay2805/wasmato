@@ -42,7 +42,7 @@ void sys_jit_free(void* ptr);
 typedef void (*sys_thread_entry_t)(void* arg);
 
 bool sys_thread_create(void* arg, const char* name);
-void sys_thread_sleep(size_t ms);
+void sys_thread_sleep(uint64_t deadline);
 void sys_thread_exit(void);
 void sys_thread_yield(void);
 
@@ -58,6 +58,13 @@ size_t sys_atomic_notify(void* key, uint64_t mask, size_t count);
 //----------------------------------------------------------------------------------------------------------------------
 
 void sys_handle_close(uint64_t handle);
+
+//----------------------------------------------------------------------------------------------------------------------
+// IRQ handling
+//----------------------------------------------------------------------------------------------------------------------
+
+uint64_t sys_irq_create_ioapic(wake_params_t* wake_params, uint32_t irq, uint32_t cpu_id);
+void sys_irq_unmask(uint64_t handle);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Early syscalls for configuring stuff from the runtime

@@ -5,6 +5,7 @@
 #include "lib/assert.h"
 #include "lib/atomic.h"
 #include "lib/list.h"
+#include "lib/log.h"
 #include "lib/tsc.h"
 #include "sched.h"
 #include "mem/virt.h"
@@ -165,7 +166,7 @@ bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
         }
     }
 
-    if (deadline == 0) {
+    if (deadline == -1) {
         scheduler_schedule();
     } else {
         scheduler_schedule_deadline(deadline);

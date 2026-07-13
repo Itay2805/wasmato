@@ -1,9 +1,18 @@
+#include "trace.h"
 #include "uacpi/status.h"
+#include <stdint.h>
+#include <time.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
 #include <uacpi/event.h>
 
 #include <stdio.h>
+#include <unistd.h>
+
+static uacpi_interrupt_ret handle_power_button_fixed(uacpi_handle ctx) {
+    TRACE("power button pressed!");
+    return UACPI_INTERRUPT_HANDLED;
+}
 
 int main(void) {
     /*
@@ -57,10 +66,26 @@ int main(void) {
         return -4;
     }
 
+    /* Fixed event — harmless to install even if firmware uses the CM button;
+     * it just won't fire. */
+    ret = uacpi_install_fixed_event_handler(
+        UACPI_FIXED_EVENT_POWER_BUTTON,
+        handle_power_button_fixed,
+        UACPI_NULL
+    );
+
     /*
      * That's it, uACPI is now fully initialized and working! You can proceed to
      * using any public API at your discretion. The next recommended step is namespace
      * enumeration and device discovery so you can bind drivers to ACPI objects.
      */
+
+
+    // TODO: IPC handling
+    for (;;) {
+        struct timespec sp = { .tv_sec = UINT64_MAX };
+        clock_nanosleep(CLOCK_MONOTONIC, 0, &sp, NULL);
+    }
+
     return 0;
 }

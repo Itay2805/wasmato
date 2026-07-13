@@ -5,18 +5,22 @@
 
 #include "alloc/alloc.h"
 
+#include "debug/gdb_jit.h"
 #include "lib/assert.h"
 #include "lib/atomic.h"
 #include "lib/defs.h"
 #include "lib/except.h"
 #include "lib/list.h"
 #include "lib/log.h"
+#include "lib/stb_ds.h"
 #include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
 
 #include "sync/mutex.h"
 #include "uapi/page.h"
+#include "wasm/debug_elf.h"
 #include "wasm/errno.h"
+#include "wasm/file.h"
 #include "wasm/jit.h"
 #include "wasm/wasm.h"
 
@@ -252,12 +256,21 @@ err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) 
         .resolve_import_arg = proc,
 
         // we don't need the debug info
-        .emit_debug_info = false,
+        .emit_debug_info = true,
         
         // please speed
         .optimize = true,
     };
     RETHROW_WASM(wasm_module_jit(&proc->module, &proc->jit, &config));
+    
+    // for debugging emit an elf file so we can have symbols in gdb
+    void* debug_elf_data = nullptr;
+    size_t debug_elf_size = 0;
+    RETHROW_WASM(wasm_jit_emit_debug_elf(
+        &proc->module, &proc->jit, 
+        &debug_elf_data, &debug_elf_size
+    ));
+    gdb_jit_register(debug_elf_data, debug_elf_size);
 
     // find the wasm entry point, only if sharing is enabled
     if (proc->module.memory.shared) {
@@ -341,4 +354,67 @@ int32_t wasm_host_memory_grow(void* memory_base, void* state_base, int32_t new_p
 
     // return the page count
     return current_size / WASM_PAGE_SIZE;
+}
+
+file_t* wasm_proc_get_fd(wasm_proc_t* proc, int fd) {
+    file_t* file = nullptr;
+
+    mutex_lock(&proc->fd_table_lock);
+    if (fd < arrlen(proc->fd_table)) {
+        file = file_get(proc->fd_table[fd]);
+    }
+    mutex_unlock(&proc->fd_table_lock);
+
+    return file;
+}
+
+bool wasm_proc_close_fd(wasm_proc_t* proc, int fd) {
+    file_t* file = nullptr;
+    
+    mutex_lock(&proc->fd_table_lock);
+    if (fd < arrlen(proc->fd_table)) {
+        file = proc->fd_table[fd];
+        proc->fd_table[fd] = nullptr;
+    }
+    mutex_unlock(&proc->fd_table_lock);
+
+    if (file != nullptr) {
+        // actually close the file
+        if (file->ops->close != nullptr) {
+            file->ops->close(file);
+        }
+
+        // notify all waiters that we are dead
+        atomic_fetch_or_explicit(&file->signals, FILE_SIGNAL_CLOSED, memory_order_release);
+        sys_atomic_notify(&file->signals, FILE_SIGNAL_CLOSED, 0);
+
+        // and now we can put it, freeing it if we are the last ref
+        file_put(file);
+    }
+
+    return file != nullptr;
+}
+
+int wasm_proc_register_file(wasm_proc_t* proc, file_t* file) {
+    mutex_lock(&proc->fd_table_lock);
+    
+    // find an empty space
+    int fd = -1;
+    for (int i = 0; i < arrlen(proc->fd_table); i++) {
+        if (proc->fd_table[i] == nullptr) {
+            proc->fd_table[i] = file;
+            fd = i;
+            break;
+        }
+    }
+
+    // if not empty space then push a new descriptor
+    if (fd < 0) {
+        arrpush(proc->fd_table, file);
+        fd = arrlen(proc->fd_table) - 1;
+    }
+
+    mutex_unlock(&proc->fd_table_lock);
+    
+    return fd;
 }

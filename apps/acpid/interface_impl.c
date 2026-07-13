@@ -421,13 +421,15 @@ static void* interrupt_thread(void* ctx) {
 
     while (intr->fd >= 0) {
         // poll the fd to wait for an interrupt
-        intrfd.revents = 0;
         int ready = poll(&intrfd, 1, -1);
-        if (ready < 0)
+        if (ready < 0) {
             break;
+        }
 
-        if (intrfd.revents & POLLNVAL)
+        if (intrfd.revents & (POLLNVAL | POLLERR | POLLHUP)) {
+            ERROR("Poll on irq failed");
             break;
+        }
 
         if (intrfd.revents & POLLIN) {
             // run the handler
@@ -445,7 +447,7 @@ uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interru
     // request an interrupt from the kernel
     int fd = wasmato_irq_create_ioapic(irq);
     if (fd < 0) {
-        ERROR("Failed to create IRQ for #%d", irq);
+        ERROR("Failed to create IRQ for #%d / %d", irq, fd);
         return UACPI_STATUS_INTERNAL_ERROR;
     }
 
@@ -461,6 +463,7 @@ uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interru
 
     // start the thread
     if (pthread_create(&handle->thread, NULL, interrupt_thread, handle)) {
+        TRACE("Failed to create irq thread");
         return UACPI_STATUS_INTERNAL_ERROR;
     }
 

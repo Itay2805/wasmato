@@ -4,8 +4,6 @@
 #include "user/object.h"
 #include <stdint.h>
 
-#define INVALID_HANDLE ((1 << 16) - 1)
-
 INIT_CODE void init_handle_table(void);
 
 uint64_t handle_register(void* object);

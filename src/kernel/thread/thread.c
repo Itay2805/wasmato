@@ -144,11 +144,11 @@ void thread_exit(void) {
     scheduler_schedule();
 }
 
-void thread_sleep(size_t ms) {
+void thread_sleep(uint64_t deadline) {
     thread_t* thread = get_current_thread();
     bool irq_state = irq_save();
     atomic_store_relaxed(&thread->state, THREAD_STATE_PARKING);
-    scheduler_schedule_deadline(tsc_ms_deadline(ms));
+    scheduler_schedule_deadline(deadline);
     irq_restore(irq_state);
 }
 

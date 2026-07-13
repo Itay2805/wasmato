@@ -1,3 +1,4 @@
+#include "lib/log.h"
 #include "lib/syscall.h"
 
 #include "uapi/page.h"
@@ -105,7 +106,7 @@ uint32_t wasm_host_atomic_notify(void* ptr, uint32_t count) {
 
 static uint64_t wasm_atomic_deadline(int64_t timeout) {
     if (timeout <= 0) {
-        return 0;
+        return (uint64_t)-1;
     }
     return tsc_ns_deadline((uint64_t)timeout);
 }

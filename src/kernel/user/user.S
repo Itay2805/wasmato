@@ -32,10 +32,11 @@ usermode_jump:
 
     /**
      * Set rflags:
+     * - IF = 1
      * - IOPL = 3
      * - ID = 1
      */
-    movq $0x203002, %r11
+    movq $0x203202, %r11
 
     /**
      * zero the rest of the regs

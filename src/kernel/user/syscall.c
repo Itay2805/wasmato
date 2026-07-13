@@ -1,6 +1,10 @@
 #include "syscall.h"
+#include "arch/smp.h"
+#include "irq/ioapic.h"
+#include "irq/irq.h"
 #include "lib/assert.h"
 #include "lib/except.h"
+#include "lib/list.h"
 #include "lib/log.h"
 #include "lib/tsc.h"
 #include "mem/direct.h"
@@ -28,6 +32,7 @@
 #include "thread/wait.h"
 #include "uapi/wait.h"
 #include "user/handle.h"
+#include "user/object.h"
 
 /**
  * are we done with early memory
@@ -434,8 +439,6 @@ static bool handle_sys_thread_create(void* arg, const char* name) {
     if (thread == nullptr) {
         return false;
     }
-    
-    // copy the name from the user
 
     // start the thread
     thread_start(thread);
@@ -443,7 +446,7 @@ static bool handle_sys_thread_create(void* arg, const char* name) {
     return true;
 }
 
-static void handle_sys_thread_sleep(size_t ms) {
+static void handle_sys_thread_sleep(uint64_t ms) {
     thread_sleep(ms);
 }
 
@@ -454,7 +457,9 @@ static void handle_sys_thread_exit(void) {
 }
 
 static void handle_sys_thread_yield(void) {
+    bool irq_state = irq_save();
     scheduler_schedule();
+    irq_restore(irq_state);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -475,6 +480,53 @@ static size_t handle_sys_atomic_notify(void* key, uint64_t mask, size_t count) {
 
 static void handle_sys_handle_close(uint64_t handle) {
     handle_close(handle);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// IRQ handling
+//----------------------------------------------------------------------------------------------------------------------
+
+static uint64_t handle_sys_irq_create_ioapic(wake_params_t* user_wake_params, uint32_t irq_num, uint32_t cpu_id) {
+    // get a copy of the wake params and validate it 
+    assert_user_range(user_wake_params, sizeof(*user_wake_params));
+    user_access_enable();
+    wake_params_t wake_params = *user_wake_params;
+    user_access_disable();
+    assert_user_range(wake_params.key, wake_params.key_size == WAIT_KEY_UINT32 ? 4 : 8);
+
+    // make sure the id is in a valid range
+    ASSERT(cpu_id < g_cpu_count);
+
+    // create the interrupt object
+    irq_t* irq = irq_create(cpu_id);
+    if (irq == nullptr) {
+        return INVALID_HANDLE;
+    }
+
+    // copy over the wake params
+    irq->wait_key = wake_params.key;
+    irq->wait_key_size = wake_params.key_size;
+    irq->wait_mask = wake_params.mask;
+
+    // register the ioapic interrupt
+    ioapic_register_isa(irq, irq_num);
+
+    // create the handle for it
+    uint64_t handle = handle_register(irq);
+    if (handle == INVALID_HANDLE) {
+        kernel_object_put(&irq->object);
+        return INVALID_HANDLE;
+    }
+
+    return handle;
+}
+
+static void handle_sys_irq_unmask(uint64_t handle) {
+    kernel_object_t* object = handle_lookup(handle);
+    ASSERT(object->type == KERNEL_OBJECT_TYPE_IRQ);
+    irq_t* irq = containerof(object, irq_t, object);
+    irq_unmask(irq);
+    kernel_object_put(object);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -539,6 +591,8 @@ OMIT_ENDBR uint64_t syscall_handler(syscall_t syscall, uint64_t arg1, uint64_t a
         case SYSCALL_ATOMIC_WAIT: return handle_sys_atomic_wait((void*)arg1, arg2, arg3); break;
         case SYSCALL_ATOMIC_NOTIFY: return handle_sys_atomic_notify((void*)arg1, arg2, arg3); break;
         case SYSCALL_HANDLE_CLOSE: handle_sys_handle_close(arg1); break;
+        case SYSCALL_IRQ_CREATE_IOAPIC: return handle_sys_irq_create_ioapic((void*)arg1, arg2, arg3); break;
+        case SYSCALL_IRQ_UNMASK: handle_sys_irq_unmask(arg1); break;
 
         case SYSCALL_EARLY_GET_INITRD_SIZE: {
             ASSERT(!m_early_done);

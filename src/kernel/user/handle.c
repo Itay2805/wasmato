@@ -6,10 +6,12 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "lib/log.h"
 #include "lib/string.h"
 #include "lib/random.h"
 #include "lib/siphash.h"
 #include "sync/spinlock.h"
+#include "uapi/syscall.h"
 #include "user/object.h"
 
 typedef struct handle_slot {
@@ -94,7 +96,7 @@ void* handle_lookup(uint64_t handle) {
     spinlock_acquire(&m_handle_lock);
     
     uint32_t index = handle & HANDLE_INDEX_MASK;
-    uint32_t mac = handle >> HANDLE_MAC_BITS;
+    uint64_t mac = handle >> HANDLE_INDEX_BITS;
     
     handle_slot_t* slot = &m_handles[index];
     ASSERT(slot->object != NULL);

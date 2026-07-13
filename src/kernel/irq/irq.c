@@ -54,7 +54,7 @@ static void irq_mask(irq_t* irq) {
     }
 }
 
-void interrupt_unmask(irq_t* irq) {
+void irq_unmask(irq_t* irq) {
     if (irq->type == IRQ_TYPE_IOAPIC) {
         ioapic_set_mask(irq, false);
     } else {
@@ -89,7 +89,7 @@ irq_t* irq_create(int cpu_id) {
     }
 
     // if not found then fail
-    if (idx != -1) {
+    if (idx < 0) {
         irq_spinlock_release(&dispatcher->lock, irq_state);
         mem_free(&m_irq_alloc, irq);
         return nullptr;

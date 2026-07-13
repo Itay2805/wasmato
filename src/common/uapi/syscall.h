@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define INVALID_HANDLE ((1 << 16) - 1)
+
 typedef enum syscall {
 	SYSCALL_DEBUG_PRINT,
 
@@ -28,6 +30,9 @@ typedef enum syscall {
 	SYSCALL_ATOMIC_NOTIFY,
 
 	SYSCALL_HANDLE_CLOSE,
+
+	SYSCALL_IRQ_CREATE_IOAPIC,
+	SYSCALL_IRQ_UNMASK,
 
 	SYSCALL_EARLY_GET_INITRD_SIZE,
 	SYSCALL_EARLY_GET_INITRD,

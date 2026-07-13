@@ -4,6 +4,7 @@
 #include <stdalign.h>
 #include <stdatomic.h>
 
+#include "lib/log.h"
 #include "thread.h"
 #include "time/timer.h"
 #include "arch/cpuid.h"

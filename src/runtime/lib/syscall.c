@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "lib/log.h"
 #include "uapi/syscall.h"
 #include "uapi/wait.h"
 #include <stdint.h>
@@ -83,6 +84,8 @@
     })
 
 
+static inline bool is_irq_enabled() { return __builtin_ia32_readeflags_u64() & (1 << 9); }
+
 //----------------------------------------------------------------------------------------------------------------------
 // Debug
 //----------------------------------------------------------------------------------------------------------------------
@@ -153,8 +156,8 @@ bool sys_thread_create(void* arg, const char* name) {
 	return (bool)syscall2(SYSCALL_THREAD_CREATE, arg, name);
 }
 
-void sys_thread_sleep(size_t ms) {
-	(void)syscall1(SYSCALL_THREAD_SLEEP, ms);
+void sys_thread_sleep(uint64_t deadline) {
+	(void)syscall1(SYSCALL_THREAD_SLEEP, deadline);
 }
 
 void sys_thread_exit(void) {
@@ -183,6 +186,18 @@ size_t sys_atomic_notify(void* key, uint64_t mask, size_t count) {
 
 void sys_handle_close(uint64_t handle) {
 	(void)syscall1(SYSCALL_HANDLE_CLOSE, handle);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// IRQs
+//----------------------------------------------------------------------------------------------------------------------
+
+uint64_t sys_irq_create_ioapic(wake_params_t* wake_params, uint32_t irq, uint32_t cpu_id) {
+	return syscall3(SYSCALL_IRQ_CREATE_IOAPIC, wake_params, irq, cpu_id);
+}
+
+void sys_irq_unmask(uint64_t handle) {
+	(void)syscall1(SYSCALL_IRQ_UNMASK, handle);
 }
 
 //----------------------------------------------------------------------------------------------------------------------

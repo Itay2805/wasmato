@@ -24,7 +24,6 @@ void kernel_object_put(kernel_object_t* object) {
     atomic_fence_acquire();
 
     switch (object->type) {
-        // TODO: free the object in here
         case KERNEL_OBJECT_TYPE_IRQ: {
             irq_free(containerof(object, irq_t, object));
         } break;

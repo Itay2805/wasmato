@@ -8,6 +8,7 @@
 #include <lib/except.h>
 #include "lib/defs.h"
 #include "sync/mutex.h"
+#include "wasm/file.h"
 
 typedef enum wasm_proc_type : uint8_t {
     /**
@@ -79,7 +80,11 @@ typedef struct wasm_proc {
      */
     int32_t process_id;
 
-    // TODO: thread list?
+    /**
+     * The FD table + its lock
+     */
+    file_t** fd_table;
+    mutex_t fd_table_lock;
 } wasm_proc_t;
 
 wasm_proc_t* wasm_get_proc(wasm_proc_t* proc);
@@ -124,3 +129,19 @@ void wasm_thread_start(wasm_thread_start_args_t* args);
 void wasm_thread_exit(void* state_base);
 
 err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size);
+
+/**
+ * Get a file from an fd, increases the ref count
+ */
+file_t* wasm_proc_get_fd(wasm_proc_t* proc, int fd);
+
+/**
+ * Close an existing fd from the file table
+ */
+bool wasm_proc_close_fd(wasm_proc_t* proc, int fd);
+
+/**
+ * Register a file to the process's fd table, takes the 
+ * reference from the caller
+ */
+int wasm_proc_register_file(wasm_proc_t* proc, file_t* file);

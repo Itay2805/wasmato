@@ -1,5 +1,6 @@
 #include "ioapic.h"
 #include "acpi/acpi_tables.h"
+#include "irq/irq.h"
 #include "lib/assert.h"
 #include "lib/defs.h"
 #include "lib/except.h"
@@ -216,7 +217,8 @@ void ioapic_register_isa(irq_t* handler, uint8_t isa) {
 
     bool irq_state = irq_spinlock_acquire(&ioapic->lock);
 
-    // setup the redirection entry
+    // setup the redirection entry, it starts as unmasked so we can
+    // get interrupts right away
     IO_APIC_REDIRECTION_TABLE_ENTRY entry = {
         .vector = handler->vector,
         .delivery_mode = IO_APIC_DELIVERY_MODE_FIXED,
@@ -235,6 +237,7 @@ void ioapic_register_isa(irq_t* handler, uint8_t isa) {
 
     // remember the slot and index so we can access it 
     // more easily from the masking code
+    handler->type = IRQ_TYPE_IOAPIC;
     handler->ioapic.slot = irq;
     handler->ioapic.index = ioapic_index;
 
