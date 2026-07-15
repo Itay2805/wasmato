@@ -205,6 +205,24 @@ static void* wasm_resolve_import(void* arg, const char* module, const char* name
     return nullptr;
 }
 
+static file_ops_t m_debug_output_ops = {};
+
+static file_t m_debug_output_file = {
+    .signals = 0,
+    .ops = &m_debug_output_ops,
+    .ref_count = 1,
+    .fdstat = {
+        .fs_filetype = WASI_FILETYPE_CHARACTER_DEVICE,
+        .fs_rights_base = WASI_RIGHTS_FD_WRITE
+    }
+};
+
+void wasi_init_fds(wasm_proc_t* proc) {
+    // install at both stdout and stderr the same file
+    ASSERT(wasm_proc_register_file_at(proc, file_get(&m_debug_output_file), 1) == 1);
+    ASSERT(wasm_proc_register_file_at(proc, file_get(&m_debug_output_file), 2) == 2);
+}
+
 static _Atomic(uint32_t) m_process_id_gen = 0;
 
 err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) {
@@ -314,6 +332,10 @@ err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) 
         proc->start = proc->jit.exports[index].func.address;
     }
 
+    // setup the initial fds for the process
+    // TODO: these should be passed and not created in here
+    wasi_init_fds(proc);
+
     // and finally create the new thread
     RETHROW(wasm_create_thread(proc, 0, nullptr));
 
@@ -412,6 +434,32 @@ int wasm_proc_register_file(wasm_proc_t* proc, file_t* file) {
     if (fd < 0) {
         arrpush(proc->fd_table, file);
         fd = arrlen(proc->fd_table) - 1;
+    }
+
+    mutex_unlock(&proc->fd_table_lock);
+    
+    return fd;
+}
+
+int wasm_proc_register_file_at(wasm_proc_t* proc, file_t* file, int fd) {
+    mutex_lock(&proc->fd_table_lock);
+
+    // increase the fd table size if needed, don't forget 
+    // to zero out the new entries
+    size_t fdtable_size = arrlen(proc->fd_table);
+    if (fdtable_size <= fd) {
+        size_t to_add = fd - fdtable_size + 1;
+        file_t** new = arraddnptr(proc->fd_table, to_add);
+        for (size_t i = 0; i < to_add; i++) {
+            new[i] = nullptr;
+        }
+    }
+
+    // only override if the table entry is empty
+    if (proc->fd_table[fd] == nullptr) {
+        proc->fd_table[fd] = file;
+    } else {
+        fd = -1;
     }
 
     mutex_unlock(&proc->fd_table_lock);

@@ -96,6 +96,7 @@ static int wasmato_irq_create_ioapic(void* memory_base, void* state_base, uint32
     file->file.ref_count = 1;
     file->file.signals = 0;
     file->file.ops = &m_irq_file_ops;
+    file->file.fdstat.fs_rights_base = WASI_RIGHTS_POLL_FD_READWRITE | WASI_RIGHTS_FD_READ;
 
     // create the interrupt object
     // TODO: logic to choose cpu

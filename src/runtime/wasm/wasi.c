@@ -1,6 +1,7 @@
 #include "wasi.h"
 
 #include "alloc/alloc.h"
+#include "lib/assert.h"
 #include "lib/atomic.h"
 #include "lib/defs.h"
 #include "lib/except.h"
@@ -50,65 +51,6 @@ typedef struct wasi_ciovec {
     wasi_size_t buf_len;
 } wasi_ciovec_t;
 
-typedef enum wasi_filetype : uint8_t {
-    WASI_FILETYPE_UNKNOWN = 0,
-    WASI_FILETYPE_BLOCK_DEVICE = 1,
-    WASI_FILETYPE_CHARACTER_DEVICE = 2,
-    WASI_FILETYPE_DIRECTORY = 3,
-    WASI_FILETYPE_REGULAR_FILE = 4,
-    WASI_FILETYPE_SOCKET_DGRAM = 5,
-    WASI_FILETYPE_SOCKET_STREAM = 6,
-    WASI_FILETYPE_SYMBOLIC_LINK = 7,
-} wasi_filetype_t;
-
-typedef enum wasi_fdflags : uint16_t {
-    WASI_FDFLAGS_APPEND = 1 << 0,
-    WASI_FDFLAGS_DSYNC = 1 << 1,
-    WASI_FDFLAGS_NONBLOCK = 1 << 2,
-    WASI_FDFLAGS_RSYNC = 1 << 3,
-    WASI_FDFLAGS_SYNC = 1 << 4,
-} wasi_fdflags_t;
-
-typedef enum wasi_rights : uint64_t {
-    WASI_RIGHTS_FD_DATASYNC  = 1 << 0,
-    WASI_RIGHTS_FD_READ  = 1 << 1,
-    WASI_RIGHTS_FD_SEEK  = 1 << 2,
-    WASI_RIGHTS_FD_FDSTAT_SET_FLAGS  = 1 << 3,
-    WASI_RIGHTS_FD_SYNC  = 1 << 4,
-    WASI_RIGHTS_FD_TELL  = 1 << 5,
-    WASI_RIGHTS_FD_WRITE  = 1 << 6,
-    WASI_RIGHTS_FD_ADVISE  = 1 << 7,
-    WASI_RIGHTS_FD_ALLOCATE  = 1 << 8,
-    WASI_RIGHTS_PATH_CREATE_DIRECTORY  = 1 << 9,
-    WASI_RIGHTS_PATH_CREATE_FILE  = 1 << 10,
-    WASI_RIGHTS_PATH_LINK_SOURCE  = 1 << 11,
-    WASI_RIGHTS_PATH_LINK_TARGET  = 1 << 12,
-    WASI_RIGHTS_PATH_OPEN  = 1 << 13,
-    WASI_RIGHTS_FD_READDIR  = 1 << 14,
-    WASI_RIGHTS_PATH_READLINK  = 1 << 15,
-    WASI_RIGHTS_PATH_RENAME_SOURCE  = 1 << 16,
-    WASI_RIGHTS_PATH_RENAME_TARGET  = 1 << 17,
-    WASI_RIGHTS_PATH_FILESTAT_GET  = 1 << 18,
-    WASI_RIGHTS_PATH_FILESTAT_SET_SIZE  = 1 << 19,
-    WASI_RIGHTS_PATH_FILESTAT_SET_TIMES  = 1 << 20,
-    WASI_RIGHTS_FD_FILESTAT_GET  = 1 << 21,
-    WASI_RIGHTS_FD_FILESTAT_SET_SIZE  = 1 << 22,
-    WASI_RIGHTS_FD_FILESTAT_SET_TIMES  = 1 << 23,
-    WASI_RIGHTS_PATH_SYMLINK  = 1 << 24,
-    WASI_RIGHTS_PATH_REMOVE_DIRECTORY  = 1 << 25,
-    WASI_RIGHTS_PATH_UNLINK_FILE  = 1 << 26,
-    WASI_RIGHTS_POLL_FD_READWRITE  = 1 << 27,
-    WASI_RIGHTS_SOCK_SHUTDOWN  = 1 << 28,
-    WASI_RIGHTS_SOCK_ACCEPT  = 1 << 29,
-} wasi_rights_t;
-
-typedef struct wasi_fdstat_t {
-    wasi_filetype_t fs_filetype;
-    wasi_fdflags_t fs_flags;
-    wasi_rights_t fs_rights_base;
-    wasi_rights_t fs_rights_inheriting;
-} wasi_fdstat_t;
-
 static wasi_errno_t wasi_fd_write(
     void* memory_base, void* state_base, 
     wasi_fd_t fd, 
@@ -118,16 +60,27 @@ static wasi_errno_t wasi_fd_write(
     const wasi_ciovec_t* iovs = memory_base + _iovs;
     wasi_size_t* retptr0 = memory_base + _retptr0;
 
-    if (fd != 1 && fd != 2) {
-        WARN("wasi_fd_write: Unknown FD: %d", fd);
+    // get the fd
+    file_t* file = wasm_proc_get_fd(wasm_current_proc(state_base), fd);
+    if (file == nullptr) {
+        WARN("wasi_fd_write: got invalid fd %d", fd);
         return WASI_ERRNO_BADF;
     }
 
+    // check the capability
+    if (!file_is_capable(file, WASI_RIGHTS_FD_WRITE)) {
+        WARN("wasi_fd_write: got uncapable file %d", fd);
+        return WASI_ERRNO_NOTCAPABLE;
+    }
+
+    // TODO: perform the real write by using wasi-ipc to the channel of the file
     for (size_t i = 0; i < iovs_len; i++) {
         void* buf = memory_base + iovs[i].buf;
         sys_debug_print(buf, iovs[i].buf_len);
         *retptr0 += iovs[i].buf_len;
     }
+
+    file_put(file);
 
     return WASI_ERRNO_SUCCESS;
 }
@@ -146,14 +99,19 @@ static wasi_errno_t wasi_fd_fdstat_get(
     wasi_fd_t fd, 
     wasm_ptr_t _retptr0
 ) {
-    // JUST A STUB
     wasi_fdstat_t* retptr0 = memory_base + _retptr0;
-    if (fd != 1 && fd != 2) {
-        WARN("wasi_fd_fdstat_get: Unknown FD: %d", fd);
+
+    // get the fd
+    file_t* file = wasm_proc_get_fd(wasm_current_proc(state_base), fd);
+    if (file == nullptr) {
+        WARN("wasi_fd_fdstat_get: got invalid fd %d", fd);
         return WASI_ERRNO_BADF;
     }
-    retptr0->fs_filetype = WASI_FILETYPE_CHARACTER_DEVICE;
-    retptr0->fs_rights_base |= WASI_RIGHTS_FD_WRITE | WASI_RIGHTS_FD_READ;
+
+    *retptr0 = file->fdstat;
+
+    file_put(file);
+
     return WASI_ERRNO_SUCCESS;
 }
 
@@ -299,23 +257,37 @@ static wasi_errno_t wasi_poll_oneoff(
         // get the file
         file_t* file = wasm_proc_get_fd(proc, in.fd_read.file_descriptor);
         if (file == nullptr) {
-            // the signal is already set, move it to the 
-            // ready output right away
+            // invalid file, set error
             wasi_event_t* out = &out_list[ready++];
             out->userdata = in.userdata;
             out->error = WASI_ERRNO_BADF;
             out->type = in.tag;
             continue;
         }
-        
+
         // set the signal mask, we always want to watch 
         // for a closed file because that will fuck us up
         uint64_t mask = FILE_SIGNAL_CLOSED;
+        wasi_rights_t rights = WASI_RIGHTS_POLL_FD_READWRITE;
         if (in.tag == WASI_EVENTTYPE_FD_READ) {
             mask |= FILE_SIGNAL_READ_READY;
+            rights |= WASI_RIGHTS_FD_READ;
         } else if (in.tag == WASI_EVENTTYPE_FD_WRITE) {
             mask |= FILE_SIGNAL_WRITE_READY;
+            rights |= WASI_RIGHTS_FD_WRITE;
         }
+
+        if (!file_is_capable(file, rights)) {
+            // the file is not capable for polling 
+            // on the given poll type
+            wasi_event_t* out = &out_list[ready++];
+            out->userdata = in.userdata;
+            out->error = WASI_ERRNO_NOTCAPABLE;
+            out->type = in.tag;
+
+            file_put(file);
+            continue;
+        }        
 
         // check if the signal was set
         uint64_t value = atomic_load_acquire(&file->signals);
@@ -336,12 +308,13 @@ static wasi_errno_t wasi_poll_oneoff(
             // TODO: how to set nbytes? how to set HUB?
 
             file_put(file);
-
             continue;
         }
 
         // we already have someone ready, we are not going 
+        // to actually save it
         if (ready != 0) {
+            file_put(file);
             continue;
         }
 

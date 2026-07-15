@@ -145,3 +145,9 @@ bool wasm_proc_close_fd(wasm_proc_t* proc, int fd);
  * reference from the caller
  */
 int wasm_proc_register_file(wasm_proc_t* proc, file_t* file);
+
+/**
+ * Register a file to the process's fd table, takes the 
+ * reference from the caller
+ */
+int wasm_proc_register_file_at(wasm_proc_t* proc, file_t* file, int fd);

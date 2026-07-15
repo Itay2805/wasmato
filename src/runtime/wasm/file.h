@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/defs.h"
+#include "wasm/wasi.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -30,7 +31,16 @@ typedef struct file {
      *       actually attached to an FD
      */
     atomic_size_t ref_count;
+
+    /**
+     * The file stats of the file
+     */
+    wasi_fdstat_t fdstat;
 } file_t;
+
+static bool file_is_capable(file_t* file, wasi_rights_t rights) {
+    return (file->fdstat.fs_rights_base & rights) == rights;
+}
 
 typedef struct file_ops {
     /**
@@ -48,15 +58,3 @@ typedef struct file_ops {
 
 file_t* file_get(file_t* file);
 void file_put(file_t* file);
-
-/** 
- * A wrapper for a kernel handle as a file descriptor
- */
-typedef struct irq_file {
-    file_t file;
-
-    /** 
-     * The handle to use
-     */
-    uint64_t handle;
-} irq_file_t;
