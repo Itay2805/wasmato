@@ -83,7 +83,7 @@ int main(void) {
 
     // TODO: IPC handling
     for (;;) {
-        struct timespec sp = { .tv_sec = UINT64_MAX };
+        struct timespec sp = { .tv_sec = 1000 };
         clock_nanosleep(CLOCK_MONOTONIC, 0, &sp, NULL);
     }
 
