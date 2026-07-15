@@ -219,8 +219,8 @@ static file_t m_debug_output_file = {
 
 void wasi_init_fds(wasm_proc_t* proc) {
     // install at both stdout and stderr the same file
-    ASSERT(wasm_proc_register_file_at(proc, file_get(&m_debug_output_file), 1) == 1);
-    ASSERT(wasm_proc_register_file_at(proc, file_get(&m_debug_output_file), 2) == 2);
+    ASSERT(wasm_proc_register_file_at(proc, &m_debug_output_file, 1) == 1);
+    ASSERT(wasm_proc_register_file_at(proc, &m_debug_output_file, 2) == 2);
 }
 
 static _Atomic(uint32_t) m_process_id_gen = 0;
@@ -400,20 +400,11 @@ bool wasm_proc_close_fd(wasm_proc_t* proc, int fd) {
     }
     mutex_unlock(&proc->fd_table_lock);
 
+    // remove the use count of this file
     if (file != nullptr) {
-        // actually close the file
-        if (file->ops->close != nullptr) {
-            file->ops->close(file);
-        }
-
-        // notify all waiters that we are dead
-        atomic_fetch_or_explicit(&file->signals, FILE_SIGNAL_CLOSED, memory_order_release);
-        sys_atomic_notify(&file->signals, FILE_SIGNAL_CLOSED, 0);
-
-        // and now we can put it, freeing it if we are the last ref
-        file_put(file);
+        file_use_put(file);
     }
-
+    
     return file != nullptr;
 }
 
@@ -424,7 +415,7 @@ int wasm_proc_register_file(wasm_proc_t* proc, file_t* file) {
     int fd = -1;
     for (int i = 0; i < arrlen(proc->fd_table); i++) {
         if (proc->fd_table[i] == nullptr) {
-            proc->fd_table[i] = file;
+            proc->fd_table[i] = file_use_get(file);
             fd = i;
             break;
         }
@@ -432,7 +423,7 @@ int wasm_proc_register_file(wasm_proc_t* proc, file_t* file) {
 
     // if not empty space then push a new descriptor
     if (fd < 0) {
-        arrpush(proc->fd_table, file);
+        arrpush(proc->fd_table, file_use_get(file));
         fd = arrlen(proc->fd_table) - 1;
     }
 
@@ -457,7 +448,7 @@ int wasm_proc_register_file_at(wasm_proc_t* proc, file_t* file, int fd) {
 
     // only override if the table entry is empty
     if (proc->fd_table[fd] == nullptr) {
-        proc->fd_table[fd] = file;
+        proc->fd_table[fd] = file_use_get(file);
     } else {
         fd = -1;
     }

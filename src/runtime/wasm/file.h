@@ -25,10 +25,16 @@ typedef struct file {
     const file_ops_t* ops;
 
     /**
-     * The amount of uses on this file right now
-     * 
-     * NOTE: a non-zero ref count doesn't mean it is 
-     *       actually attached to an FD
+     * The amount of procs this file is registered to, when it 
+     * reaches zero we are going to close the file itself
+     */
+    atomic_size_t use_count;
+
+    /**
+     * The amount of people holding the struct, all use counts hold 
+     * a single ref, and any time we get a file from the table we 
+     * increase this ref, it is meant to keep the struct alive, not 
+     * the file open
      */
     atomic_size_t ref_count;
 
@@ -58,3 +64,7 @@ typedef struct file_ops {
 
 file_t* file_get(file_t* file);
 void file_put(file_t* file);
+
+file_t* file_use_get(file_t* file);
+void file_use_put(file_t* file);
+
