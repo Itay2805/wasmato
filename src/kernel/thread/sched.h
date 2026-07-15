@@ -6,12 +6,6 @@
 #include "lib/except.h"
 #include "thread.h"
 
-/**
- * Is the mwait/monitor instruction supported and can it
- * be used to wait for interrupts
- */
-extern LATE_RO bool g_monitor_supported;
-
 INIT_CODE void init_sched_per_core(void);
 
 INIT_CODE noreturn void sched_start_per_core(void);

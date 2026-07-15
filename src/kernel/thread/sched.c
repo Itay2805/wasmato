@@ -45,17 +45,7 @@ typedef struct scheduler_context {
      * The action to perform on `last_thread` in the context of the newly-switched thread.
      */
     last_thread_action_t last_thread_action;
-
-    /**
-     * Is the core parked
-     */
-    _Atomic(uint32_t) parked;
 } __attribute__((aligned(128))) scheduler_t;
-
-/**
- * Is using monitor supported
- */
-LATE_RO bool g_monitor_supported = false;
 
 /**
  * The schedulers for all the cores
@@ -87,12 +77,6 @@ static CPU_LOCAL bool m_want_preempt = false;
 
 thread_t* get_current_thread(void) {
     return m_current;
-}
-
-static void scheduler_wakeup(scheduler_t* scheduler) {
-    // store into the parked thing, this will ensure
-    // the monitor wakes up
-    atomic_store_release(&scheduler->parked, 0);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -278,8 +262,6 @@ void scheduler_enqueue(thread_t *thread) {
     scheduler_t* scheduler = get_scheduler();
     // place on the run queue
     list_add_tail(&scheduler->run_queue, &thread->link);
-    // ensure the scheduler is woken up
-    scheduler_wakeup(scheduler);
 }
 
 /**
@@ -294,75 +276,25 @@ static void scheduler_tick(timer_t* timer) {
     m_want_preempt = true;
 }
 
-__attribute__((target("waitpkg")))
-static void umonitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
-    for (;;) {
-        uint32_t value = atomic_load_acquire(addr);
-
-        if (value != expected) {
-            return;
-        }
-
-        _umonitor(addr);
-
-        value = atomic_load_acquire(addr);
-        if (value != expected) {
-            return;
-        }
-
-        _umwait(0, UINT64_MAX);
-    }
-}
-
-__attribute__((target("sse3")))
-static void monitor_wait(_Atomic(uint32_t)* addr, uint32_t expected) {
-    // ensure that we even support using the monitor instruction
-    ASSERT(g_monitor_supported);
-
-    for (;;) {
-        uint32_t value = atomic_load_acquire(addr);
-
-        if (value != expected) {
-            return;
-        }
-
-        _mm_monitor(addr, 0, 0);
-
-        value = atomic_load_acquire(addr);
-        if (value != expected) {
-            return;
-        }
-
-        // BIT1 == break on interrupt even with IF=0
-        _mm_mwait(0, 0);
-    }
-}
-
 static void scheduler_idle_thread(void* arg) {
     scheduler_t* scheduler = get_scheduler();
 
-    //
-    // After that first yield we can just while-true
-    // go to sleep
-    //
+    // the idle thread runs without interrupts 
+    // for the most part
+    irq_disable();
+
     for (;;) {
-        // start by yielding to ensure anyone who can
-        // run will run
-        sched_yield();
-
-        // mark the core as parked, anyone who wants to wake us
-        // up will set this to 0, which will cause us to exit
-        // the monitor loop
-        atomic_store_relaxed(&scheduler->parked, 1);
-
-        // use the monitor to actually wait on the cache line
-        while (atomic_load_acquire(&scheduler->parked) != 0) {
-            if (g_monitor_supported) {
-                monitor_wait(&scheduler->parked, 1);
-            } else {
-                umonitor_wait(&scheduler->parked, 1);
-            }
-        }
+        // attempt to schedule, this will return once there is no 
+        // more work to run
+        scheduler_schedule();
+        
+        // hlt, we need the sti to come right before it to make sure 
+        // we atomically hlt and enable interrupts
+        asm volatile (
+            "sti\n"
+            "hlt\n"
+            "cli\n"
+        );
     }
 }
 

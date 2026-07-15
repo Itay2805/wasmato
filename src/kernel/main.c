@@ -94,27 +94,6 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(version_info_ecx.RDRAND, "Missing RDRAND support");
     ASSERT(version_info_edx.PGE, "Missing PGE support");
 
-    // if monitor is supported check that it also has interrupt as break event
-    bool has_monitor = false;
-    if (version_info_ecx.MONITOR) {
-        CPUID_MONITOR_MWAIT_ECX monitor_mwait_ecx = {};
-        if (__get_cpuid(
-            CPUID_MONITOR_MWAIT,
-            &a,
-            &b,
-            &monitor_mwait_ecx.raw,
-            &d
-        )) {
-            has_monitor = true;
-        }
-    }
-
-    if (first) {
-        g_monitor_supported = has_monitor;
-    } else {
-        ASSERT(g_monitor_supported == has_monitor);
-    }
-
     CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_EBX structured_extended_feature_flags_ebx = {};
     CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_ECX structured_extended_feature_flags_ecx = {};
     CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS_EDX structured_extended_feature_flags_edx = {};
@@ -132,15 +111,6 @@ INIT_CODE static void validate_cpu_features(void) {
     ASSERT(structured_extended_feature_flags_ebx.INVPCID, "Missing INVPCID support");
     ASSERT(structured_extended_feature_flags_ecx.UMIP, "Missing UMIP support");
     ASSERT(structured_extended_feature_flags_ebx.RDSEED, "Missing RDSEED support");
-
-    // if we don't have monitor support ensure
-    // we have at least waitpkg
-    if (!g_monitor_supported) {
-        ASSERT(structured_extended_feature_flags_ecx.WAITPKG, "Missing either MONITOR or WAITPKG support");
-        // we allow to use C0.2 and we don't give it any max quanta
-        // cause we want to give all the control to the runtime
-        __wrmsr(MSR_IA32_UMWAIT_CONTROL, 0);
-    }
 
     CPUID_EXTENDED_STATE_SUB_LEAF_EAX extended_state_sub_leaf_eax = {};
     ASSERT(__get_cpuid_count(
