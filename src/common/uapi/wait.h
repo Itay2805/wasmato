@@ -2,16 +2,16 @@
 
 #include <stdint.h>
 
-/**
- * The max amount of entries that can be given 
- * to the kernel for waiting
- */
-#define MAX_WAIT_ENTRIES 64
-
 typedef enum wait_key_size : uint32_t {
 	WAIT_KEY_UINT32,
 	WAIT_KEY_UINT64,
 } wait_key_size_t;
+
+typedef enum wait_status {
+    WAIT_STATUS_SUCCESS,
+    WAIT_STATUS_NOT_EQUAL,
+    WAIT_STATUS_OUT_OF_MEMORY,
+} wait_status_t;
 
 typedef struct wait_entry {
     void* key;

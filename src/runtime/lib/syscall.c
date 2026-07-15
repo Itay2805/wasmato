@@ -156,10 +156,6 @@ bool sys_thread_create(void* arg, const char* name) {
 	return (bool)syscall2(SYSCALL_THREAD_CREATE, arg, name);
 }
 
-void sys_thread_sleep(uint64_t deadline) {
-	(void)syscall1(SYSCALL_THREAD_SLEEP, deadline);
-}
-
 void sys_thread_exit(void) {
 	(void)syscall0(SYSCALL_THREAD_EXIT);
 }

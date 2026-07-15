@@ -42,7 +42,6 @@ void sys_jit_free(void* ptr);
 typedef void (*sys_thread_entry_t)(void* arg);
 
 bool sys_thread_create(void* arg, const char* name);
-void sys_thread_sleep(uint64_t deadline);
 void sys_thread_exit(void);
 void sys_thread_yield(void);
 

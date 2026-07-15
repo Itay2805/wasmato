@@ -446,10 +446,6 @@ static bool handle_sys_thread_create(void* arg, const char* name) {
     return true;
 }
 
-static void handle_sys_thread_sleep(uint64_t ms) {
-    thread_sleep(ms);
-}
-
 static void handle_sys_thread_exit(void) {
     // TODO: mark that the thread has 
     //       exited to the thread ripper
@@ -585,7 +581,6 @@ OMIT_ENDBR uint64_t syscall_handler(syscall_t syscall, uint64_t arg1, uint64_t a
         case SYSCALL_JIT_LOCK_PROTECTION: handle_sys_jit_lock_protection((void*)arg1); break;
         case SYSCALL_JIT_FREE: handle_sys_jit_free((void*)arg1); break;
         case SYSCALL_THREAD_CREATE: return handle_sys_thread_create((void*)arg1, (void*)arg2); break;
-        case SYSCALL_THREAD_SLEEP: handle_sys_thread_sleep(arg1); break;
         case SYSCALL_THREAD_EXIT: handle_sys_thread_exit(); break;
         case SYSCALL_THREAD_YIELD: handle_sys_thread_yield(); break;
         case SYSCALL_ATOMIC_WAIT: return handle_sys_atomic_wait((void*)arg1, arg2, arg3); break;

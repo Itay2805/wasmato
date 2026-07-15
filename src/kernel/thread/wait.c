@@ -4,12 +4,18 @@
 #include "arch/intrin.h"
 #include "lib/assert.h"
 #include "lib/atomic.h"
+#include "lib/defs.h"
+#include "lib/except.h"
 #include "lib/list.h"
 #include "lib/log.h"
 #include "lib/tsc.h"
+#include "mem/mappings.h"
+#include "mem/phys.h"
+#include "mem/vmar.h"
 #include "sched.h"
 #include "mem/virt.h"
 #include "sync/spinlock.h"
+#include "uapi/page.h"
 #include "uapi/wait.h"
 #include "user/syscall.h"
 
@@ -121,21 +127,51 @@ static void wait_queue_finish(wait_queue_entry_t* remove) {
     spinlock_release(&queue->lock);
 }
 
-bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
-    ASSERT(count > 0);
-    ASSERT(count < MAX_WAIT_ENTRIES);
-    assert_user_range(entries, sizeof(wait_entry_t) * count);
+wait_status_t atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
+    size_t entries_len;
+    ASSERT(!__builtin_mul_overflow(sizeof(wait_entry_t), count, &entries_len));
+    assert_user_range(entries, entries_len);
 
     thread_t* thread = get_current_thread();
     size_t queued = 0;
-    bool success = true;
+    wait_status_t status = WAIT_STATUS_SUCCESS;
 
     // Start parking now. Any unpark requests that catch `state` at this value or later will
     // cause the `scheduler_schedule` below to return. Note that this value will be made
     // visible to potential notifiers by the wait queue's lock.
     atomic_store_relaxed(&thread->state, THREAD_STATE_PARKING);
 
-    wait_queue_entry_t wait_entries[MAX_WAIT_ENTRIES];
+    // stack entries if small enough, otherwise allocate
+    STATIC_ASSERT(sizeof(wait_entry_t) == sizeof(wait_queue_entry_t));
+    wait_queue_entry_t* wait_entries = nullptr;
+    bool is_phys_alloc = false;
+    vmar_t* vmar = nullptr;
+
+    wait_queue_entry_t stack_wait_entries[64];
+    if (count <= ARRAY_LENGTH(stack_wait_entries)) {
+        // the count is small enough to use the stack
+        wait_entries = stack_wait_entries;
+
+    } else if (entries_len <= PHYS_BUDDY_MAX_SIZE) {
+        // the count might fit into a body allocation, 
+        // try to do it first 
+        wait_entries = phys_alloc(entries_len);
+        is_phys_alloc = true;
+    }
+    
+    if (wait_entries == nullptr) {
+        // the count was too big and we failed to allocate from 
+        // the body, allocate a VMAR instead so we can do a non
+        // contig allocation
+        vmar = vmar_allocate(&g_kernel_memory, SIZE_TO_PAGES(entries_len), nullptr);
+        wait_entries = vmar->base;
+    }
+
+    if (wait_entries == nullptr) {
+        // if we still failed to allocate just return 
+        // out of memory
+        return WAIT_STATUS_OUT_OF_MEMORY;
+    }
 
     const bool irq_state = irq_save();
 
@@ -161,7 +197,7 @@ bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline) {
             atomic_store_relaxed(&thread->state, THREAD_STATE_RUNNING);
 
             // the state was not-equal
-            success = false;
+            status = WAIT_STATUS_NOT_EQUAL;
             goto unpark;
         }
     }
@@ -180,7 +216,14 @@ unpark:
 
     irq_restore(irq_state);
 
-    return success;
+    // free it if we need to
+    if (is_phys_alloc) {
+        phys_free(wait_entries, entries_len);
+    } else if (vmar != nullptr) {
+        vmar_free(vmar);
+    }
+
+    return status;
 }
 
 size_t atomic_notify(void* key, uint64_t mask, size_t count) {

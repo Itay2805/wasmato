@@ -192,11 +192,6 @@ void thread_put(thread_t* thread);
 void thread_exit(void);
 
 /**
- * Put the thread to sleep until the given deadline
- */
-void thread_sleep(uint64_t deadline);
-
-/**
  * Switching to another thread, saving
  * the current context first
  */

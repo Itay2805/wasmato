@@ -28,7 +28,7 @@
  * @param deadline  [IN] The deadline to wait for, 0 for no deadline
  * @returns true if we went to sleep, false if an entry failed to compare against its old value
  */
-bool atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline);
+wait_status_t atomic_wait(wait_entry_t* entries, size_t count, uint64_t deadline);
 
 /**
  * Wakes a number of threads currently waiting on `key` via `atomic_wait`.

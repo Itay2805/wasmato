@@ -1,5 +1,6 @@
 #include "wasi.h"
 
+#include "alloc/alloc.h"
 #include "lib/atomic.h"
 #include "lib/defs.h"
 #include "lib/except.h"
@@ -8,6 +9,7 @@
 #include "lib/string.h"
 #include "lib/syscall.h"
 #include "lib/tsc.h"
+#include "lib/stb_ds.h"
 #include "uapi/wait.h"
 #include "wasm/errno.h"
 #include "wasm/file.h"
@@ -230,10 +232,15 @@ static wasi_errno_t wasi_poll_oneoff(
         return WASI_ERRNO_INVAL;
     }
 
-    // make sure we can actually wait on that many entries
-    // TODO: support for waiting on more somehow?
-    wait_entry_t wait_entries[MAX_WAIT_ENTRIES];
-    int entry_count = 0;
+    // allocate the entries on the heap
+    // TODO: stack cache? per thread cache? maybe even actually just cache the allocation
+    //       per thread with the assumption that it is going to be used more?
+    size_t wait_entries_len;
+    if (__builtin_add_overflow(sizeof(wait_entry_t), nsubscriptions, &wait_entries_len)) {
+        return WASI_ERRNO_NOMEM;
+    }
+    wait_entry_t* wait_entries = mem_alloc(wait_entries_len);
+    size_t entry_count = 0;
 
     wasm_proc_t* proc = wasm_current_proc(state_base);
 
@@ -286,13 +293,6 @@ static wasi_errno_t wasi_poll_oneoff(
         if (in.tag != WASI_EVENTTYPE_FD_READ && in.tag != WASI_EVENTTYPE_FD_WRITE) {
             status = WASI_ERRNO_INVAL;
             WARN("wasi_poll_oneoff: got invalid tag %d", in.tag);
-            goto cleanup;
-        }
-
-        // make sure we don't have too many waiters
-        if (entry_count >= ARRAY_LENGTH(wait_entries)) {
-            status = WASI_ERRNO_INVAL;
-            WARN("wasi_poll_oneoff: got too many fd subscriptions %d", entry_count);
             goto cleanup;
         }
 
@@ -356,11 +356,10 @@ static wasi_errno_t wasi_poll_oneoff(
 
     // as long as nothing is ready, wait on stuff
     while (ready == 0) {
-        // and now we wait
-        if (entry_count == 0) {
-            sys_thread_sleep(min_deadline);
-        } else {
-            sys_atomic_wait(wait_entries, entry_count, min_deadline);
+        wait_status_t ws = sys_atomic_wait(wait_entries, entry_count, min_deadline);
+        if (ws == WAIT_STATUS_OUT_OF_MEMORY) {
+            status = WASI_ERRNO_NOMEM;
+            goto cleanup;
         }
 
         // if we are past the deadline then add it as an event
@@ -409,6 +408,9 @@ cleanup:
         file_t* file = containerof(wait_entries[i].key, file_t, signals);
         file_put(file);
     }
+
+    // free the wait entries
+    mem_free(wait_entries);
 
     // return the amount of ready entries
     *retptr0 = ready;

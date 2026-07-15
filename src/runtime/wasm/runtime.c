@@ -10,6 +10,7 @@
 #include "alloc/alloc.h"
 #include "lib/stb_sprintf.h"
 #include "lib/tsc.h"
+#include "uapi/wait.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Host logging
@@ -127,7 +128,7 @@ uint32_t wasm_host_atomic_wait_4(_Atomic(uint32_t)* value, uint32_t expected, in
         .old = expected,
         .mask = UINT64_MAX
     };
-    if (!sys_atomic_wait(&entry, 1, deadline)) {
+    if (sys_atomic_wait(&entry, 1, deadline) == WAIT_STATUS_NOT_EQUAL) {
         return 1; // "not-equal"
     }
 
@@ -143,7 +144,7 @@ uint32_t wasm_host_atomic_wait_8(_Atomic(uint64_t)* value, uint64_t expected, in
         .old = expected,
         .mask = UINT64_MAX
     };
-    if (!sys_atomic_wait(&entry, 1, deadline)) {
+    if (sys_atomic_wait(&entry, 1, deadline) == WAIT_STATUS_NOT_EQUAL) {
         return 1; // "not-equal"
     }
     
