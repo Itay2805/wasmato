@@ -8,9 +8,26 @@
 typedef struct file_ops file_ops_t;
 
 typedef enum file_signals : uint32_t {
+    /**
+     * The file is ready for read
+     */
     FILE_SIGNAL_READ_READY = BIT0,
+
+    /**
+     * The file is ready for write
+     */
     FILE_SIGNAL_WRITE_READY = BIT1,
+
+    /**
+     * The file was closed
+     */
     FILE_SIGNAL_CLOSED = BIT2,
+
+    /**
+     * The other side of the file hanged up, 
+     * so no new data will come after
+     */
+    FILE_SIGNAL_HANGUP = BIT3,
 } file_signals_t;
 
 typedef struct file {

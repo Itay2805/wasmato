@@ -267,7 +267,7 @@ static wasi_errno_t wasi_poll_oneoff(
 
         // set the signal mask, we always want to watch 
         // for a closed file because that will fuck us up
-        uint64_t mask = FILE_SIGNAL_CLOSED;
+        uint64_t mask = FILE_SIGNAL_CLOSED | FILE_SIGNAL_HANGUP;
         wasi_rights_t rights = WASI_RIGHTS_POLL_FD_READWRITE;
         if (in.tag == WASI_EVENTTYPE_FD_READ) {
             mask |= FILE_SIGNAL_READ_READY;
@@ -298,6 +298,10 @@ static wasi_errno_t wasi_poll_oneoff(
             out->userdata = in.userdata;
             out->error = WASI_ERRNO_SUCCESS;
             out->type = in.tag;
+            out->fd_readwrite.flags = 0;
+
+            // TODO: some way to check the amount of bytes
+            out->fd_readwrite.nbytes = 0;
 
             // if the file was closed return BADF so 
             // the caller knows that
@@ -305,7 +309,10 @@ static wasi_errno_t wasi_poll_oneoff(
                 out->error = WASI_ERRNO_BADF;
             }
 
-            // TODO: how to set nbytes? how to set HUB?
+            // if the other side has disconnected then hangup right now
+            if (value & FILE_SIGNAL_HANGUP) {
+                out->fd_readwrite.flags |= WASI_EVENTRWFLAGS_FD_READWRITE_HANGUP;
+            }
 
             file_put(file);
             continue;
@@ -361,11 +368,19 @@ static wasi_errno_t wasi_poll_oneoff(
                 event->userdata = in_list[entry->user_data].userdata;
                 event->type = in_list[entry->user_data].tag;
                 event->error = WASI_ERRNO_SUCCESS;
-                event->fd_readwrite.nbytes = 1;
-                event->fd_readwrite.flags = 0;
 
+                // TODO: some way to check the amount of bytes
+                event->fd_readwrite.nbytes = 0;
+
+                // if the file was closed return BADF so 
+                // the caller knows that
                 if (value & FILE_SIGNAL_CLOSED) {
                     event->error = WASI_ERRNO_BADF;
+                }
+
+                // if the other side has disconnected then hangup right now
+                if (value & FILE_SIGNAL_HANGUP) {
+                    event->fd_readwrite.flags |= WASI_EVENTRWFLAGS_FD_READWRITE_HANGUP;
                 }
 
             } else {
