@@ -6,7 +6,8 @@
 
 #include <spidir/log.h>
 
-#include "wasm/proc.h"
+#include "proc/proc.h"
+#include "proc/threads.h"
 
 uint64_t g_tsc_freq_hz = 0;
 
@@ -41,7 +42,7 @@ static void main(void) {
     sys_early_get_initrd(initrd);
 
     // save the RSDP for wasm to access
-    g_acpi_rsdp = sys_early_get_rsdp();
+    // g_acpi_rsdp = sys_early_get_rsdp();
 
     // we can now mark that the early done is over,
     // and we can free the main stacks

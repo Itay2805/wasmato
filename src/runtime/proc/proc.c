@@ -11,22 +11,23 @@
 #include "lib/defs.h"
 #include "lib/except.h"
 #include "lib/list.h"
-#include "lib/log.h"
-#include "lib/stb_ds.h"
 #include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
 
 #include "sync/mutex.h"
 #include "uapi/page.h"
+#include "wasi/wasi.h"
 #include "wasm/debug_elf.h"
-#include "wasm/errno.h"
-#include "wasm/file.h"
 #include "wasm/jit.h"
 #include "wasm/wasm.h"
+#include <spidir/x64.h>
 
+#include "threads.h"
 #include "wasm_err.h"
-#include "wasmato.h"
-#include "wasi.h"
+
+static _Atomic(uint32_t) m_process_id_gen = 0;
+
+static spidir_codegen_machine_handle_t m_spidir_machine_handle;
 
 wasm_proc_t* wasm_get_proc(wasm_proc_t* proc) {
     atomic_fetch_add_explicit(&proc->ref_count, 1, memory_order_acquire);
@@ -60,123 +61,6 @@ wasm_proc_t* wasm_current_proc(void* state_base) {
     return state->proc;
 }
 
-void wasm_thread_exit(void* state_base) {
-    // get the actual state
-    wasm_state_t* state = containerof(state_base, wasm_state_t, state);
-    state_base = nullptr;
-
-    // we will need the proc
-    wasm_proc_t* proc = state->proc;
-
-    // free the state, since we no longer need it 
-    mem_free(state);
-    state = nullptr;
-
-    // release the proc itself, we don't need it
-    wasm_put_proc(proc);
-    proc = nullptr;
-
-    // finally hard-exit, to ensure that 
-    // everything ends well
-    sys_thread_exit();
-}
-
-void wasm_thread_start(wasm_thread_start_args_t* args) {
-    // get a local copy so we won't need this anymore
-    wasm_state_t* state = args->state;
-    int32_t tid = args->tid;
-    int32_t arg = args->arg;
-    mem_free(args);
-    args = nullptr;
-
-    wasm_proc_t* proc = state->proc;
-
-    if (tid == 1) {
-        // if this is the first thread of the process
-        if (proc->jit.start_func != nullptr) {
-            proc->jit.start_func(proc->memory_base, state->state);
-        }
-
-        // call the entry point (_start)
-        if (proc->start != nullptr) {
-            proc->start(proc->memory_base, state->state);
-        }
-
-    } else {
-        // this is a secondary thread, call it
-        ASSERT(proc->wasi_thread_start != nullptr);
-        proc->wasi_thread_start(proc->memory_base, state->state, tid, arg);
-    }
-
-    // free the state
-    wasm_thread_exit(state->state);
-}
-
-static err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, int32_t* out_tid) {
-    err_t err = NO_ERROR;
-    wasm_state_t* state = nullptr;
-
-    // allocate the args for the thread
-    wasm_thread_start_args_t* args = mem_alloc(sizeof(*args));
-    CHECK_ERROR(args != nullptr, ERROR_OUT_OF_MEMORY);
-    memset(args, 0, sizeof(*args));
-
-    // allocate the wasm state
-    size_t state_size = sizeof(wasm_state_t) + proc->jit.state_size;
-    state = mem_alloc(state_size);
-    CHECK_ERROR(state != nullptr, ERROR_OUT_OF_MEMORY);
-    memset(state, 0, state_size);
-
-    // save the proc, we take a ref to it
-    state->proc = wasm_get_proc(proc);
-
-    // if there is an init state, initialize it
-    if (proc->jit.state_size != 0) {
-        memcpy(state->state, proc->jit.state_init, proc->jit.state_size);
-    }
-
-    // generate the new tid, the first thread gets id of 1
-    // TODO: handle tid overflow
-    int32_t tid = (int32_t)(atomic_fetch_add_explicit(&proc->thread_id_gen, 1, memory_order_relaxed) + 1);
-    CHECK_ERROR(tid > 0, ERROR_OUT_OF_MEMORY);
-
-    if (tid > 1) {
-        // this is a helper thread, ensure we have an entry point
-        CHECK(proc->wasi_thread_start != nullptr);
-    }
-    args->tid = tid;
-
-    // the argument
-    args->arg = arg;
-
-    // and the state base
-    args->state = state;
-    state = nullptr;
-
-    // setup a name
-    char name[128] = "";
-    const char* module_name = "wasm";
-    if (proc->module.module_name != nullptr) {
-        module_name = proc->module.module_name;
-    }
-    stbsp_snprintf(name, sizeof(name), "%s#%d#%d", module_name, proc->process_id, tid);
-
-    // and actually create/start the thread
-    CHECK_ERROR(sys_thread_create(args, name), ERROR_OUT_OF_MEMORY);
-    args = nullptr;
-
-    // output the tid
-    if (out_tid != nullptr) {
-        *out_tid = tid;
-    }
-
-cleanup:
-    mem_free(state);
-    mem_free(args);
-
-    return err;
-}
-
 static int32_t wasi_thread_spawn(void* memory_base, void* state_base, int32_t start_arg) {
     wasm_proc_t* proc = wasm_current_proc(state_base);
 
@@ -184,46 +68,41 @@ static int32_t wasi_thread_spawn(void* memory_base, void* state_base, int32_t st
     err_t err = wasm_create_thread(proc, start_arg, &tid);
     switch (err) {
         case NO_ERROR: return tid;
-        case ERROR_OUT_OF_MEMORY: return WASI_ERRNO_NOMEM;
-        default: return WASI_ERRNO_INVAL;
+        case ERROR_OUT_OF_MEMORY: return -2;
+        default: return -1;
     }
 }
 
 static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
     wasm_proc_t* proc = arg;
 
-    if (strcmp(module, "wasi_snapshot_preview1") == 0) {
-        return wasi_resolve_import(name);
-    } else if (strcmp(module, "wasi") == 0) {
-        if (strcmp(name, "thread-spawn") == 0) {
+    // we only support up to 1 return value always (c code duh)
+    if (type->result_types_count > 1) {
+        return nullptr;
+    }
+    
+    if (strcmp(module, "wasi") == 0) {
+        // standard wasi function
+        if (
+            strcmp(name, "thread-spawn") == 0 &&
+            type->arg_types_count == 1 &&
+            type->arg_types[0] == WASM_VALUE_TYPE_I32 &&
+            type->result_types_count == 1 &&
+            type->result_types[0] == WASM_VALUE_TYPE_I32
+        ) {
+            // from wasi-threads
             return wasi_thread_spawn;
+        } else {
+            return nullptr;
         }
-    } else if (strcmp(module, "wasmato") == 0) {
-        return wasmato_resolve_import(name, proc);
+
+    } else if (strcmp(module, "wasi_snapshot_preview1") == 0) {
+        // the wasi-p1 compatibility layer
+        return wasi_resolve_import(name, type);
     }
     
     return nullptr;
 }
-
-static file_ops_t m_debug_output_ops = {};
-
-static file_t m_debug_output_file = {
-    .signals = 0,
-    .ops = &m_debug_output_ops,
-    .ref_count = 1,
-    .fdstat = {
-        .fs_filetype = WASI_FILETYPE_CHARACTER_DEVICE,
-        .fs_rights_base = WASI_RIGHTS_FD_WRITE
-    }
-};
-
-void wasi_init_fds(wasm_proc_t* proc) {
-    // install at both stdout and stderr the same file
-    ASSERT(wasm_proc_register_file_at(proc, &m_debug_output_file, 1) == 1);
-    ASSERT(wasm_proc_register_file_at(proc, &m_debug_output_file, 2) == 2);
-}
-
-static _Atomic(uint32_t) m_process_id_gen = 0;
 
 err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) {
     err_t err = NO_ERROR;
@@ -267,6 +146,20 @@ err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) 
     // and initialize the memory
     wasm_module_init_memory(&proc->module, proc->memory_base);
 
+    // setup the machine config the first time we go in here
+    if (m_spidir_machine_handle == nullptr) {
+        spidir_x64_machine_config_t config = {
+            // all functions are within 2GB since that is 
+            // the space we reserve for the jit code
+            .extern_code_model = SPIDIR_X64_CM_SMALL_PIC,
+            .internal_code_model = SPIDIR_X64_CM_SMALL_PIC,
+
+            // we know we support popcount
+            .cpu_features.popcnt = 1
+        };
+        m_spidir_machine_handle = spidir_codegen_create_x64_machine_with_config(&config);
+    }
+
     // jit it 
     wasm_jit_config_t config = {
         // the import resolver
@@ -275,6 +168,7 @@ err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) 
 
         // we don't need the debug info
         .emit_debug_info = true,
+        .machine_handle = m_spidir_machine_handle,
         
         // please speed
         .optimize = true,
@@ -332,10 +226,6 @@ err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) 
         proc->start = proc->jit.exports[index].func.address;
     }
 
-    // setup the initial fds for the process
-    // TODO: these should be passed and not created in here
-    wasi_init_fds(proc);
-
     // and finally create the new thread
     RETHROW(wasm_create_thread(proc, 0, nullptr));
 
@@ -376,84 +266,4 @@ int32_t wasm_host_memory_grow(void* memory_base, void* state_base, int32_t new_p
 
     // return the page count
     return current_size / WASM_PAGE_SIZE;
-}
-
-file_t* wasm_proc_get_fd(wasm_proc_t* proc, int fd) {
-    file_t* file = nullptr;
-
-    mutex_lock(&proc->fd_table_lock);
-    if (fd < arrlen(proc->fd_table)) {
-        file = file_get(proc->fd_table[fd]);
-    }
-    mutex_unlock(&proc->fd_table_lock);
-
-    return file;
-}
-
-bool wasm_proc_close_fd(wasm_proc_t* proc, int fd) {
-    file_t* file = nullptr;
-    
-    mutex_lock(&proc->fd_table_lock);
-    if (fd < arrlen(proc->fd_table)) {
-        file = proc->fd_table[fd];
-        proc->fd_table[fd] = nullptr;
-    }
-    mutex_unlock(&proc->fd_table_lock);
-
-    // remove the use count of this file
-    if (file != nullptr) {
-        file_use_put(file);
-    }
-    
-    return file != nullptr;
-}
-
-int wasm_proc_register_file(wasm_proc_t* proc, file_t* file) {
-    mutex_lock(&proc->fd_table_lock);
-    
-    // find an empty space
-    int fd = -1;
-    for (int i = 0; i < arrlen(proc->fd_table); i++) {
-        if (proc->fd_table[i] == nullptr) {
-            proc->fd_table[i] = file_use_get(file);
-            fd = i;
-            break;
-        }
-    }
-
-    // if not empty space then push a new descriptor
-    if (fd < 0) {
-        arrpush(proc->fd_table, file_use_get(file));
-        fd = arrlen(proc->fd_table) - 1;
-    }
-
-    mutex_unlock(&proc->fd_table_lock);
-    
-    return fd;
-}
-
-int wasm_proc_register_file_at(wasm_proc_t* proc, file_t* file, int fd) {
-    mutex_lock(&proc->fd_table_lock);
-
-    // increase the fd table size if needed, don't forget 
-    // to zero out the new entries
-    size_t fdtable_size = arrlen(proc->fd_table);
-    if (fdtable_size <= fd) {
-        size_t to_add = fd - fdtable_size + 1;
-        file_t** new = arraddnptr(proc->fd_table, to_add);
-        for (size_t i = 0; i < to_add; i++) {
-            new[i] = nullptr;
-        }
-    }
-
-    // only override if the table entry is empty
-    if (proc->fd_table[fd] == nullptr) {
-        proc->fd_table[fd] = file_use_get(file);
-    } else {
-        fd = -1;
-    }
-
-    mutex_unlock(&proc->fd_table_lock);
-    
-    return fd;
 }

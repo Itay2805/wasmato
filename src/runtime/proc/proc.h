@@ -4,11 +4,10 @@
 #include <stdint.h>
 #include <wasm/wasm.h>
 #include <wasm/jit.h>
-
 #include <lib/except.h>
-#include "lib/defs.h"
+
 #include "sync/mutex.h"
-#include "wasm/file.h"
+#include "handle.h"
 
 typedef enum wasm_proc_type : uint8_t {
     /**
@@ -81,10 +80,9 @@ typedef struct wasm_proc {
     int32_t process_id;
 
     /**
-     * The FD table + its lock
+     * The handle table
      */
-    file_t** fd_table;
-    mutex_t fd_table_lock;
+    handle_table_t handles;
 } wasm_proc_t;
 
 wasm_proc_t* wasm_get_proc(wasm_proc_t* proc);
@@ -92,62 +90,4 @@ void wasm_put_proc(wasm_proc_t* proc);
 
 wasm_proc_t* wasm_current_proc(void* state_base);
 
-typedef struct wasm_state {
-    /**
-     * The actual process
-     */
-    wasm_proc_t* proc;
-
-    /**
-     * The actual state
-     */
-    char state[0];
-} wasm_state_t;
-
-typedef struct wasm_thread_start_args {
-    /**
-     * The TID of the thread, 1 is the first thread, 
-     * which does not use the special entry point
-     */
-    uint32_t tid;
-
-    /**
-     * The argument to pass to the thread
-     */
-    uint32_t arg;
-
-    /**
-     * The thread's own state base
-     */
-    wasm_state_t* state;
-} wasm_thread_start_args_t;
-
-extern uint64_t g_acpi_rsdp;
-
-void wasm_thread_start(wasm_thread_start_args_t* args);
-
-void wasm_thread_exit(void* state_base);
-
 err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size);
-
-/**
- * Get a file from an fd, increases the ref count
- */
-file_t* wasm_proc_get_fd(wasm_proc_t* proc, int fd);
-
-/**
- * Close an existing fd from the file table
- */
-bool wasm_proc_close_fd(wasm_proc_t* proc, int fd);
-
-/**
- * Register a file to the process's fd table, takes the 
- * reference from the caller
- */
-int wasm_proc_register_file(wasm_proc_t* proc, file_t* file);
-
-/**
- * Register a file to the process's fd table, takes the 
- * reference from the caller
- */
-int wasm_proc_register_file_at(wasm_proc_t* proc, file_t* file, int fd);
