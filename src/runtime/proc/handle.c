@@ -157,13 +157,16 @@ bool handle_table_close(handle_table_t* table, int handle) {
             table->array[handle].object = nullptr;
             table->array[handle].rights = 0;
 
-            // no longer a handle
-            object_handle_put(out_handle.object);
-
             success = true;
         }
     }
 
     mutex_unlock(&table->lock);
+
+    // put the object outside the lock
+    if (success) {
+        object_handle_put(out_handle.object);
+    }
+
     return success;
 }
