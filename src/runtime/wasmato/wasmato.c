@@ -3,6 +3,7 @@
 #include "arch/intrin.h"
 #include "lib/assert.h"
 #include "lib/defs.h"
+#include "lib/except.h"
 #include "lib/list.h"
 #include "lib/syscall.h"
 #include "proc/handle.h"
@@ -126,7 +127,7 @@ static wasi_fd_t wasmato_irq_create_ioapic(void* memory_base, void* state_base, 
 }
 
 static wasi_errno_t wasmato_irq_unmask(void* memory_base, void* state_base, wasi_fd_t fd) {
-    wasi_errno_t errno = WASI_ERRNO_SUCCESS;
+    wasi_errno_t err = WASI_ERRNO_SUCCESS;
     
     wasm_proc_t* proc = wasm_current_proc(state_base);
     handle_t handle = handle_table_lookup(&proc->handles, fd);
@@ -136,21 +137,21 @@ static wasi_errno_t wasmato_irq_unmask(void* memory_base, void* state_base, wasi
 
     // ensure this is an interrupt object and that 
     // the handle has a write permission
-    WASI_CHECK(handle.object->type == OBJECT_TYPE_INTERRUPT, INVAL);
-    WASI_CHECK(handle.rights & RIGHT_WRITE, NOTCAPABLE);
+    CHECK_ERROR(handle.object->type == OBJECT_TYPE_INTERRUPT, WASI_ERRNO_INVAL);
+    CHECK_ERROR(handle.rights & RIGHT_WRITE, WASI_ERRNO_NOTCAPABLE);
 
     // perform the actual operation
     kernel_object_t* ko = containerof(handle.object, kernel_object_t, object);
 
     // we are about to unmask it, clear the signal
-    object_signal(&ko->object, SIGNAL_WRITABLE, 0);
+    object_clear_signal(&ko->object, SIGNAL_WRITABLE);
 
+    // and actually clear it
     sys_irq_unmask(ko->kernel_handle);
-
 
 cleanup:
     object_put(handle.object);
-    return errno;
+    return err;
 }
 
 static const runtime_function_t m_wasmato_acpid_functions[] = {

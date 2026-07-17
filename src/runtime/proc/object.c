@@ -9,6 +9,7 @@
 #include "lib/string.h"
 #include "sync/mutex.h"
 #include "uapi/wait.h"
+#include "wasi/wasip1.h"
 
 void object_init(object_t* object) {
     memset(object, 0, sizeof(*object));
@@ -60,17 +61,7 @@ void object_handle_put(object_t* object) {
     ASSERT(object->handle_count == 0);
 
     // signal that we are closed
-    object_signal(object, 0, SIGNAL_CLOSED);
-
-    // signal to the other side that we got closed
-    object_signal(object->peer, 0, SIGNAL_PEER_CLOSED);
-
-    if (object->peer != nullptr) {
-        // drop our ref to the peer, this will possibly free it if we 
-        // are the one that kept it alive
-        object_put(object->peer);
-        object->peer = nullptr;
-    }
+    object_signal(object, SIGNAL_CLOSED);
 
     // call the callback if any
     if (object->close != nullptr) {
@@ -81,35 +72,21 @@ void object_handle_put(object_t* object) {
     object_put(object);
 }
 
-void object_signal(object_t* object, uint32_t clear_mask, uint32_t set_mask) {
-    if (clear_mask != 0) {
-        // clear the signal, the acquire pairs with the setter's release 
-        atomic_fetch_and_explicit(&object->signals, ~clear_mask, memory_order_acquire);
-    }
+void object_signal(object_t* object, uint32_t set_mask) {
+    // set the bits that we signaled
+    uint32_t old = atomic_fetch_or_explicit(&object->signals, set_mask, memory_order_release);
 
-    if (set_mask != 0) {
-        // set the bits that we signaled
-        uint32_t old = atomic_fetch_or_explicit(&object->signals, set_mask, memory_order_release);
-
-        if ((old & set_mask) != set_mask) {
-            // the old value will only have less bits than we have right now, so if it does
-            // not have the exact same bits, it means we set some bits, so we should notify
-            // the waiters
-            sys_atomic_notify(&object->signals, set_mask, 0);
-        }
+    if ((old & set_mask) != set_mask) {
+        // the old value will only have less bits than we have right now, so if it does
+        // not have the exact same bits, it means we set some bits, so we should notify
+        // the waiters
+        sys_atomic_notify(&object->signals, set_mask, 0);
     }
 }
 
-bool object_signal_peer(object_t* object, uint32_t clear_mask, uint32_t set_mask) {
-    bool success = false;
-
-    // just signal on the peer if we have any
-    if (object->peer != nullptr) {
-        object_signal(object->peer, clear_mask, set_mask);
-        success = true;
-    }
-
-    return success;
+void object_clear_signal(object_t* object, uint32_t clear_mask) {
+    // clear the signal, the acquire pairs with the setter's release 
+    atomic_fetch_and_explicit(&object->signals, ~clear_mask, memory_order_acquire);
 }
 
 uint32_t object_prepare_wait(object_t* object, uint32_t signals, wait_entry_t* entry) {
@@ -129,7 +106,7 @@ uint32_t object_prepare_wait(object_t* object, uint32_t signals, wait_entry_t* e
 }
 
 err_t object_wait_one(object_t* object, uint32_t signals, uint64_t deadline, uint32_t* observed) {
-    err_t err = NO_ERROR;
+    err_t err = WASI_ERRNO_SUCCESS;
 
     wait_entry_t entry = {
         .key = &object->signals,
@@ -148,7 +125,7 @@ err_t object_wait_one(object_t* object, uint32_t signals, uint64_t deadline, uin
 
         // perform the wait 
         wait_status_t status = sys_atomic_wait(&entry, 1, deadline);
-        CHECK(status != WAIT_STATUS_OUT_OF_MEMORY);        
+        CHECK_ERROR(status != WAIT_STATUS_OUT_OF_MEMORY, WASI_ERRNO_NOMEM);
     }
 
 cleanup:

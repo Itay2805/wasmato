@@ -17,6 +17,11 @@ typedef enum object_type : uint8_t {
      * This is a backing for a kernel object
      */
     OBJECT_TYPE_INTERRUPT,
+
+    /**
+     * This is a channel endpoint
+     */
+    OBJECT_TYPE_CHANNEL,
 } object_type_t;
 
 /**
@@ -65,11 +70,6 @@ typedef struct object {
      */
     _Atomic(uint32_t) signals; 
 
-    /**
-     * The peer object, not every object has a peer
-     */
-    struct object* peer;
-
     /** 
      * Called after the file was closed, meaning it is marked 
      * as closed and marked for the peer as closed
@@ -102,9 +102,14 @@ void object_handle_put(object_t* object);
 void object_init(object_t* object);
 
 /**
- * Assert and de-assert signals on the given object
+ * Assert signals on the given object
  */
-void object_signal(object_t* object, uint32_t clear_mask, uint32_t set_mask);
+void object_signal(object_t* object, uint32_t set_mask);
+
+/**
+ * De-assert signals on the given object
+ */
+void object_clear_signal(object_t* object, uint32_t clear_mask);
 
 /**
  * Setup a kernel wait-entry for the given object, this should be used to construct an array 

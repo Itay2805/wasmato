@@ -28,7 +28,7 @@ static void spidir_log_callback(spidir_log_level_t level, const char* module, si
 }
 
 static void main(void) {
-    err_t err = NO_ERROR;
+    err_t err = WASI_ERRNO_SUCCESS;
 
     // initialize the tsc freq so we can sync with it nicely
     g_tsc_freq_hz = sys_early_get_tsc_freq();

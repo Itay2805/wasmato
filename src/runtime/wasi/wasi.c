@@ -68,7 +68,7 @@ static wasi_errno_t wasi_fd_fdstat_get(
     void* memory_base, void* state_base,
     wasi_fd_t fd, wasi_ptr_t retptr0
 ) {
-    wasi_errno_t errno = WASI_ERRNO_SUCCESS;
+    wasi_errno_t err = WASI_ERRNO_SUCCESS;
 
     wasm_proc_t* proc = wasm_current_proc(state_base);
     object_t* object = handle_table_lookup(&proc->handles, fd).object;
@@ -77,16 +77,16 @@ static wasi_errno_t wasi_fd_fdstat_get(
     }
 
     wasi_file_t* file = wasi_file_from_object(object);
-    WASI_CHECK(file != nullptr, INVAL);
+    CHECK_ERROR(file != nullptr, WASI_ERRNO_INVAL);
 
-    WASI_CHECK(
+    CHECK_ERROR(
         safe_copy(memory_base + retptr0, &file->stats, sizeof(file->stats)), 
-        FAULT
+        WASI_ERRNO_FAULT
     );
 
 cleanup:
     object_handle_put(object);
-    return errno;
+    return err;
 }
 
 static wasi_errno_t wasi_fd_seek(
@@ -96,7 +96,7 @@ static wasi_errno_t wasi_fd_seek(
     wasi_whence_t whence,
     wasi_ptr_t retptr0
 ) {
-    wasi_errno_t errno = WASI_ERRNO_SUCCESS;
+    wasi_errno_t err = WASI_ERRNO_SUCCESS;
     
     wasm_proc_t* proc = wasm_current_proc(state_base);
     object_t* object = handle_table_lookup(&proc->handles, fd).object;
@@ -105,15 +105,15 @@ static wasi_errno_t wasi_fd_seek(
     }
 
     wasi_file_t* file = wasi_file_from_object(object);
-    WASI_CHECK(file != nullptr, INVAL);
-    WASI_CHECK(wasi_file_is_capable(file, WASI_RIGHTS_FD_SEEK), NOTCAPABLE);
+    CHECK_ERROR(file != nullptr, WASI_ERRNO_INVAL);
+    CHECK_ERROR(wasi_file_is_capable(file, WASI_RIGHTS_FD_SEEK), WASI_ERRNO_NOTCAPABLE);
 
     // TODO: perform wasi-ipc 
     ERROR("TODO: wasi_fd_seek");
 
 cleanup:
     object_put(object);
-    return errno;
+    return err;
 }
 
 static wasi_errno_t wasi_fd_write(
@@ -122,7 +122,7 @@ static wasi_errno_t wasi_fd_write(
     wasi_ptr_t _iovs, wasi_size_t iovs_len, 
     wasi_ptr_t retptr0
 ) {
-    wasi_errno_t errno = WASI_ERRNO_SUCCESS;
+    wasi_errno_t err = WASI_ERRNO_SUCCESS;
 
     wasm_proc_t* proc = wasm_current_proc(state_base);
     object_t* object = handle_table_lookup(&proc->handles, fd).object;
@@ -131,8 +131,8 @@ static wasi_errno_t wasi_fd_write(
     }
 
     wasi_file_t* file = wasi_file_from_object(object);
-    WASI_CHECK(file != nullptr, INVAL);
-    WASI_CHECK(wasi_file_is_capable(file, WASI_RIGHTS_FD_WRITE), NOTCAPABLE);
+    CHECK_ERROR(file != nullptr, WASI_ERRNO_INVAL);
+    CHECK_ERROR(wasi_file_is_capable(file, WASI_RIGHTS_FD_WRITE), WASI_ERRNO_NOTCAPABLE);
 
     // TODO: perform wasi-ipc, for now some dummy code 
     //       just for stdout/stderr to work
@@ -146,7 +146,7 @@ static wasi_errno_t wasi_fd_write(
 
 cleanup:
     object_put(object);
-    return errno;
+    return err;
 } 
 
 //----------------------------------------------------------------------------------------------------------------------

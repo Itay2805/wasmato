@@ -18,6 +18,7 @@
 #include "sync/mutex.h"
 #include "uapi/page.h"
 #include "wasi/wasi.h"
+#include "wasi/wasip1.h"
 #include "wasm/debug_elf.h"
 #include "wasm/jit.h"
 #include "wasm/wasm.h"
@@ -68,11 +69,10 @@ static int32_t wasi_thread_spawn(void* memory_base, void* state_base, int32_t st
 
     int32_t tid = 0;
     err_t err = wasm_create_thread(proc, start_arg, &tid);
-    switch (err) {
-        case NO_ERROR: return tid;
-        case ERROR_OUT_OF_MEMORY: return -2;
-        default: return -1;
+    if (IS_ERROR(err)) {
+        return err;
     }
+    return tid;
 }
 
 static void* wasm_resolve_import(void* arg, const char* module, const char* name, wasm_type_t* type) {
@@ -116,11 +116,11 @@ err_t wasm_create_proc(
     proc_handle_t* handles,
     size_t handles_count
 ) {
-    err_t err = NO_ERROR;
+    err_t err = WASI_ERRNO_SUCCESS;
 
     // allocate the new proc
     wasm_proc_t* proc = mem_alloc(sizeof(*proc));
-    CHECK_ERROR(proc != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(proc != nullptr, WASI_ERRNO_NOMEM);
     memset(proc, 0, sizeof(*proc));
 
     proc->type = type;
@@ -147,12 +147,12 @@ err_t wasm_create_proc(
     // 4GB are mappable, because that is all wasm can actually access without 
     // using the static offset in the mapping
     proc->memory_base = sys_mem_reserve(SIZE_TO_PAGES(SIZE_8GB), SIZE_TO_PAGES(SIZE_4GB), name);
-    CHECK_ERROR(proc->memory_base != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(proc->memory_base != nullptr, WASI_ERRNO_NOMEM);
 
     // perform the initial bump
     proc->memory_size = proc->module.memory.min;
     void* base = sys_mem_bump(proc->memory_base, SIZE_TO_PAGES(proc->module.memory.min));
-    CHECK_ERROR(base != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(base != nullptr, WASI_ERRNO_NOMEM);
 
     // and initialize the memory
     wasm_module_init_memory(&proc->module, proc->memory_base);

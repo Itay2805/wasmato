@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/except.h"
+#include "wasi/wasip1.h"
 #include "wasm/error.h"
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -9,9 +10,9 @@
 
 static inline err_t wasm_err(wasm_err_t err) {
     switch (err) {
-        case WASM_NO_ERROR: return NO_ERROR;
-        case WASM_ERROR_CHECK_FAILED: return ERROR_CHECK_FAILED;
-        default: return ERROR_CHECK_FAILED;
+        case WASM_NO_ERROR: return WASI_ERRNO_SUCCESS;
+        case WASM_ERROR_CHECK_FAILED: return WASI_ERRNO_INVAL;
+        default: return WASI_ERRNO_INVAL;
     }
 }
 

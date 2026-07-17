@@ -3,6 +3,7 @@
 #include "lib/list.h"
 #include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
+#include "wasi/wasip1.h"
 
 
 noreturn void wasm_thread_exit(void* state_base) {
@@ -58,18 +59,18 @@ void wasm_thread_start(wasm_thread_start_args_t* args) {
 }
 
 err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, int32_t* out_tid) {
-    err_t err = NO_ERROR;
+    err_t err = WASI_ERRNO_SUCCESS;
     wasm_state_t* state = nullptr;
 
     // allocate the args for the thread
     wasm_thread_start_args_t* args = mem_alloc(sizeof(*args));
-    CHECK_ERROR(args != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(args != nullptr, WASI_ERRNO_NOMEM);
     memset(args, 0, sizeof(*args));
 
     // allocate the wasm state
     size_t state_size = sizeof(wasm_state_t) + proc->jit.state_size;
     state = mem_alloc(state_size);
-    CHECK_ERROR(state != nullptr, ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(state != nullptr, WASI_ERRNO_NOMEM);
     memset(state, 0, state_size);
 
     // save the proc, we take a ref to it
@@ -83,7 +84,7 @@ err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, int32_t* out_tid) {
     // generate the new tid, the first thread gets id of 1
     // TODO: handle tid overflow
     int32_t tid = (int32_t)(atomic_fetch_add_explicit(&proc->thread_id_gen, 1, memory_order_relaxed) + 1);
-    CHECK_ERROR(tid > 0, ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(tid > 0, WASI_ERRNO_NOMEM);
 
     if (tid > 1) {
         // this is a helper thread, ensure we have an entry point
@@ -107,7 +108,7 @@ err_t wasm_create_thread(wasm_proc_t* proc, uint32_t arg, int32_t* out_tid) {
     stbsp_snprintf(name, sizeof(name), "%s#%d#%d", module_name, proc->process_id, tid);
 
     // and actually create/start the thread
-    CHECK_ERROR(sys_thread_create(args, name), ERROR_OUT_OF_MEMORY);
+    CHECK_ERROR(sys_thread_create(args, name), WASI_ERRNO_NOMEM);
     args = nullptr;
 
     // output the tid
