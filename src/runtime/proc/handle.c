@@ -23,7 +23,7 @@ static bool handle_table_grow(handle_table_t* table, size_t count) {
 
     // capacity is in uint32, so we can multiply it by the size of object without overflow,
     // if we failed then we are out of memory for new objects
-    object_t** new_array = mem_realloc(table->array, sizeof(*table->array) * new_capacity);
+    handle_t* new_array = mem_realloc(table->array, sizeof(*table->array) * new_capacity);
     if (new_array == nullptr) {
         return false;
     }
@@ -33,7 +33,8 @@ static bool handle_table_grow(handle_table_t* table, size_t count) {
     //       new array, we could probably do a realloc to a smaller size 
     //       but idk if this even does anything or if its worth it
     for (int i = table->capacity; i < new_capacity; i++) {
-        new_array[i] = nullptr;
+        new_array[i].object = nullptr;
+        new_array[i].rights = 0;
     }
     table->array = new_array;
 
@@ -55,7 +56,7 @@ static bool handle_table_grow(handle_table_t* table, size_t count) {
     return true;
 }
 
-int handle_table_allocate(handle_table_t* table, object_t* object) {
+int handle_table_allocate(handle_table_t* table, object_t* object, rights_t rights) {
     mutex_lock(&table->lock);
 
     // search for an unused entry
@@ -86,14 +87,15 @@ int handle_table_allocate(handle_table_t* table, object_t* object) {
 
     // install the object
     table->open[handle / 64] |= 1 << (handle % 64);
-    table->array[handle] = object_handle_get(object);
-    
+    table->array[handle].object = object_handle_get(object);
+    table->array[handle].rights = rights;
+
 cleanup:
     mutex_unlock(&table->lock);
     return handle;
 }
 
-bool handle_table_install(handle_table_t* table, object_t* object, int handle) {
+bool handle_table_install(handle_table_t* table, object_t* object, rights_t rights, int handle) {
     mutex_lock(&table->lock);
 
     // check if we need to grow the table to fit the new fd
@@ -107,14 +109,15 @@ bool handle_table_install(handle_table_t* table, object_t* object, int handle) {
     }
 
     // install the object
-    table->open[handle / 64] |= 1 << (handle % 64);
-    table->array[handle] = object_handle_get(object);
+    table->open[handle / 64] |= 1ull << (handle % 64);
+    table->array[handle].object = object_handle_get(object);
+    table->array[handle].rights = rights;
     
     mutex_unlock(&table->lock);
     return true;
 }
 
-object_t* handle_table_lookup(handle_table_t* table, int handle) {
+handle_t handle_table_lookup(handle_table_t* table, int handle) {
     // TODO: we can do this lockless I think because the table only ever grows
     //       or with RCU primitive we could probably do something even stronger
     //       but for now this will do fine
@@ -122,18 +125,45 @@ object_t* handle_table_lookup(handle_table_t* table, int handle) {
 
     mutex_lock(&table->lock);
 
-    object_t* object = nullptr;
+    handle_t out_handle = {};
 
     // only get the object if the handle is within bounds
     if (handle < table->capacity) {
-        object = table->array[handle];
+        out_handle = table->array[handle];
 
         // if we got an object increase its ref-count
-        if (object != nullptr) {
-            object = object_get(object);
+        if (out_handle.object != nullptr) {
+            object_get(out_handle.object);
         }
     }
 
     mutex_unlock(&table->lock);
-    return object;
+    return out_handle;
+}
+
+bool handle_table_close(handle_table_t* table, int handle) {
+    bool success = false;
+    mutex_lock(&table->lock);
+
+    handle_t out_handle = {};
+
+    // only get the object if the handle is within bounds
+    if (handle < table->capacity) {
+        out_handle = table->array[handle];
+
+        // if we got an object then remove it from the table
+        if (out_handle.object != nullptr) {
+            table->open[handle / 64] &= ~(1ull << (handle % 64));
+            table->array[handle].object = nullptr;
+            table->array[handle].rights = 0;
+
+            // no longer a handle
+            object_handle_put(out_handle.object);
+
+            success = true;
+        }
+    }
+
+    mutex_unlock(&table->lock);
+    return success;
 }

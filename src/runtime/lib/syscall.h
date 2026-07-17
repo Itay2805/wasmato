@@ -3,6 +3,7 @@
 #include "uapi/wait.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdnoreturn.h>
 
 //----------------------------------------------------------------------------------------------------------------------
 // Debug
@@ -42,7 +43,7 @@ void sys_jit_free(void* ptr);
 typedef void (*sys_thread_entry_t)(void* arg);
 
 bool sys_thread_create(void* arg, const char* name);
-void sys_thread_exit(void);
+noreturn void sys_thread_exit(void);
 void sys_thread_yield(void);
 
 //----------------------------------------------------------------------------------------------------------------------

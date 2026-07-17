@@ -2,6 +2,7 @@
 
 #include "proc.h"
 #include <stdint.h>
+#include <stdnoreturn.h>
 
 typedef struct wasm_state {
 	/**
@@ -37,6 +38,11 @@ typedef struct wasm_thread_start_args {
  * Called by the runtime whenever a new wasm thread has started with its arguments
  */
 void wasm_thread_start(wasm_thread_start_args_t* args);
+
+/**
+ * Called on thread-exit
+ */
+noreturn void wasm_thread_exit(void* state_base);
 
 /**
  * Call this to create a new wasm-level thread

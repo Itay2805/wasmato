@@ -1,3 +1,4 @@
+#include "runtime.h"
 #include "lib/log.h"
 #include "lib/syscall.h"
 
@@ -149,4 +150,59 @@ uint32_t wasm_host_atomic_wait_8(_Atomic(uint64_t)* value, uint64_t expected, in
     }
     
     return wasm_atomic_woken_result(deadline);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// runtime function lookup utils
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static bool runtime_function_match_type(const runtime_function_t* func, wasm_type_t* type) {
+    if (func->ret_type == WASM_VALUE_TYPE_INVALID) {
+        if (type->result_types_count != 0) {
+            return false;
+        }
+    } else {
+        if (type->result_types[0] != func->ret_type) {
+            return false;
+        }
+    }
+
+    size_t arg_count = 0;
+    for (; func->arg_types[arg_count] != WASM_VALUE_TYPE_INVALID; arg_count++);
+
+    if (arg_count != type->arg_types_count) {
+        return false;
+    }
+
+    for (int i = 0; i < arg_count; i++) {
+        if (func->arg_types[i] != type->arg_types[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void* runtime_resolve_function(const runtime_function_t* functions, size_t count, const char* name, wasm_type_t* type) {
+    for (int i = 0; i < count; i++) {
+        const runtime_function_t* func = &functions[i];
+        if (strcmp(func->name, name) == 0) {
+            if (runtime_function_match_type(func, type)) {
+                return func->address;
+            }
+        }
+    }
+    return nullptr;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// safe copy
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool safe_copy(void* restrict dst, const void* restrict src, size_t n) {
+    // TODO: actually make this safe lol
+    memcpy(dst, src, n);
+    return true;
 }

@@ -416,28 +416,29 @@ static void* interrupt_thread(void* ctx) {
 
     struct pollfd intrfd = {
         .fd = intr->fd,
-        .events = POLLIN
+        .events = POLLOUT
     };
 
     while (intr->fd >= 0) {
         // poll the fd to wait for an interrupt
+        intrfd.revents = 0;
         int ready = poll(&intrfd, 1, -1);
-        if (ready < 0) {
+        if (ready <= 0) {
             break;
         }
 
         if (intrfd.revents & (POLLNVAL | POLLERR | POLLHUP)) {
-            ERROR("Poll on irq failed");
+            ERROR("Poll on irq failed %x", intrfd.revents);
             break;
         }
 
-        if (intrfd.revents & POLLIN) {
+        if (intrfd.revents & POLLOUT) {
             // run the handler
             intr->handler(intr->ctx);
 
             // tell the runtime we finished handling the event
             wasmato_irq_unmask(intr->fd);
-        }        
+        }
     }
 
     return NULL;

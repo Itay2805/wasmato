@@ -6,6 +6,7 @@
 #include <wasm/jit.h>
 #include <lib/except.h>
 
+#include "proc/object.h"
 #include "sync/mutex.h"
 #include "handle.h"
 
@@ -19,7 +20,7 @@ typedef enum wasm_proc_type : uint8_t {
      * The ACPID process is allowed to get the rsdp 
      * and to map any physical memory it wants
      */
-    WASM_PROC_FLAG_ACPID,
+    WASM_PROC_TYPE_ACPID,
 } wasm_proc_type_t;
 
 typedef struct wasm_proc {
@@ -90,4 +91,15 @@ void wasm_put_proc(wasm_proc_t* proc);
 
 wasm_proc_t* wasm_current_proc(void* state_base);
 
-err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size);
+typedef struct proc_handle {
+    object_t* object;
+    rights_t rights;
+    int fd;
+} proc_handle_t;
+
+err_t wasm_create_proc(
+    wasm_proc_type_t type, 
+    void* module, size_t module_size,
+    proc_handle_t* handles,
+    size_t handles_count
+);

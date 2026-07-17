@@ -33,7 +33,10 @@ void object_put(object_t* object) {
     // at this point it must have a zero handle count
     ASSERT(object->handle_count == 0);
 
-    // TODO: callback on free?
+    // call the callback if any
+    if (object->free != nullptr) {
+        object->free(object);
+    }
 
     // free the object
     mem_free(object);
@@ -69,7 +72,10 @@ void object_handle_put(object_t* object) {
         object->peer = nullptr;
     }
 
-    // TODO: callback on closed
+    // call the callback if any
+    if (object->close != nullptr) {
+        object->close(object);
+    }
 
     // free the object
     object_put(object);
@@ -106,7 +112,7 @@ bool object_signal_peer(object_t* object, uint32_t clear_mask, uint32_t set_mask
     return success;
 }
 
-uint32_t object_create_wait_entry(object_t* object, uint32_t signals, wait_entry_t* entry) {
+uint32_t object_prepare_wait(object_t* object, uint32_t signals, wait_entry_t* entry) {
     // first check if we already have a valid signal
     uint32_t pending = atomic_load_acquire(&object->signals);
     if ((pending & signals) != 0) {

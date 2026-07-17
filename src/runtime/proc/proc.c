@@ -14,6 +14,7 @@
 #include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
 
+#include "proc/handle.h"
 #include "sync/mutex.h"
 #include "uapi/page.h"
 #include "wasi/wasi.h"
@@ -22,8 +23,9 @@
 #include "wasm/wasm.h"
 #include <spidir/x64.h>
 
-#include "threads.h"
+#include "thread.h"
 #include "wasm_err.h"
+#include "wasmato/wasmato.h"
 
 static _Atomic(uint32_t) m_process_id_gen = 0;
 
@@ -99,12 +101,21 @@ static void* wasm_resolve_import(void* arg, const char* module, const char* name
     } else if (strcmp(module, "wasi_snapshot_preview1") == 0) {
         // the wasi-p1 compatibility layer
         return wasi_resolve_import(name, type);
+
+    } else if (strcmp(module, "wasmato") == 0) {
+        return wasmato_resolve_import(name, proc, type);
+
     }
     
     return nullptr;
 }
 
-err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) {
+err_t wasm_create_proc(
+    wasm_proc_type_t type, 
+    void* module, size_t module_size,
+    proc_handle_t* handles,
+    size_t handles_count
+) {
     err_t err = NO_ERROR;
 
     // allocate the new proc
@@ -224,6 +235,17 @@ err_t wasm_create_proc(wasm_proc_type_t type, void* module, size_t module_size) 
 
         // save it from the jit
         proc->start = proc->jit.exports[index].func.address;
+    }
+
+    // install all the default handles
+    for (int i = 0; i < handles_count; i++) {
+        proc_handle_t handle = handles[i];
+        CHECK(handle_table_install(
+            &proc->handles, 
+            handle.object, 
+            handle.rights, 
+            handle.fd
+        ));
     }
 
     // and finally create the new thread

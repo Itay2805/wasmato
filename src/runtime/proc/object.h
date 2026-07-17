@@ -7,6 +7,18 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+typedef enum object_type : uint8_t {
+    /** 
+     * This is a WASI file
+     */
+    OBJECT_TYPE_WASI_FILE,
+
+    /** 
+     * This is a backing for a kernel object
+     */
+    OBJECT_TYPE_INTERRUPT,
+} object_type_t;
+
 /**
  * These are signals with a common definition
  */
@@ -22,14 +34,19 @@ typedef enum signals : uint32_t {
      * related to it are no longer valid
      */
     SIGNAL_PEER_CLOSED = BIT1,
+
+    /**
+     * The object is readable, the exact meaning depends on the object type
+     */
+    SIGNAL_READABLE = BIT2,
+
+    /**
+     * The object is writable, the exact meaning depends on the object type
+     */
+    SIGNAL_WRITABLE = BIT3,
 } signals_t;
 
 typedef struct object {
-    /**
-     * the signals of the object
-     */
-    _Atomic(uint32_t) signals; 
-
     /**
      * The amount of open handles for this object, once it 
      * reaches zero we mark the object as closed
@@ -44,9 +61,33 @@ typedef struct object {
     atomic_size_t ref_count;
 
     /**
+     * the signals of the object
+     */
+    _Atomic(uint32_t) signals; 
+
+    /**
      * The peer object, not every object has a peer
      */
     struct object* peer;
+
+    /** 
+     * Called after the file was closed, meaning it is marked 
+     * as closed and marked for the peer as closed
+     *
+     * NOTE: at this point there might still be pointers to the 
+     *       object that are in the middle of an operation
+     */
+    void (*close)(struct object* obj);
+
+    /** 
+     * Called when the object is about to be freed 
+     */
+    void (*free)(struct object* obj);
+
+    /**
+     * The object type
+     */
+    object_type_t type;
 } object_t;
 
 object_t* object_get(object_t* object);
@@ -71,7 +112,7 @@ void object_signal(object_t* object, uint32_t clear_mask, uint32_t set_mask);
  *
  * returns the pending signals if already signaled, zero otherwise
  */
-uint32_t object_create_wait_entry(object_t* object, uint32_t signals, wait_entry_t* entry);
+uint32_t object_prepare_wait(object_t* object, uint32_t signals, wait_entry_t* entry);
 
 /** 
  * Wait on a single object for the given signals, this is a 

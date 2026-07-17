@@ -1,13 +1,18 @@
 #include "alloc/alloc.h"
 #include "lib/assert.h"
+#include "lib/defs.h"
 #include "lib/except.h"
 #include "lib/log.h"
 #include "lib/syscall.h"
 
 #include <spidir/log.h>
 
+#include "proc/handle.h"
 #include "proc/proc.h"
-#include "proc/threads.h"
+#include "proc/thread.h"
+#include "wasi/file.h"
+#include "wasi/wasip1.h"
+#include "wasmato/wasmato.h"
 
 uint64_t g_tsc_freq_hz = 0;
 
@@ -42,7 +47,7 @@ static void main(void) {
     sys_early_get_initrd(initrd);
 
     // save the RSDP for wasm to access
-    // g_acpi_rsdp = sys_early_get_rsdp();
+    g_acpi_rsdp = sys_early_get_rsdp();
 
     // we can now mark that the early done is over,
     // and we can free the main stacks
@@ -52,8 +57,31 @@ static void main(void) {
     spidir_log_init(spidir_log_callback);
     spidir_log_set_max_level(SPIDIR_LOG_LEVEL_WARN);
 
-    // create the initrd process
-    RETHROW(wasm_create_proc(WASM_PROC_FLAG_ACPID, initrd, initrd_size));
+    // TODO: set this correctly
+    wasi_file_t* debug_output = wasi_file_create();
+    debug_output->stats.fs_filetype = WASI_FILETYPE_CHARACTER_DEVICE;
+    debug_output->stats.fs_rights_base = WASI_RIGHTS_FD_WRITE;
+
+    // create the initrd process, give it the debug output 
+    // as both stdout/stderr
+    // TODO: give it a dummy stdin
+    proc_handle_t handles[] = {
+        (proc_handle_t){ 
+            .fd = 1,
+            .object = &debug_output->object,
+            .rights = RIGHT_WRITE
+        },
+        (proc_handle_t){ 
+            .fd = 2,
+            .object = &debug_output->object,
+            .rights = RIGHT_WRITE
+        },
+    };
+    RETHROW(wasm_create_proc(
+        WASM_PROC_TYPE_ACPID, 
+        initrd, initrd_size, 
+        handles, ARRAY_LENGTH(handles)
+    ));
 
 cleanup:
     ASSERT(!IS_ERROR(err), "Failed to start the system");

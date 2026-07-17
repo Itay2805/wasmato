@@ -1,11 +1,11 @@
-#include "threads.h"
+#include "thread.h"
 #include "alloc/alloc.h"
 #include "lib/list.h"
 #include "lib/stb_sprintf.h"
 #include "lib/syscall.h"
 
 
-static void wasm_thread_exit(void* state_base) {
+noreturn void wasm_thread_exit(void* state_base) {
     // get the actual state
     wasm_state_t* state = containerof(state_base, wasm_state_t, state);
     state_base = nullptr;

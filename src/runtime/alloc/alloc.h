@@ -8,4 +8,6 @@ void* mem_realloc(void* p, size_t n);
 
 void* mem_alloc_aligned(size_t len, size_t align);
 
+void* mem_calloc(size_t m, size_t n);
+
 void mem_free(void* p);

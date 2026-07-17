@@ -156,8 +156,9 @@ bool sys_thread_create(void* arg, const char* name) {
 	return (bool)syscall2(SYSCALL_THREAD_CREATE, arg, name);
 }
 
-void sys_thread_exit(void) {
+noreturn void sys_thread_exit(void) {
 	(void)syscall0(SYSCALL_THREAD_EXIT);
+	__builtin_unreachable();
 }
 
 void sys_thread_yield(void) {
